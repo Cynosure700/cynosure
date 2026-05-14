@@ -44,6 +44,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 
+	if boundary := browserCapabilityBoundaryReply(userMessage); boundary != "" {
+		return s.persistAssistantReply(ctx, conversation, user.ID, history, boundary, writer)
+	}
+
 	skills, err := s.Store.ListEnabledSkillsByUser(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
@@ -70,18 +74,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		messages = append(messages, msg)
 
 		if choice.FinishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "assistant", Content: fallbackAssistantContent(msg.Content)}
-			if err := s.Store.CreateMessage(ctx, assistant); err != nil {
-				return storage.Message{}, err
-			}
-			updatedHistory := append(history, assistant)
-			if err := s.Store.SetConversationCache(ctx, conversation.ID, updatedHistory); err != nil {
-				_ = err
-			}
-			if writer != nil {
-				_ = writer.Event("assistant", map[string]any{"content": assistant.Content})
-			}
-			return assistant, nil
+			return s.persistAssistantReply(ctx, conversation, user.ID, history, fallbackAssistantContent(msg.Content), writer)
 		}
 
 		for _, tc := range msg.ToolCalls {
@@ -98,6 +91,21 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
 	}
+}
+
+func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {
+	assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: userID, Role: "assistant", Content: content}
+	if err := s.Store.CreateMessage(ctx, assistant); err != nil {
+		return storage.Message{}, err
+	}
+	updatedHistory := append(history, assistant)
+	if err := s.Store.SetConversationCache(ctx, conversation.ID, updatedHistory); err != nil {
+		_ = err
+	}
+	if writer != nil {
+		_ = writer.Event("assistant", map[string]any{"content": assistant.Content})
+	}
+	return assistant, nil
 }
 
 func (s *Service) loadConversationMessages(ctx context.Context, conversationID string) ([]storage.Message, error) {
@@ -148,6 +156,27 @@ func fallbackAssistantContent(content string) string {
 		return "(no response)"
 	}
 	return content
+}
+
+func browserCapabilityBoundaryReply(userMessage string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(userMessage))
+	if trimmed == "" {
+		return ""
+	}
+
+	keywords := []string{
+		"shell", "bash", "terminal", "cmd", "powershell", "zsh", "执行命令", "运行命令", "终端",
+		"本地文件", "本地目录", "用户目录", "工作区", "workspace", "打开文件", "修改文件", "写文件", "读文件", "遍历目录",
+		"ls ", "cat ", "pwd", "cd ", "rm ", "mkdir ",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(trimmed, keyword) {
+			return "当前网页聊天版本不能访问你的本地 shell、文件目录或用户工作区，所以我不能直接替你执行命令、读写本地文件或浏览目录。\n\n不过我仍然可以继续帮你：\n1. 解释你想执行的命令或操作\n2. 帮你写出可手动执行的命令、脚本或步骤\n3. 根据你贴出的文件内容、报错或目录信息继续分析问题"
+		}
+	}
+
+	return ""
 }
 
 func inferConversationTitle(currentTitle, userMessage string) string {
