@@ -125,18 +125,22 @@ select {
 
 .main-content {
     display: grid;
-    grid-template-columns: 1.2fr 0.8fr;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    min-height: 100vh;
 }
 
 .chat-panel,
 .right-panel {
-    padding: 20px;
+    padding: 24px;
 }
 
 .chat-panel {
     display: grid;
     grid-template-rows: auto 1fr auto;
-    gap: 16px;
+    gap: 20px;
+    max-width: 920px;
+    width: 100%;
+    margin: 0 auto;
 }
 
 .right-panel {
@@ -148,14 +152,26 @@ select {
 
 .messages {
     min-height: 400px;
+    padding: 8px 0;
+    gap: 16px;
+}
+
+.message {
+    max-width: min(78%, 720px);
+    padding: 14px 16px;
+    line-height: 1.6;
 }
 
 .message.user {
     border-color: #2563eb;
+    justify-self: end;
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.24) 0%, rgba(30, 41, 59, 0.95) 100%);
 }
 
 .message.assistant {
     border-color: #10b981;
+    justify-self: start;
+    background: rgba(15, 23, 42, 0.96);
 }
 
 .message-role,
@@ -168,6 +184,44 @@ select {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 16px;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.92);
+}
+
+.composer textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.composer-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.message-content {
+    white-space: pre-wrap;
+}
+
+.empty-state {
+    padding: 28px;
+    border: 1px solid #1e293b;
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.empty-state h3 {
+    margin: 0 0 8px;
+    font-size: 22px;
+}
+
+.empty-state p {
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.7;
 }
 
 .status {
@@ -204,8 +258,21 @@ select {
         grid-template-columns: 1fr;
     }
 
+    .chat-panel {
+        max-width: none;
+    }
+
     .right-panel {
         border-left: none;
         border-top: 1px solid #1e293b;
+    }
+
+    .message {
+        max-width: 100%;
+    }
+
+    .composer-footer {
+        flex-direction: column;
+        align-items: stretch;
     }
 }

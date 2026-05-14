@@ -222,13 +222,21 @@ export function App() {
             <main className="main-content">
                 <section className="chat-panel">
                     <div className="panel-header">
-                        <h2>{activeConversation?.title ?? "请选择或创建一个会话"}</h2>
+                        <div>
+                            <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
+                            <p className="muted">像聊天一样提问，我会优先直接回答。</p>
+                        </div>
                     </div>
                     <div className="messages">
-                        {messages.map((message, index) => (
+                        {messages.length === 0 ? (
+                            <div className="empty-state">
+                                <h3>今天想聊点什么？</h3>
+                                <p>你可以直接提问、请我帮你分析问题、整理思路、起草内容，或者继续讨论代码与技术话题。</p>
+                            </div>
+                        ) : messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
                                 <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
-                                <div>{message.content}</div>
+                                <div className="message-content">{message.content}</div>
                             </div>
                         ))}
                     </div>
@@ -239,7 +247,10 @@ export function App() {
                             onChange={(e) => setChatInput(e.target.value)}
                             disabled={!activeConversationId || sending}
                         />
-                        <button type="submit" disabled={!activeConversationId || sending}>{sending ? "发送中..." : "发送"}</button>
+                        <div className="composer-footer">
+                            <span className="muted">网页端不执行本地命令或目录操作。</span>
+                            <button type="submit" disabled={!activeConversationId || sending}>{sending ? "发送中..." : "发送"}</button>
+                        </div>
                     </form>
                 </section>
 
