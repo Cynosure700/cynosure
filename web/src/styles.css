@@ -125,8 +125,12 @@ select {
 
 .main-content {
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    grid-template-columns: minmax(0, 1fr);
     min-height: 100vh;
+}
+
+.main-content.with-side-panel {
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
 }
 
 .chat-panel,
@@ -148,6 +152,29 @@ select {
     flex-direction: column;
     gap: 16px;
     border-left: 1px solid #1e293b;
+}
+
+.panel-actions,
+.secondary-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.secondary-actions {
+    margin-top: auto;
+}
+
+.secondary-toggle {
+    background: transparent;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+}
+
+.secondary-toggle.active {
+    background: rgba(37, 99, 235, 0.22);
+    border-color: #2563eb;
+    color: #eff6ff;
 }
 
 .messages {
@@ -255,6 +282,10 @@ select {
 @media (max-width: 1200px) {
     .app-shell,
     .main-content {
+        grid-template-columns: 1fr;
+    }
+
+    .main-content.with-side-panel {
         grid-template-columns: 1fr;
     }
 

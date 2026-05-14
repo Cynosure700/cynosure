@@ -3,6 +3,7 @@ import { api, type ChatMessage, type Conversation, type Skill, type User } from 
 
 type AuthMode = "login" | "register";
 type ToolEvent = { name: string; status: string; result: string };
+type SidePanel = "capabilities" | "details" | null;
 
 export function App() {
     const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -16,6 +17,7 @@ export function App() {
     const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
+    const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
     const [skillForm, setSkillForm] = useState({ id: "", name: "", description: "", content: "", status: "draft" as Skill["status"] });
 
@@ -198,33 +200,26 @@ export function App() {
                     </div>
                 </section>
 
-                <section>
-                    <div className="section-title"><h2>我的能力</h2></div>
-                    <div className="skill-list">
-                        {skills.map((skill) => (
-                            <div key={skill.id} className="skill-card">
-                                <div className="skill-head">
-                                    <strong>{skill.name}</strong>
-                                    <span className={`status ${skill.status}`}>{skill.status}</span>
-                                </div>
-                                <p>{skill.description || "无描述"}</p>
-                                <div className="actions">
-                                    <button onClick={() => setSkillForm(skill)}>编辑</button>
-                                    <button onClick={() => void toggleSkillStatus(skill)}>{skill.status === "enabled" ? "禁用" : "启用"}</button>
-                                    <button onClick={() => void deleteSkill(skill.id)}>删除</button>
-                                </div>
-                            </div>
-                        ))}
+                <section className="secondary-actions">
+                    <div className="section-title"><h2>辅助面板</h2></div>
+                    <div className="secondary-buttons">
+                        <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
+                        <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>运行详情</button>
                     </div>
+                    <p className="muted">这些内容默认收起，不打断主聊天流程。</p>
                 </section>
             </aside>
 
-            <main className="main-content">
+            <main className={sidePanel ? "main-content with-side-panel" : "main-content"}>
                 <section className="chat-panel">
                     <div className="panel-header">
                         <div>
                             <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
                             <p className="muted">像聊天一样提问，我会优先直接回答。</p>
+                        </div>
+                        <div className="panel-actions">
+                            <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
+                            <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>详情</button>
                         </div>
                     </div>
                     <div className="messages">
@@ -254,36 +249,68 @@ export function App() {
                     </form>
                 </section>
 
-                <section className="right-panel">
-                    <div className="panel-box">
-                        <h3>运行详情</h3>
-                        <div className="tool-events">
-                            {toolEvents.length === 0 ? <div className="muted">当前没有工具事件</div> : toolEvents.map((event, index) => (
-                                <div key={`${event.name}-${index}`} className="tool-event">
-                                    <strong>{event.name}</strong>
-                                    <span className={`status ${event.status}`}>{event.status}</span>
-                                    <pre>{event.result}</pre>
+                {sidePanel && (
+                    <section className="right-panel">
+                        {sidePanel === "details" ? (
+                            <div className="panel-box">
+                                <div className="section-title">
+                                    <h3>运行详情</h3>
+                                    <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
+                                <div className="tool-events">
+                                    {toolEvents.length === 0 ? <div className="muted">当前没有运行详情</div> : toolEvents.map((event, index) => (
+                                        <div key={`${event.name}-${index}`} className="tool-event">
+                                            <strong>{event.name}</strong>
+                                            <span className={`status ${event.status}`}>{event.status}</span>
+                                            <pre>{event.result}</pre>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="panel-box">
+                                    <div className="section-title">
+                                        <h3>我的能力</h3>
+                                        <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
+                                    </div>
+                                    <div className="skill-list">
+                                        {skills.length === 0 ? <div className="muted">还没有创建能力</div> : skills.map((skill) => (
+                                            <div key={skill.id} className="skill-card">
+                                                <div className="skill-head">
+                                                    <strong>{skill.name}</strong>
+                                                    <span className={`status ${skill.status}`}>{skill.status}</span>
+                                                </div>
+                                                <p>{skill.description || "无描述"}</p>
+                                                <div className="actions">
+                                                    <button onClick={() => setSkillForm(skill)}>编辑</button>
+                                                    <button onClick={() => void toggleSkillStatus(skill)}>{skill.status === "enabled" ? "禁用" : "启用"}</button>
+                                                    <button onClick={() => void deleteSkill(skill.id)}>删除</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
 
-                    <div className="panel-box">
-                        <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
-                        <form onSubmit={handleSkillSubmit} className="stack">
-                            <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
-                            <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
-                            <select value={skillForm.status} onChange={(e) => setSkillForm((prev) => ({ ...prev, status: e.target.value as Skill["status"] }))}>
-                                <option value="draft">draft</option>
-                                <option value="enabled">enabled</option>
-                                <option value="disabled">disabled</option>
-                            </select>
-                            <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
-                            <button type="submit">{skillForm.id ? "保存修改" : "创建能力"}</button>
-                        </form>
-                    </div>
-                    {error && <div className="error">{error}</div>}
-                </section>
+                                <div className="panel-box">
+                                    <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
+                                    <form onSubmit={handleSkillSubmit} className="stack">
+                                        <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
+                                        <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
+                                        <select value={skillForm.status} onChange={(e) => setSkillForm((prev) => ({ ...prev, status: e.target.value as Skill["status"] }))}>
+                                            <option value="draft">draft</option>
+                                            <option value="enabled">enabled</option>
+                                            <option value="disabled">disabled</option>
+                                        </select>
+                                        <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
+                                        <button type="submit">{skillForm.id ? "保存修改" : "创建能力"}</button>
+                                    </form>
+                                </div>
+                            </>
+                        )}
+                        {error && <div className="error">{error}</div>}
+                    </section>
+                )}
             </main>
         </div>
     );
