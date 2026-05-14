@@ -2,7 +2,7 @@
 
 - [x] 1.1 将默认应用入口切换为 Web 服务启动路径，并移除 CLI REPL 作为正式用户入口
 - [x] 1.2 抽取统一的通用 assistant system prompt 构造逻辑，替换当前 coding-agent 基线提示词
-- [ ] 1.3 清理启动文案、页面文案与相关代码路径中的 CLI/编码助手默认表述
+- [x] 1.3 清理启动文案、页面文案与相关代码路径中的 CLI/编码助手默认表述
 
 ## 2. Safe Chat Runtime Policy
 

@@ -144,8 +144,8 @@ export function App() {
         return (
             <div className="auth-shell">
                 <div className="auth-card">
-                    <h1>nano_cc Web Agent</h1>
-                    <p>用户登录后即可创建个人 skill，并在网页中与 agent 对话。</p>
+                    <h1>nano_cc Chat</h1>
+                    <p>登录后即可开始新对话，在需要时使用你的个人能力。</p>
                     <div className="auth-tabs">
                         <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>登录</button>
                         <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>注册</button>
@@ -199,7 +199,7 @@ export function App() {
                 </section>
 
                 <section>
-                    <div className="section-title"><h2>我的 Skills</h2></div>
+                    <div className="section-title"><h2>我的能力</h2></div>
                     <div className="skill-list">
                         {skills.map((skill) => (
                             <div key={skill.id} className="skill-card">
@@ -227,14 +227,14 @@ export function App() {
                     <div className="messages">
                         {messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-                                <span className="message-role">{message.role === "user" ? "你" : "Agent"}</span>
+                                <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
                                 <div>{message.content}</div>
                             </div>
                         ))}
                     </div>
                     <form onSubmit={handleSendMessage} className="composer">
                         <textarea
-                            placeholder="请输入你的问题，Agent 会结合你的 Skills 与工具回答..."
+                            placeholder="输入任何你想聊的问题，我会尽量直接、清晰地帮助你。"
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
                             disabled={!activeConversationId || sending}
@@ -245,7 +245,7 @@ export function App() {
 
                 <section className="right-panel">
                     <div className="panel-box">
-                        <h3>Tool Events</h3>
+                        <h3>运行详情</h3>
                         <div className="tool-events">
                             {toolEvents.length === 0 ? <div className="muted">当前没有工具事件</div> : toolEvents.map((event, index) => (
                                 <div key={`${event.name}-${index}`} className="tool-event">
@@ -258,17 +258,17 @@ export function App() {
                     </div>
 
                     <div className="panel-box">
-                        <h3>{skillForm.id ? "编辑 Skill" : "创建 Skill"}</h3>
+                        <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
                         <form onSubmit={handleSkillSubmit} className="stack">
-                            <input placeholder="Skill 名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
+                            <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
                             <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
                             <select value={skillForm.status} onChange={(e) => setSkillForm((prev) => ({ ...prev, status: e.target.value as Skill["status"] }))}>
                                 <option value="draft">draft</option>
                                 <option value="enabled">enabled</option>
                                 <option value="disabled">disabled</option>
                             </select>
-                            <textarea placeholder="Skill 内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
-                            <button type="submit">{skillForm.id ? "保存修改" : "创建 Skill"}</button>
+                            <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
+                            <button type="submit">{skillForm.id ? "保存修改" : "创建能力"}</button>
                         </form>
                     </div>
                     {error && <div className="error">{error}</div>}
