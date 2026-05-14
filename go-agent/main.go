@@ -1,7 +1,18 @@
 package main
 
-import "nano_cc/internal/agent"
+import (
+	"log"
+
+	"nano_cc/internal/web/app"
+)
 
 func main() {
-	agent.RunREPL()
+	server, err := app.NewServer()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := server.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
