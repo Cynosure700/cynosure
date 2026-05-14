@@ -21,8 +21,18 @@ type EventWriter interface {
 	Event(name string, data any) error
 }
 
+type conversationStore interface {
+	CreateMessage(ctx context.Context, message storage.Message) error
+	TouchConversation(ctx context.Context, conversationID, title string) error
+	ListEnabledSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error)
+	SetConversationCache(ctx context.Context, conversationID string, messages []storage.Message) error
+	GetConversationCache(ctx context.Context, conversationID string) ([]storage.Message, bool, error)
+	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
+	CreateToolCall(ctx context.Context, tc storage.ToolCall) error
+}
+
 type Service struct {
-	Store *storage.Store
+	Store conversationStore
 	Cfg   config.AppConfig
 	Tools *ToolRegistry
 }
