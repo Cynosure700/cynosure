@@ -48,6 +48,11 @@ export function App() {
             .catch((err) => setError(err.message));
     }, [activeConversationId]);
 
+    useEffect(() => {
+        const title = activeConversation?.title?.trim();
+        document.title = title ? `${title} · nano_cc Chat` : user ? `nano_cc Chat · ${user.username}` : "nano_cc Chat";
+    }, [activeConversation, user]);
+
     async function refreshAll() {
         const [conversationResult, skillResult] = await Promise.all([api.listConversations(), api.listSkills()]);
         const nextConversations = Array.isArray(conversationResult.conversations) ? conversationResult.conversations : [];
@@ -147,10 +152,10 @@ export function App() {
             <div className="auth-shell">
                 <div className="auth-card">
                     <h1>nano_cc Chat</h1>
-                    <p>登录后即可开始新对话，在需要时使用你的个人能力。</p>
+                    <p>登录后即可像使用聊天机器人一样继续提问、分析和协作。</p>
                     <div className="auth-tabs">
-                        <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>登录</button>
-                        <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>注册</button>
+                        <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>继续对话</button>
+                        <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>创建账号</button>
                     </div>
                     <form onSubmit={handleAuthSubmit} className="stack">
                         {authMode === "register" && (
@@ -163,7 +168,7 @@ export function App() {
                             <input placeholder="邮箱或用户名" value={authForm.login} onChange={(e) => setAuthForm((prev) => ({ ...prev, login: e.target.value }))} />
                         )}
                         <input type="password" placeholder="密码" value={authForm.password} onChange={(e) => setAuthForm((prev) => ({ ...prev, password: e.target.value }))} />
-                        <button type="submit">{authMode === "login" ? "登录" : "注册并登录"}</button>
+                        <button type="submit">{authMode === "login" ? "进入聊天" : "创建账号并进入"}</button>
                     </form>
                     {error && <div className="error">{error}</div>}
                 </div>
@@ -185,7 +190,7 @@ export function App() {
                 <section>
                     <div className="section-title">
                         <h2>会话</h2>
-                        <button onClick={() => void handleCreateConversation()}>新建</button>
+                        <button onClick={() => void handleCreateConversation()}>新对话</button>
                     </div>
                     <div className="list">
                         {conversations.map((conversation) => (
@@ -206,7 +211,7 @@ export function App() {
                         <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
                         <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>运行详情</button>
                     </div>
-                    <p className="muted">这些内容默认收起，不打断主聊天流程。</p>
+                    <p className="muted">这些内容默认收起，只在你需要时再展开查看。</p>
                 </section>
             </aside>
 
@@ -215,7 +220,7 @@ export function App() {
                     <div className="panel-header">
                         <div>
                             <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
-                            <p className="muted">像聊天一样提问，我会优先直接回答。</p>
+                            <p className="muted">像与通用聊天助手对话一样提问，我会优先直接回答。</p>
                         </div>
                         <div className="panel-actions">
                             <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
@@ -226,7 +231,7 @@ export function App() {
                         {messages.length === 0 ? (
                             <div className="empty-state">
                                 <h3>今天想聊点什么？</h3>
-                                <p>你可以直接提问、请我帮你分析问题、整理思路、起草内容，或者继续讨论代码与技术话题。</p>
+                                <p>你可以直接提问、让我帮你分析问题、整理思路、起草内容，或者继续讨论代码与技术话题。</p>
                             </div>
                         ) : messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
@@ -237,14 +242,14 @@ export function App() {
                     </div>
                     <form onSubmit={handleSendMessage} className="composer">
                         <textarea
-                            placeholder="输入任何你想聊的问题，我会尽量直接、清晰地帮助你。"
+                            placeholder="给我发消息，告诉我你现在想解决什么问题。"
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
                             disabled={!activeConversationId || sending}
                         />
                         <div className="composer-footer">
                             <span className="muted">网页端不执行本地命令或目录操作。</span>
-                            <button type="submit" disabled={!activeConversationId || sending}>{sending ? "发送中..." : "发送"}</button>
+                            <button type="submit" disabled={!activeConversationId || sending}>{sending ? "思考中..." : "发送消息"}</button>
                         </div>
                     </form>
                 </section>
@@ -258,7 +263,7 @@ export function App() {
                                     <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                 </div>
                                 <div className="tool-events">
-                                    {toolEvents.length === 0 ? <div className="muted">当前没有运行详情</div> : toolEvents.map((event, index) => (
+                                    {toolEvents.length === 0 ? <div className="muted">这轮对话还没有额外运行详情</div> : toolEvents.map((event, index) => (
                                         <div key={`${event.name}-${index}`} className="tool-event">
                                             <strong>{event.name}</strong>
                                             <span className={`status ${event.status}`}>{event.status}</span>
@@ -275,7 +280,7 @@ export function App() {
                                         <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                     </div>
                                     <div className="skill-list">
-                                        {skills.length === 0 ? <div className="muted">还没有创建能力</div> : skills.map((skill) => (
+                                        {skills.length === 0 ? <div className="muted">你还没有添加任何个人能力</div> : skills.map((skill) => (
                                             <div key={skill.id} className="skill-card">
                                                 <div className="skill-head">
                                                     <strong>{skill.name}</strong>
@@ -303,7 +308,7 @@ export function App() {
                                             <option value="disabled">disabled</option>
                                         </select>
                                         <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
-                                        <button type="submit">{skillForm.id ? "保存修改" : "创建能力"}</button>
+                                        <button type="submit">{skillForm.id ? "保存能力" : "创建能力"}</button>
                                     </form>
                                 </div>
                             </>
