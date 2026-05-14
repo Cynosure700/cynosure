@@ -1,38 +1,54 @@
 # nano_cc (Go)
 
-基于 Go 实现的编码智能体，当前同时支持两种使用方式：
+`nano_cc` 现已收敛为一个**浏览器优先的通用聊天机器人后端**：
 
-1. **CLI 模式**：本地 REPL 交互式编码助手
-2. **Web 平台模式**：多用户登录、Skill 管理、网页聊天、MySQL/Redis 持久化
+- 默认入口是 Web 服务，而不是 CLI REPL
+- 默认角色是通用聊天助手，而不是编码助手
+- 支持登录、会话、流式聊天、个人能力（Skill）管理
+- 网页端**不执行 shell 命令，不访问用户本地目录，不读写本地文件**
 
-它通过 OpenAI 兼容 API 驱动 agent loop，支持工具调用、Skill 加载、上下文管理，以及在 Web 模式下按用户从数据库动态加载 Skill。
+它通过 OpenAI 兼容 API 驱动聊天运行时，在需要时可从数据库按用户加载已启用的能力内容，并通过 SSE 把响应流式返回给前端页面。
+
+---
+
+## 当前定位
+
+这是一个面向浏览器聊天产品的 Go 后端，核心目标是提供类似 ChatGPT 的对话体验，而不是继续围绕本地 CLI 编码代理构建产品。
+
+当前正式使用方式：
+
+1. **Go Web 服务**：提供鉴权、会话、聊天、能力管理 API
+2. **React 前端**：提供 conversation-first 的网页聊天界面
+
+仓库里仍保留了一部分旧的 CLI / 本地工具相关代码，主要用于历史兼容或内部复用，但它们**不再是正式产品入口**。
 
 ---
 
 ## 功能概览
 
-### CLI 模式
-
-- 交互式 REPL
-- 工具调用循环（tool calling）
-- 文件读写与编辑
-- Shell 命令执行
-- Todo 管理
-- 子智能体委派
-- 本地 Skill 文件加载
-- 上下文压缩
-
-### Web 平台模式
+### 浏览器聊天能力
 
 - 用户注册 / 登录 / 登出
 - 基于 Cookie + JWT 的鉴权
-- 用户独立 Skill 创建、编辑、启停、删除
-- 会话与消息持久化
-- Agent 从 MySQL 中动态加载用户已启用 Skill
-- SSE 流式返回 assistant 输出与 tool event
-- Redis 会话缓存
+- 多会话聊天
+- SSE 流式返回 assistant 输出
+- conversation-first 的网页聊天体验
+- 通用问答、写作、规划、分析、代码协助等对话能力
+
+### 用户能力（Skill）管理
+
+- 创建、编辑、启用、禁用、删除个人能力
+- 按用户隔离能力数据
+- 运行时动态加载当前用户已启用能力
+
+### 平台能力与边界
+
+- 会话、消息、工具调用记录持久化
+- Redis 缓存活跃会话上下文
 - 多用户数据隔离
-- 工具白名单与用户工作区隔离
+- 浏览器端仅暴露安全且与网页聊天模型兼容的能力
+- 默认浏览器模式下当前仅保留 `load_skill`
+- 明确拒绝 shell、本地目录、本地文件相关请求，并返回清晰解释
 
 ---
 
@@ -40,24 +56,25 @@
 
 ```text
 go-agent/
-├── main.go                     # CLI 入口
+├── main.go                     # 默认入口：启动 Web 服务
 ├── cmd/
 │   └── web/
-│       └── main.go             # Web 后端入口
-├── config.json                 # CLI / LLM 配置文件（可选）
+│       └── main.go             # Web 服务备用入口（等价启动方式）
+├── config.json                 # LLM 配置文件（可选）
 ├── internal/
-│   ├── agent/                  # CLI agent loop 与 REPL
+│   ├── agent/                  # 旧的 agent/REPL 相关实现（非正式产品入口）
+│   ├── assistant/              # 通用 assistant system prompt 构造
 │   ├── config/                 # LLM / Web 配置
 │   ├── logger/                 # 日志
-│   ├── safety/                 # 路径安全
+│   ├── safety/                 # 安全辅助
 │   ├── sessions/               # memory / skill / subagent / compact
-│   ├── tools/                  # CLI 工具系统
+│   ├── tools/                  # 旧工具系统（主要供非 Web 路径复用）
 │   └── web/
 │       ├── app/                # HTTP Server 与路由
 │       ├── auth/               # 注册 / 登录 / Session / JWT
-│       ├── runtime/            # Web agent runtime / tool registry / SSE
+│       ├── runtime/            # Web 聊天 runtime / tool registry / SSE
 │       └── storage/            # MySQL / Redis / migrations / repository
-└── skills/                     # 本地文件 Skill（CLI 模式）
+└── skills/                     # 本地能力文件（历史兼容用途）
 ```
 
 前端页面位于仓库根目录下的 `web/`。
@@ -67,27 +84,18 @@ go-agent/
 ## 环境要求
 
 - Go 1.21+
-- Node.js / npm（用于前端 Web 页面）
+- Node.js / npm（用于前端开发与构建）
 - OpenAI 兼容模型服务
-- MySQL（Web 模式）
-- Redis（Web 模式）
+- MySQL
+- Redis
 
 ---
 
-## 一、CLI 模式
+## 配置说明
 
-### 启动方式
+后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。
 
-```bash
-cd go-agent
-go run .
-```
-
-### LLM 配置
-
-CLI 模式会优先读取环境变量；如果未设置，则回退到 `config.json`。
-
-#### 方式 1：使用 `config.json`
+### `config.json` 示例
 
 ```json
 {
@@ -97,48 +105,7 @@ CLI 模式会优先读取环境变量；如果未设置，则回退到 `config.j
 }
 ```
 
-#### 方式 2：使用环境变量
-
-```bash
-export OPENAI_BASE_URL=https://api.deepseek.com
-export OPENAI_API_KEY=your-api-key
-export MODEL_ID=deepseek-chat
-```
-
-### CLI 示例
-
-```text
-You: 用 Go 写一个 HTTP 服务，监听 8080 端口，返回 hello world
-Assistant: 我来创建这个 HTTP 服务。
-```
-
-退出：
-
-```text
-You: exit
-```
-
----
-
-## 二、Web 平台模式
-
-Web 模式由两部分组成：
-
-1. **Go 后端**：`go-agent/cmd/web/main.go`
-2. **React 前端**：仓库根目录 `web/`
-
-### Web 模式默认基础设施
-
-当前默认值如下：
-
-- MySQL: `1.12.217.28:3306`
-- Redis: `1.12.217.28:6379`
-
-如果不传环境变量，后端会默认按上述地址构造连接。
-
-### Web 后端配置
-
-后端同样需要 LLM 配置，且支持以下环境变量：
+### 常用环境变量
 
 ```bash
 OPENAI_BASE_URL=https://api.deepseek.com
@@ -148,45 +115,49 @@ MODEL_ID=deepseek-chat
 SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 
-MYSQL_HOST=1.12.217.28
+MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=root
-MYSQL_PASSWORD=213140
+MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=vibe_coding
 
-REDIS_ADDR=1.12.217.28:6379
-REDIS_PASSWORD=213140
+REDIS_ADDR=127.0.0.1:6379
+REDIS_PASSWORD=
 REDIS_DB=0
 
-JWT_SECRET=nano-cc-local-secret
+JWT_SECRET=replace-with-your-own-secret
 SESSION_COOKIE_NAME=nano_cc_session
 SESSION_TTL_MINUTES=10080
-
-WORKSPACE_ROOT=data/workspaces
 ```
 
-### 启动 Web 后端
+说明：
+
+- `WORKSPACE_ROOT` 仍然在配置结构中保留，但**当前浏览器聊天主流程不依赖本地工作区能力**
+- 如果未提供 MySQL / Redis 环境变量，程序会使用代码中的默认值构造连接
+
+---
+
+## 启动方式
+
+### 1）启动 Go 后端（默认入口）
 
 ```bash
 cd go-agent
+go run .
+```
 
-export OPENAI_BASE_URL=https://api.deepseek.com
-export OPENAI_API_KEY=your-api-key
-export MODEL_ID=deepseek-chat
+也可以使用备用入口：
 
-export MYSQL_HOST=1.12.217.28
-export MYSQL_PORT=3306
-export MYSQL_USER=root
-export MYSQL_PASSWORD=213140
-export MYSQL_DATABASE=vibe_coding
-
-export REDIS_ADDR=1.12.217.28:6379
-export REDIS_PASSWORD=213140
-
+```bash
+cd go-agent
 go run ./cmd/web
 ```
 
-### 启动前端
+默认后端地址：
+
+- `http://localhost:8080`
+
+### 2）启动前端
 
 ```bash
 cd web
@@ -197,10 +168,6 @@ npm run dev
 默认前端地址：
 
 - `http://localhost:5173`
-
-默认后端地址：
-
-- `http://localhost:8080`
 
 ---
 
@@ -213,7 +180,7 @@ npm run dev
 - `POST /api/auth/logout`
 - `GET /api/me`
 
-### Skill 管理
+### 能力管理
 
 - `GET /api/skills`
 - `POST /api/skills`
@@ -235,69 +202,50 @@ npm run dev
 
 ---
 
-## Web 模式的核心行为
+## 核心行为
 
-### 1. 用户 Skill 动态加载
+### 1. 默认入口是 Web 服务
 
-每次用户在 Web 页面发消息时，runtime 会：
+`go-agent/main.go` 现在默认启动 Web 服务，而不是进入本地 REPL。
 
-1. 从 MySQL 读取该用户所有 `enabled` 状态的 Skill
+### 2. 默认角色是通用聊天助手
+
+系统提示词已统一为通用 assistant 基线：
+
+- 支持通用问答、分析、规划、写作、编码协助
+- 优先直接回答，而不是先假设要调用工具
+- 不默认假设 shell、本地目录、本地文件访问能力
+
+### 3. 用户能力动态加载
+
+每次用户在网页中发送消息时，runtime 会：
+
+1. 从数据库读取该用户所有 `enabled` 状态的能力
 2. 构造成运行时 Skill Loader
-3. 将 Skill 描述注入 system prompt
-4. 在模型请求 `load_skill` 时返回对应 Skill 内容
+3. 将能力描述注入 system prompt
+4. 在模型请求 `load_skill` 时返回对应能力正文
 
-### 2. 多用户数据隔离
+### 4. 多用户数据隔离
 
 - 用户只能访问自己的 Skill
 - 用户只能访问自己的 Conversation / Message
-- 文件类工具只允许操作自己的工作区
+- 工具调用记录按用户与会话隔离存储
 
-### 3. 工具执行控制
+### 5. 浏览器能力边界
 
-Web 模式下默认只暴露受控工具集合，不开放任意 shell。
+当前浏览器聊天模式下：
 
-当前 Web runtime 注册的工具包括：
+- **不会暴露 shell 命令执行能力**
+- **不会暴露本地目录浏览能力**
+- **不会暴露本地文件读写能力**
+- 当前 Web runtime 默认只暴露：
+  - `load_skill`
 
-- `read_file`
-- `write_file`
-- `edit_file`
-- `load_skill`（仅当当前用户存在 enabled skill 时可用）
+如果用户请求“执行 shell / 读取本地文件 / 浏览用户目录”，系统会直接返回清晰说明，并继续提供替代帮助，例如：
 
----
-
-## CLI 工具列表
-
-CLI 模式下支持的工具：
-
-| 工具 | 说明 |
-|------|------|
-| `bash` | 执行 shell 命令（带危险命令拦截） |
-| `read_file` | 读取文件 |
-| `write_file` | 写入文件 |
-| `edit_file` | 精确替换文本 |
-| `todo` | 管理任务列表 |
-| `task` | 委派子智能体 |
-| `load_skill` | 加载 Skill |
-| `compact` | 手动触发上下文压缩 |
-
----
-
-## Skill 文件格式（CLI 模式）
-
-CLI 模式会从 `skills/` 目录扫描 Markdown Skill 文件。
-
-格式示例：
-
-```markdown
----
-description: Git workflow helpers
-tags: git, version-control
----
-
-# Git Workflow
-
-...正文...
-```
+- 解释命令含义
+- 生成可手动执行的命令或脚本
+- 基于用户贴出的报错 / 文件内容继续分析
 
 ---
 
@@ -326,35 +274,32 @@ npm run build
 
 ## 已验证内容
 
-当前实现已完成以下验证：
+当前实现已经完成以下验证：
 
-- Go 后端编译通过
-- 前端 typecheck / build 通过
-- 用户注册 / 登录 / 登出流程通过
-- 未登录访问受保护 API 返回 401
-- 多用户 Skill / Conversation 隔离通过
-- enabled Skill 可在运行时动态加载
-- SSE 可返回 tool event + assistant 内容
-- Redis cache miss 时可从 MySQL 回退
-- 禁用 Skill / 请求未注册工具等异常路径行为符合预期
+- Go 测试通过
+- 前端 `typecheck` / `build` 通过
+- 默认入口 `go run .` 可直接启动 Web 服务
+- 健康检查接口可用
+- 用户注册 / 建会话 / SSE 发消息主流程已真实走通
+- 通用问答、写作、规划类请求可正常返回，不依赖 CLI 心智
+- 浏览器模式下健康接口只暴露 `load_skill`
+- shell / 本地文件 / 用户目录请求会返回明确的能力边界说明
 
 ---
 
 ## 注意事项
 
-1. Web 模式依赖可用的 MySQL、Redis、LLM 服务
+1. 运行前请确保 MySQL、Redis、LLM 服务可用
 2. 如果前端跨域访问失败，请检查 `ALLOWED_ORIGIN`
 3. 如果登录后接口仍返回 401，请检查 Cookie 是否被浏览器拦截
-4. Web 模式下文件工具会限制在用户工作区目录内
+4. 浏览器聊天模式不是本地终端代理，不支持替用户执行本地命令或访问本地目录
 
 ---
 
-## 后续建议
-
-如果后续要继续增强这个平台，优先建议：
+## 后续可继续增强的方向
 
 1. 增加密码重置与用户资料管理
-2. 增加 Skill 版本管理
+2. 增加能力版本管理
 3. 增加会话分页与消息分页
-4. 增加更细粒度的工具权限控制
+4. 增加更细粒度的能力面板与权限控制
 5. 增加部署脚本 / Docker Compose
