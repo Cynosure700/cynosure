@@ -8,6 +8,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/assistant"
 	"nano_cc/internal/config"
 	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
@@ -42,11 +43,11 @@ func RunREPL() {
 		memorySection = "\n\n" + ms
 	}
 
-	systemPrompt := fmt.Sprintf(`You are a coding agent at %s.
-Use the todo tool to plan multi-step tasks and track your progress.
-Use the task tool to delegate work to subagents when beneficial.
-Use load_skill to access specialized knowledge when needed.
-Prefer using tools over describing actions in prose.%s%s`, cwd, skillsSection, memorySection)
+	systemPrompt := assistant.BuildSystemPrompt(assistant.PromptOptions{
+		Surface:           fmt.Sprintf("the legacy terminal interface at %s", cwd),
+		SkillDescriptions: strings.TrimSpace(skillsSection),
+		MemorySection:     strings.TrimSpace(memorySection),
+	})
 
 	scanner := bufio.NewScanner(os.Stdin)
 

@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/assistant"
 	"nano_cc/internal/config"
 	"nano_cc/internal/sessions"
 	"nano_cc/internal/web/storage"
@@ -115,12 +115,10 @@ func (s *Service) loadConversationMessages(ctx context.Context, conversationID s
 }
 
 func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoader) string {
-	workspace := filepath.Join(s.Cfg.WorkspaceRoot, user.ID)
-	base := fmt.Sprintf("You are a web coding agent for user %s. Only use registered tools. All file operations must stay inside %s.", user.Username, workspace)
-	if descriptions := loader.GetDescriptions(); descriptions != "" {
-		base += "\nAvailable user skills:\n" + descriptions
-	}
-	return base
+	return assistant.BuildSystemPrompt(assistant.PromptOptions{
+		Surface:           fmt.Sprintf("the browser chat experience for user %s", user.Username),
+		SkillDescriptions: loader.GetDescriptions(),
+	})
 }
 
 func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
