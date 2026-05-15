@@ -3,7 +3,7 @@
 - [x] 1.1 扩展配置加载逻辑，显式支持应用根目录、builtin skills 目录、cmd 产物目录与 workspace 根目录，并在启动时解析为绝对路径
 - [x] 1.2 在 Web server 初始化阶段加载 `go-agent/skills` 下的内置 skill catalog，并将其注入 runtime 依赖
 - [x] 1.3 为内置 skill 定义稳定的运行时标识符和描述提取逻辑，避免继续依赖 REPL 路径下的隐式命名方式
-- [ ] 1.4 建立 `cmd` 目录的部署构建步骤：编译 Go 子命令为二进制产物，并复制 `.py` 等脚本资源到部署目录
+- [x] 1.4 建立 `cmd` 目录的部署构建步骤：编译 Go 子命令为二进制产物，并复制 `.py` 等脚本资源到部署目录
 
 ## 2. Skill Source Merging
 
