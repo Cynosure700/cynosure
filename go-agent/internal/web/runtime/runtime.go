@@ -33,10 +33,15 @@ type conversationStore interface {
 }
 
 type Service struct {
-	Store conversationStore
-	Cfg   config.AppConfig
-	Tools *ToolRegistry
+	Store         conversationStore
+	Cfg           config.AppConfig
+	Tools         *ToolRegistry
 	BuiltinSkills *sessions.SkillLoader
+}
+
+type toolExecutionOutcome struct {
+	Status string `json:"status"`
+	Result string `json:"result"`
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig, builtinSkills *sessions.SkillLoader) *Service {
@@ -95,19 +100,30 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			result, err := s.Tools.Execute(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
-			status := "success"
-			if err != nil {
-				status = "rejected"
-				result = fmt.Sprintf("Error: %v", err)
-			}
-			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: status, Summary: truncate(result, 500)})
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
+			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: truncate(outcome.Result, 500)})
 			if writer != nil {
-				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": status, "result": result})
+				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
 			}
-			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: result})
+			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: outcome.MessageContent()})
 		}
 	}
+}
+
+func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
+	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
+	if err != nil {
+		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err)}
+	}
+	return toolExecutionOutcome{Status: "success", Result: result}
+}
+
+func (o toolExecutionOutcome) MessageContent() string {
+	data, err := json.Marshal(o)
+	if err != nil {
+		return fmt.Sprintf(`{"status":%q,"result":%q}`, o.Status, o.Result)
+	}
+	return string(data)
 }
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {

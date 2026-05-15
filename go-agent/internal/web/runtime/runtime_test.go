@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -61,11 +62,13 @@ type fakeLLMClient struct {
 	responses []openai.ChatCompletionResponse
 	calls     int
 	lastReq   openai.ChatCompletionRequest
+	reqs      []openai.ChatCompletionRequest
 }
 
 func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
 	f.calls++
 	f.lastReq = req
+	f.reqs = append(f.reqs, req)
 	if len(f.responses) == 0 {
 		return openai.ChatCompletionResponse{}, nil
 	}
@@ -198,6 +201,138 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 	}
 }
 
+func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{{
+					ID:   "tool_1",
+					Type: "function",
+					Function: openai.FunctionCall{
+						Name:      "load_skill",
+						Arguments: `{"name":"builtin-skill"}`,
+					},
+				}}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	config.Client = llm
+
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+
+	store := &fakeStore{}
+	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: builtin}
+	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
+	user := storage.User{ID: "usr_4", Username: "dave"}
+
+	message, err := service.RespondToConversation(context.Background(), conversation, user, "请加载技能后回答", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final assistant answer, got %q", message.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected llm to be called twice, got %d", llm.calls)
+	}
+	if len(store.toolCalls) != 1 {
+		t.Fatalf("expected one stored tool call, got %d", len(store.toolCalls))
+	}
+	if store.toolCalls[0].Status != "success" {
+		t.Fatalf("expected tool call status success, got %q", store.toolCalls[0].Status)
+	}
+	toolMessage := findToolMessage(t, llm.reqs[1].Messages)
+	var outcome toolExecutionOutcome
+	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
+		t.Fatalf("expected JSON tool message content, got error: %v, content: %q", err, toolMessage.Content)
+	}
+	if outcome.Status != "success" {
+		t.Fatalf("expected tool loop status success, got %q", outcome.Status)
+	}
+	if !contains(outcome.Result, "<skill name=\"builtin-skill\">") {
+		t.Fatalf("expected tool result to include skill content, got %q", outcome.Result)
+	}
+}
+
+func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{{
+					ID:   "tool_2",
+					Type: "function",
+					Function: openai.FunctionCall{
+						Name:      "load_skill",
+						Arguments: `{"name":"missing-skill"}`,
+					},
+				}}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "handled rejection"},
+			}},
+		},
+	}}
+	config.Client = llm
+
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+
+	store := &fakeStore{}
+	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: builtin}
+	conversation := storage.Conversation{ID: "conv_5", Title: "新对话"}
+	user := storage.User{ID: "usr_5", Username: "erin"}
+
+	message, err := service.RespondToConversation(context.Background(), conversation, user, "请尝试加载不存在的技能", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "handled rejection" {
+		t.Fatalf("expected final assistant answer, got %q", message.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected llm to be called twice, got %d", llm.calls)
+	}
+	if len(store.toolCalls) != 1 {
+		t.Fatalf("expected one stored tool call, got %d", len(store.toolCalls))
+	}
+	if store.toolCalls[0].Status != "rejected" {
+		t.Fatalf("expected tool call status rejected, got %q", store.toolCalls[0].Status)
+	}
+	toolMessage := findToolMessage(t, llm.reqs[1].Messages)
+	var outcome toolExecutionOutcome
+	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
+		t.Fatalf("expected JSON tool message content, got error: %v, content: %q", err, toolMessage.Content)
+	}
+	if outcome.Status != "rejected" {
+		t.Fatalf("expected tool loop status rejected, got %q", outcome.Status)
+	}
+	if !contains(outcome.Result, "Error: unknown skill \"missing-skill\"") {
+		t.Fatalf("expected rejection result to include tool error, got %q", outcome.Result)
+	}
+}
+
 func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
 	loader := sessions.NewSkillLoader()
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
@@ -255,6 +390,17 @@ func TestRegisteredTools_UsesConfiguredWebAllowList(t *testing.T) {
 	if len(tools) != 1 || tools[0] != "load_skill" {
 		t.Fatalf("expected configured allowlist to be filtered to registered tools, got %v", tools)
 	}
+}
+
+func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) openai.ChatCompletionMessage {
+	t.Helper()
+	for _, message := range messages {
+		if message.Role == "tool" {
+			return message
+		}
+	}
+	t.Fatalf("expected tool message in runtime loop")
+	return openai.ChatCompletionMessage{}
 }
 
 func contains(s, substr string) bool {
