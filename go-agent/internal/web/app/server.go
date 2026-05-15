@@ -90,7 +90,7 @@ func (s *Server) routes() {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "tools": runtime.RegisteredTools()})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "tools": runtime.RegisteredTools(s.cfg)})
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {

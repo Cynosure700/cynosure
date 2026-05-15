@@ -244,9 +244,16 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 }
 
 func TestRegisteredTools_UsesCurrentWebAllowList(t *testing.T) {
-	tools := RegisteredTools()
+	tools := RegisteredTools(config.AppConfig{})
 	if len(tools) != 1 || tools[0] != "load_skill" {
 		t.Fatalf("expected only load_skill to be registered for web runtime, got %v", tools)
+	}
+}
+
+func TestRegisteredTools_UsesConfiguredWebAllowList(t *testing.T) {
+	tools := RegisteredTools(config.AppConfig{WebAllowedTools: []string{"load_skill", "missing_tool", "load_skill"}})
+	if len(tools) != 1 || tools[0] != "load_skill" {
+		t.Fatalf("expected configured allowlist to be filtered to registered tools, got %v", tools)
 	}
 }
 

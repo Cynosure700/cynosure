@@ -32,6 +32,7 @@ type AppConfig struct {
 	CommandBinDir     string
 	CommandScriptDir  string
 	WorkspaceRoot     string
+	WebAllowedTools   []string
 	CookieName        string
 	SessionTTLMinutes int
 }
@@ -111,6 +112,7 @@ func LoadWebConfig() (AppConfig, error) {
 		CommandBinDir:     commandBinDir,
 		CommandScriptDir:  commandScriptDir,
 		WorkspaceRoot:     workspaceRoot,
+		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", "load_skill")),
 		CookieName:        getenv("SESSION_COOKIE_NAME", "nano_cc_session"),
 		SessionTTLMinutes: getenvIntOrDefault("SESSION_TTL_MINUTES", 60*24*7),
 	}, nil
@@ -196,6 +198,24 @@ func getenvIntOrDefault(key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+func parseCSVList(value string) []string {
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		if _, exists := seen[item]; exists {
+			continue
+		}
+		seen[item] = struct{}{}
+		items = append(items, item)
+	}
+	return items
 }
 
 func resolveAppHome() (string, error) {

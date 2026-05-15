@@ -25,6 +25,8 @@ type ToolRegistry struct {
 	cfg   config.AppConfig
 }
 
+const defaultWebAllowedTool = "load_skill"
+
 func NewToolRegistry(store *storage.Store, cfg config.AppConfig) *ToolRegistry {
 	return &ToolRegistry{store: store, cfg: cfg}
 }
@@ -77,7 +79,24 @@ func (r *ToolRegistry) isAllowed(name string) bool {
 }
 
 func (r *ToolRegistry) allowedToolNames() []string {
-	return []string{"load_skill"}
+	configured := r.cfg.WebAllowedTools
+	if len(configured) == 0 {
+		configured = []string{defaultWebAllowedTool}
+	}
+
+	names := make([]string, 0, len(configured))
+	seen := make(map[string]struct{}, len(configured))
+	for _, name := range configured {
+		if _, ok := lookupRegisteredTool(name); !ok {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
 }
 
 func lookupRegisteredTool(name string) (openai.Tool, bool) {
@@ -89,8 +108,9 @@ func lookupRegisteredTool(name string) (openai.Tool, bool) {
 	return openai.Tool{}, false
 }
 
-func RegisteredTools() []string {
-	names := []string{"load_skill"}
+func RegisteredTools(cfg config.AppConfig) []string {
+	registry := NewToolRegistry(nil, cfg)
+	names := registry.allowedToolNames()
 	sort.Strings(names)
 	return names
 }
