@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -35,28 +33,13 @@ type conversationStore interface {
 }
 
 type Service struct {
-	Store         conversationStore
-	Cfg           config.AppConfig
-	Tools         *ToolRegistry
-	BuiltinSkills *sessions.SkillLoader
+	Store conversationStore
+	Cfg   config.AppConfig
+	Tools *ToolRegistry
 }
 
-type toolExecutionOutcome struct {
-	Status string             `json:"status"`
-	Result string             `json:"result"`
-	Audit  toolExecutionAudit `json:"-"`
-}
-
-type toolExecutionAudit struct {
-	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
-	ResolvedCommandPath string `json:"resolved_command_path,omitempty"`
-	CommandArtifactPath string `json:"command_artifact_path,omitempty"`
-	OutcomeSummary      string `json:"outcome_summary,omitempty"`
-	DenialReason        string `json:"denial_reason,omitempty"`
-}
-
-func NewService(store *storage.Store, cfg config.AppConfig, builtinSkills *sessions.SkillLoader) *Service {
-	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(store, cfg), BuiltinSkills: builtinSkills}
+func NewService(store *storage.Store, cfg config.AppConfig) *Service {
+	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(store, cfg)}
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
@@ -71,16 +54,16 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err := s.Store.TouchConversation(ctx, conversation.ID, inferConversationTitle(conversation.Title, userMessage)); err != nil {
 		return storage.Message{}, err
 	}
-	workspaceRoot, err := s.resolveUserWorkspace(user.ID)
-	if err != nil {
-		return storage.Message{}, err
+
+	if boundary := browserCapabilityBoundaryReply(userMessage); boundary != "" {
+		return s.persistAssistantReply(ctx, conversation, user.ID, history, boundary, writer)
 	}
 
 	skills, err := s.Store.ListEnabledSkillsByUser(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
 	}
-	loader := s.buildConversationSkillLoader(skills)
+	loader := buildDBSkillLoader(skills)
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0
@@ -111,105 +94,19 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, WorkspaceRoot: workspaceRoot}, tc.Function.Name, tc.Function.Arguments)
-			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
-			if writer != nil {
-				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
-			}
-			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: outcome.MessageContent()})
-		}
-	}
-}
-
-func (s *Service) resolveUserWorkspace(userID string) (string, error) {
-	_ = userID
-	base := strings.TrimSpace(s.Cfg.WorkspaceRoot)
-	if base == "" {
-		return "", fmt.Errorf("workspace root is not configured")
-	}
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return "", fmt.Errorf("create workspace root: %w", err)
-	}
-	resolvedBase, err := filepath.Abs(base)
-	if err != nil {
-		return "", fmt.Errorf("resolve workspace root: %w", err)
-	}
-	return filepath.Clean(resolvedBase), nil
-}
-
-func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
-	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir)
-	audit := toolExecutionAudit{
-		ResolvedCWD:         strings.TrimSpace(toolCtx.WorkspaceRoot),
-		ResolvedCommandPath: resolvedCommandPath,
-		CommandArtifactPath: commandArtifactPath,
-	}
-	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
-	if err != nil {
-		audit.DenialReason = err.Error()
-		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
-	}
-	audit.OutcomeSummary = truncate(result, 500)
-	return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
-}
-
-func (o toolExecutionOutcome) MessageContent() string {
-	data, err := json.Marshal(o)
-	if err != nil {
-		return fmt.Sprintf(`{"status":%q,"result":%q}`, o.Status, o.Result)
-	}
-	return string(data)
-}
-
-func (o toolExecutionOutcome) AuditSummary() string {
-	data, err := json.Marshal(o.Audit)
-	if err != nil {
-		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"command_artifact_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
-			o.Audit.ResolvedCWD,
-			o.Audit.ResolvedCommandPath,
-			o.Audit.CommandArtifactPath,
-			o.Audit.OutcomeSummary,
-			o.Audit.DenialReason,
-		)
-	}
-	return string(data)
-}
-
-func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, string) {
-	if toolName != "bash" {
-		return "", ""
-	}
-	var args map[string]any
-	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
-		return "", ""
-	}
-	command, _ := args["command"].(string)
-	for _, token := range strings.Fields(command) {
-		candidate := strings.Trim(token, "\"'`;,()[]{}")
-		if candidate == "" || !filepath.IsAbs(candidate) {
-			continue
-		}
-		resolved, err := filepath.Abs(candidate)
-		if err != nil {
-			continue
-		}
-		cleanResolved := filepath.Clean(resolved)
-		for _, root := range roots {
-			if root == "" {
-				continue
-			}
-			resolvedRoot, err := filepath.Abs(root)
+			result, err := s.Tools.Execute(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
+			status := "success"
 			if err != nil {
-				continue
+				status = "rejected"
+				result = fmt.Sprintf("Error: %v", err)
 			}
-			cleanRoot := filepath.Clean(resolvedRoot)
-			if cleanResolved == cleanRoot || strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
-				return cleanResolved, cleanResolved
+			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: status, Summary: truncate(result, 500)})
+			if writer != nil {
+				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": status, "result": result})
 			}
+			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
-		return cleanResolved, ""
 	}
-	return "", ""
 }
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {
@@ -248,10 +145,6 @@ func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoa
 	})
 }
 
-func (s *Service) buildConversationSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
-	return sessions.MergeSkillLoaders(s.BuiltinSkills, buildDBSkillLoader(skills))
-}
-
 func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 	entries := make(map[string]*sessions.SkillEntry, len(skills))
 	for _, skill := range skills {
@@ -261,7 +154,7 @@ func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 			Path: "db://skills/" + skill.ID,
 		}
 	}
-	loader := sessions.NewSkillLoader()
+	loader := &sessions.SkillLoader{Skills: make(map[string]*sessions.SkillEntry)}
 	loader.LoadFromEntries(entries)
 	return loader
 }
@@ -279,6 +172,27 @@ func fallbackAssistantContent(content string) string {
 		return "(no response)"
 	}
 	return content
+}
+
+func browserCapabilityBoundaryReply(userMessage string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(userMessage))
+	if trimmed == "" {
+		return ""
+	}
+
+	keywords := []string{
+		"shell", "bash", "terminal", "cmd", "powershell", "zsh", "执行命令", "运行命令", "终端",
+		"本地文件", "本地目录", "用户目录", "工作区", "workspace", "打开文件", "修改文件", "写文件", "读文件", "遍历目录",
+		"ls ", "cat ", "pwd", "cd ", "rm ", "mkdir ",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(trimmed, keyword) {
+			return "当前网页聊天版本不能访问你的本地 shell、文件目录或用户工作区，所以我不能直接替你执行命令、读写本地文件或浏览目录。\n\n不过我仍然可以继续帮你：\n1. 解释你想执行的命令或操作\n2. 帮你写出可手动执行的命令、脚本或步骤\n3. 根据你贴出的文件内容、报错或目录信息继续分析问题"
+		}
+	}
+
+	return ""
 }
 
 func inferConversationTitle(currentTitle, userMessage string) string {

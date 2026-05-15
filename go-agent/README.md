@@ -39,7 +39,7 @@
 ### Skill 管理
 
 - 创建、编辑、启用、禁用、删除个人 Skill
-- 启动时加载 `APP_HOME/workspaces/skills` 下的内置 Skill catalog
+- 启动时加载 `APP_HOME/workspace/skills` 下的内置 Skill catalog
 - 运行时合并“共享内置 Skill + 当前用户已启用 Skill”
 - 内置 Skill 通过 API 以只读条目暴露，不能被用户修改或删除
 - 按用户隔离 Skill 数据
@@ -52,7 +52,7 @@
 - 浏览器端仅暴露显式允许的已注册工具
 - 默认 Web runtime 当前仅暴露 `load_skill`，可通过 `WEB_ALLOWED_TOOLS` 扩展
 - 工具默认运行在服务端配置的统一 `WORKSPACE_ROOT` 下，并拒绝越权路径
-- 部署命令产物位于 `APP_HOME/workspaces/bin` 与 `APP_HOME/workspaces/cmd` 只读目录，不落入用户可写 workspace
+- 部署命令产物位于 `APP_HOME/workspace/bin` 与 `APP_HOME/workspace/cmd` 固定目录，供运行时稳定调用
 - 工具调用会记录审计摘要，包括 cwd、命令产物路径、结果摘要或拒绝原因
 - 浏览器端不会访问**用户本地机器**的 shell、目录或文件；如果启用工具，访问的也是服务端隔离 workspace
 
@@ -65,9 +65,10 @@ go-agent/
 ├── main.go                     # 默认入口：启动 Web 服务
 ├── cmd/
 │   ├── build-artifacts/
-│   │   └── main.go             # 部署阶段构建 cmd 产物与脚本资源
+│   │   └── main.go             # 兼容入口：构建 workspace 命令产物与脚本资源
 │   └── web/
 │       └── main.go             # Web 服务备用入口（等价启动方式）
+├── build.sh                    # 标准部署打包脚本
 ├── config.json                 # LLM 配置文件（可选）
 ├── internal/
 │   ├── agent/                  # 旧的 agent/REPL 相关实现（非正式产品入口）
@@ -85,10 +86,10 @@ go-agent/
 │       └── storage/            # MySQL / Redis / migrations / repository
 ├── logs/                       # 服务日志目录
 ├── workspace/                  # 服务端统一共享 workspace
-└── workspaces/
-    ├── bin/                    # 部署阶段编译后的命令产物
-    ├── cmd/                    # 部署阶段发布的脚本资源
-    └── skills/                 # 平台内置 Skill catalog（所有用户共享）
+│   ├── bin/                    # 部署阶段编译后的命令产物
+│   ├── cmd/                    # 部署阶段发布的脚本资源
+│   └── skills/                 # 平台内置 Skill catalog（所有用户共享）
+└── output/                     # build.sh 生成的部署输出目录
 ```
 
 前端页面位于仓库根目录下的 `web/`。
@@ -116,9 +117,9 @@ go-agent/
   "base_url": "https://api.deepseek.com",
   "api_key": "your-api-key",
   "model_id": "deepseek-chat",
-  "builtin_skills_dir": "workspaces/skills",
-  "command_bin_dir": "workspaces/bin",
-  "command_script_dir": "workspaces/cmd",
+  "builtin_skills_dir": "workspace/skills",
+  "command_bin_dir": "workspace/bin",
+  "command_script_dir": "workspace/cmd",
   "workspace_root": "workspace",
   "web_allowed_tools": "load_skill"
 }
@@ -135,9 +136,9 @@ SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
 
-BUILTIN_SKILLS_DIR=workspaces/skills
-COMMAND_BIN_DIR=workspaces/bin
-COMMAND_SCRIPT_DIR=workspaces/cmd
+BUILTIN_SKILLS_DIR=workspace/skills
+COMMAND_BIN_DIR=workspace/bin
+COMMAND_SCRIPT_DIR=workspace/cmd
 WORKSPACE_ROOT=workspace
 WEB_ALLOWED_TOOLS=load_skill
 
@@ -159,9 +160,9 @@ SESSION_TTL_MINUTES=10080
 说明：
 
 - `APP_HOME` 默认是当前工作目录，其他路径配置会相对它解析
-- `BUILTIN_SKILLS_DIR` 默认是 `APP_HOME/workspaces/skills`
-- `COMMAND_BIN_DIR` 默认是 `APP_HOME/workspaces/bin`
-- `COMMAND_SCRIPT_DIR` 默认是 `APP_HOME/workspaces/cmd`
+- `BUILTIN_SKILLS_DIR` 默认是 `APP_HOME/workspace/skills`
+- `COMMAND_BIN_DIR` 默认是 `APP_HOME/workspace/bin`
+- `COMMAND_SCRIPT_DIR` 默认是 `APP_HOME/workspace/cmd`
 - `WORKSPACE_ROOT` 默认是 `APP_HOME/workspace`，工具会以它作为服务端统一工作目录根路径
 - 日志默认写入 `APP_HOME/logs/session_<timestamp>.log`
 - `WEB_ALLOWED_TOOLS` 默认是 `load_skill`；只有显式允许且已注册的工具才会暴露给模型
@@ -172,18 +173,28 @@ SESSION_TTL_MINUTES=10080
 
 ## 启动方式
 
-### 1）构建部署命令产物（推荐在部署阶段执行）
+### 1）执行标准部署打包脚本（推荐在部署阶段执行）
+
+```bash
+cd go-agent
+./build.sh
+```
+
+这一步会：
+
+- 清理并重新生成 `output/`
+- 编译主服务到 `output/bin/go-agent`
+- 发现 `cmd/*/main.go` 并编译到 `output/workspace/bin/`
+- 复制 `.py` / `.sh` 等脚本资源到 `output/workspace/cmd/`
+- 复制内置 skills 到 `output/workspace/skills/`
+- 复制 `config.json` 到 `output/`（如果存在）
+
+如果你只是想在当前目录补齐 `workspace/bin` 和 `workspace/cmd`，也可以继续使用兼容入口：
 
 ```bash
 cd go-agent
 go run ./cmd/build-artifacts --app-home .
 ```
-
-这一步会：
-
-- 发现 `cmd/*/main.go` 并编译到 `workspaces/bin/`
-- 复制 `.py` / `.sh` 等脚本资源到 `workspaces/cmd/`
-- 自动创建 `APP_HOME/logs/`、`APP_HOME/workspace/`、`APP_HOME/workspaces/{skills,bin,cmd}/`
 
 ### 2）启动 Go 后端（默认入口）
 
@@ -192,7 +203,7 @@ cd go-agent
 go run .
 ```
 
-启动时也会自动补齐 `APP_HOME/logs/`、`APP_HOME/workspace/`、`APP_HOME/workspaces/{skills,bin,cmd}/`。
+启动时也会自动补齐 `APP_HOME/logs/`、`APP_HOME/workspace/`、`APP_HOME/workspace/{skills,bin,cmd}/`。
 
 也可以使用备用入口：
 
@@ -286,7 +297,7 @@ npm run dev
 - 工具调用记录按用户与会话隔离存储
 - 如果启用工具，所有用户都共享服务端配置的统一 workspace
 - 相对路径与默认 cwd 都会解析到该统一 workspace
-- 访问 workspace 外部路径或越过 `APP_HOME/workspaces/skills`、`APP_HOME/workspaces/bin`、`APP_HOME/workspaces/cmd` 等只读部署目录会被拒绝
+- 访问 workspace 外部路径会被拒绝；运行时命令与脚本解析固定指向 `APP_HOME/workspace/bin`、`APP_HOME/workspace/cmd`
 
 ### 5. 工具暴露与审计
 
@@ -350,7 +361,7 @@ npm run build
 2. 如果前端跨域访问失败，请检查 `ALLOWED_ORIGIN`
 3. 如果登录后接口仍返回 401，请检查 Cookie 是否被浏览器拦截
 4. 浏览器聊天模式不是用户本地终端代理；即使启用工具，也是在服务端隔离 workspace 中运行
-5. 如果你要让 Skill 调用部署命令，建议先执行 `go run ./cmd/build-artifacts --app-home .`
+5. 如果你要生成完整部署产物，建议优先执行 `./build.sh`；如果只需在当前 `APP_HOME` 下补齐运行时命令目录，可执行 `go run ./cmd/build-artifacts --app-home .`
 6. 默认日志文件位于 `APP_HOME/logs/`，默认共享 workspace 位于 `APP_HOME/workspace/`
 
 ---

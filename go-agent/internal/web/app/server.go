@@ -75,7 +75,14 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load builtin skills: %w", err)
 	}
-	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg, builtinSkills), builtinSkills: builtinSkills, mux: http.NewServeMux()}
+	server := &Server{
+		cfg:           cfg,
+		store:         store,
+		authService:   auth.NewService(store, cfg),
+		runtime:       runtime.NewService(store, cfg),
+		builtinSkills: builtinSkills,
+		mux:           http.NewServeMux(),
+	}
 	server.routes()
 	return server, nil
 }

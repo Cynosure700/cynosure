@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -17,10 +15,9 @@ import (
 )
 
 type ToolContext struct {
-	User          storage.User
-	Conversation  storage.Conversation
-	Loader        *sessions.SkillLoader
-	WorkspaceRoot string
+	User         storage.User
+	Conversation storage.Conversation
+	Loader       *sessions.SkillLoader
 }
 
 type ToolRegistry struct {
@@ -63,47 +60,13 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 			return "", fmt.Errorf("no capabilities are available in this conversation")
 		}
 		skillName, _ := args["name"].(string)
-		return r.loadSkillContent(toolCtx.Loader, skillName)
+		return toolCtx.Loader.GetContent(skillName)
 	}
-	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv(toolCtx))
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return "", fmt.Errorf("tool %s has no handler", name)
 	}
 	return handler(ctx, args)
-}
-
-func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName string) (string, error) {
-	content, err := loader.GetContent(skillName)
-	if err != nil {
-		return "", err
-	}
-	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{WorkspaceRoot: r.cfg.WorkspaceRoot}))
-	if envNote == "" {
-		return content, nil
-	}
-	return content + "\n\n" + envNote, nil
-}
-
-func (r *ToolRegistry) runtimeEnv(toolCtx ToolContext) agenttools.RuntimeEnv {
-	workspaceRoot := strings.TrimSpace(toolCtx.WorkspaceRoot)
-	if workspaceRoot == "" {
-		workspaceRoot = strings.TrimSpace(r.cfg.WorkspaceRoot)
-	}
-	commandBinDir := strings.TrimSpace(r.cfg.CommandBinDir)
-	if commandBinDir == "" && workspaceRoot != "" {
-		commandBinDir = filepath.Join(workspaceRoot, "bin")
-	}
-	commandScriptDir := strings.TrimSpace(r.cfg.CommandScriptDir)
-	if commandScriptDir == "" && workspaceRoot != "" {
-		commandScriptDir = filepath.Join(workspaceRoot, "cmd")
-	}
-	return agenttools.RuntimeEnv{
-		AppHome:          r.cfg.AppHome,
-		CommandBinDir:    commandBinDir,
-		CommandScriptDir: commandScriptDir,
-		WorkspaceRoot:    workspaceRoot,
-	}
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
@@ -150,24 +113,4 @@ func RegisteredTools(cfg config.AppConfig) []string {
 	names := registry.allowedToolNames()
 	sort.Strings(names)
 	return names
-}
-
-func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
-	lines := make([]string, 0, 4)
-	if env.AppHome != "" {
-		lines = append(lines, "APP_HOME="+env.AppHome)
-	}
-	if env.CommandBinDir != "" {
-		lines = append(lines, "COMMAND_BIN_DIR="+env.CommandBinDir)
-	}
-	if env.CommandScriptDir != "" {
-		lines = append(lines, "COMMAND_SCRIPT_DIR="+env.CommandScriptDir)
-	}
-	if env.WorkspaceRoot != "" {
-		lines = append(lines, "WORKSPACE_ROOT="+env.WorkspaceRoot)
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return "<deployment-paths>\n" + strings.Join(lines, "\n") + "\n</deployment-paths>"
 }

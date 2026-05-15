@@ -102,7 +102,7 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: nil}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
 	conversation := storage.Conversation{ID: "conv_1", Title: "新对话"}
 	user := storage.User{ID: "usr_1", Username: "alice"}
 
@@ -145,7 +145,7 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: nil}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
 
@@ -164,6 +164,16 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 	}
 	if len(llm.lastReq.Tools) != 1 || llm.lastReq.Tools[0].Function == nil || llm.lastReq.Tools[0].Function.Name != "bash" {
 		t.Fatalf("expected shell request to expose bash tool, got %#v", llm.lastReq.Tools)
+	}
+	systemPrompt := llm.lastReq.Messages[0].Content
+	if !contains(systemPrompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+		t.Fatalf("expected system prompt to include workspace root, got %q", systemPrompt)
+	}
+	if !contains(systemPrompt, "rather than a chat-only assistant") {
+		t.Fatalf("expected system prompt to position the model as a full agent, got %q", systemPrompt)
+	}
+	if !contains(systemPrompt, "Runtime tools available in this conversation: bash.") {
+		t.Fatalf("expected system prompt to include available tools, got %q", systemPrompt)
 	}
 	if len(store.messages) != 2 {
 		t.Fatalf("expected user and assistant messages to be persisted, got %d", len(store.messages))
@@ -201,7 +211,7 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		Status:      "enabled",
 	}}}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
 	conversation := storage.Conversation{ID: "conv_3", Title: "新对话"}
 	user := storage.User{ID: "usr_3", Username: "carol"}
 
@@ -216,11 +226,40 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		t.Fatalf("expected load_skill tool to be exposed, got %d tools", len(llm.lastReq.Tools))
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
+	if !contains(systemPrompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+		t.Fatalf("expected workspace root in prompt, got %q", systemPrompt)
+	}
+	if !contains(systemPrompt, "Runtime tools available in this conversation: load_skill.") {
+		t.Fatalf("expected load_skill to be listed in prompt, got %q", systemPrompt)
+	}
 	if !contains(systemPrompt, "- builtin-skill: Builtin description") {
 		t.Fatalf("expected builtin skill description in prompt, got %q", systemPrompt)
 	}
 	if !contains(systemPrompt, "- user-skill: User description") {
 		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
+	}
+}
+
+func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
+	cfg := testAppConfig(t)
+	service := &Service{Cfg: cfg}
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+
+	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, loader)
+	if !contains(prompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
+	}
+	if !contains(prompt, "rather than a chat-only assistant") {
+		t.Fatalf("expected prompt to describe a full agent, got %q", prompt)
+	}
+	if contains(prompt, "Runtime tools available in this conversation:") {
+		t.Fatalf("expected prompt without tool registry to omit tool list, got %q", prompt)
+	}
+	if !contains(prompt, "- builtin-skill: Builtin description") {
+		t.Fatalf("expected prompt to include skill descriptions, got %q", prompt)
 	}
 }
 
@@ -258,7 +297,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
 	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
 	user := storage.User{ID: "usr_4", Username: "dave"}
 
