@@ -1,7 +1,7 @@
 ## 1. Workspace path model
 
 - [x] 1.1 调整配置默认值与路径解析逻辑，统一将 builtin skills、命令二进制和脚本目录收敛到 `AppHome/workspace/...`
-- [ ] 1.2 更新应用启动阶段的目录校验，确保 `workspace/skills`、`workspace/bin` 与相关 workspace 子目录在服务启动前可用
+- [x] 1.2 更新应用启动阶段的目录校验，确保 `workspace/skills`、`workspace/bin` 与相关 workspace 子目录在服务启动前可用
 
 ## 2. Runtime skill and command loading
 

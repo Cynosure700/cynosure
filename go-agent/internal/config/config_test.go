@@ -216,3 +216,53 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateAppLayout_AcceptsPreparedDirectories(t *testing.T) {
+	root := t.TempDir()
+	cfg := AppConfig{
+		AppHome:          root,
+		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
+		CommandBinDir:    filepath.Join(root, "workspace", "bin"),
+		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
+		WorkspaceRoot:    filepath.Join(root, "workspace"),
+	}
+
+	if err := EnsureAppLayout(cfg); err != nil {
+		t.Fatalf("ensure app layout: %v", err)
+	}
+	if err := ValidateAppLayout(cfg); err != nil {
+		t.Fatalf("validate app layout: %v", err)
+	}
+}
+
+func TestValidateAppLayout_RejectsFilePath(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("file"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cfg := AppConfig{
+		AppHome:          root,
+		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
+		CommandBinDir:    filePath,
+		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
+		WorkspaceRoot:    filepath.Join(root, "workspace"),
+	}
+	if err := os.MkdirAll(cfg.BuiltinSkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir builtin skills dir: %v", err)
+	}
+	if err := os.MkdirAll(cfg.CommandScriptDir, 0o755); err != nil {
+		t.Fatalf("mkdir command script dir: %v", err)
+	}
+	if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir workspace root: %v", err)
+	}
+
+	err := ValidateAppLayout(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for file path")
+	}
+	if err.Error() != "command bin dir is not a directory" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

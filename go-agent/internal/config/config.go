@@ -156,6 +156,32 @@ func EnsureAppLayout(cfg AppConfig) error {
 	return nil
 }
 
+func ValidateAppLayout(cfg AppConfig) error {
+	paths := []struct {
+		label string
+		path  string
+	}{
+		{label: "app home", path: cfg.AppHome},
+		{label: "builtin skills dir", path: cfg.BuiltinSkillsDir},
+		{label: "command bin dir", path: cfg.CommandBinDir},
+		{label: "command script dir", path: cfg.CommandScriptDir},
+		{label: "workspace root", path: cfg.WorkspaceRoot},
+	}
+	for _, item := range paths {
+		if strings.TrimSpace(item.path) == "" {
+			return fmt.Errorf("%s is required", item.label)
+		}
+		info, err := os.Stat(item.path)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", item.label, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory", item.label)
+		}
+	}
+	return nil
+}
+
 func loadLLMConfig() (Config, error) {
 	cfg := Config{
 		BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
