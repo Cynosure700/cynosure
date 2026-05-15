@@ -422,17 +422,28 @@ func TestResolveUserWorkspace_SharesSameDirectoryAcrossUsers(t *testing.T) {
 	}
 }
 
-func TestResolveUserWorkspace_RejectsOverlapWithDeploymentResources(t *testing.T) {
+func TestResolveUserWorkspace_AllowsWorkspaceWithEmbeddedDeploymentResources(t *testing.T) {
 	root := t.TempDir()
-	builtinSkillsDir := filepath.Join(root, "workspaces", "skills")
-	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: builtinSkillsDir, BuiltinSkillsDir: builtinSkillsDir}}
-
-	_, err := service.resolveUserWorkspace("usr_overlap")
-	if err == nil {
-		t.Fatalf("expected overlapping workspace and command directory to be rejected")
+	builtinSkillsDir := filepath.Join(root, "skills")
+	commandBinDir := filepath.Join(root, "bin")
+	commandScriptDir := filepath.Join(root, "cmd")
+	if err := os.MkdirAll(builtinSkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir builtin skills dir: %v", err)
 	}
-	if !contains(err.Error(), "workspace root overlaps readonly deployment resources") {
-		t.Fatalf("expected overlap error, got %v", err)
+	if err := os.MkdirAll(commandBinDir, 0o755); err != nil {
+		t.Fatalf("mkdir command bin dir: %v", err)
+	}
+	if err := os.MkdirAll(commandScriptDir, 0o755); err != nil {
+		t.Fatalf("mkdir command script dir: %v", err)
+	}
+	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root, BuiltinSkillsDir: builtinSkillsDir, CommandBinDir: commandBinDir, CommandScriptDir: commandScriptDir}}
+
+	workspace, err := service.resolveUserWorkspace("usr_overlap")
+	if err != nil {
+		t.Fatalf("expected workspace root with embedded deployment resources to be allowed, got %v", err)
+	}
+	if workspace != root {
+		t.Fatalf("expected workspace %q, got %q", root, workspace)
 	}
 }
 

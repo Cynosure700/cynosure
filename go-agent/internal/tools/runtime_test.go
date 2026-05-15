@@ -72,6 +72,17 @@ func TestHandleBash_UsesWorkspaceRootAsDefaultDir(t *testing.T) {
 	}
 }
 
+func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "cat /tmp/outside.txt"})
+	if err == nil {
+		t.Fatalf("expected absolute path outside workspace to be rejected")
+	}
+	if !strings.Contains(err.Error(), "command path escapes workspace") {
+		t.Fatalf("expected workspace escape error, got %v", err)
+	}
+}
+
 func TestSafePathFromRoot_RejectsPathEscape(t *testing.T) {
 	root := t.TempDir()
 	_, err := safety.SafePathFromRoot(root, "../escape.txt")

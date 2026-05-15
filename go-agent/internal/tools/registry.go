@@ -85,7 +85,29 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := validateBashCommandPaths(root, cmd); err != nil {
+		return "", err
+	}
 	return RunBashInDir(cmd, root)
+}
+
+func validateBashCommandPaths(root, command string) error {
+	for _, token := range strings.Fields(command) {
+		candidate := strings.Trim(token, "\"'`;,()[]{}")
+		if candidate == "" || !filepath.IsAbs(candidate) {
+			continue
+		}
+		resolved, err := filepath.Abs(candidate)
+		if err != nil {
+			return fmt.Errorf("resolve command path: %w", err)
+		}
+		cleanRoot := filepath.Clean(root)
+		cleanResolved := filepath.Clean(resolved)
+		if cleanResolved != cleanRoot && !strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
+			return fmt.Errorf("command path escapes workspace: %s", candidate)
+		}
+	}
+	return nil
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {

@@ -133,31 +133,7 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root: %w", err)
 	}
-	cleanBase := filepath.Clean(resolvedBase)
-	if overlapsAnyPath(cleanBase, s.Cfg.BuiltinSkillsDir, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir) {
-		return "", fmt.Errorf("workspace root overlaps readonly deployment resources")
-	}
-	return cleanBase, nil
-}
-
-func overlapsAnyPath(path string, others ...string) bool {
-	for _, other := range others {
-		if pathsOverlap(path, other) {
-			return true
-		}
-	}
-	return false
-}
-
-func pathsOverlap(a, b string) bool {
-	a = strings.TrimSpace(a)
-	b = strings.TrimSpace(b)
-	if a == "" || b == "" {
-		return false
-	}
-	cleanA := filepath.Clean(a)
-	cleanB := filepath.Clean(b)
-	return cleanA == cleanB || strings.HasPrefix(cleanA, cleanB+string(os.PathSeparator)) || strings.HasPrefix(cleanB, cleanA+string(os.PathSeparator))
+	return filepath.Clean(resolvedBase), nil
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
