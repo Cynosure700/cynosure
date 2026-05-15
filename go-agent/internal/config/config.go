@@ -27,6 +27,10 @@ type AppConfig struct {
 	RedisPassword     string
 	RedisDB           int
 	JWTSecret         string
+	AppHome           string
+	BuiltinSkillsDir  string
+	CommandBinDir     string
+	CommandScriptDir  string
 	WorkspaceRoot     string
 	CookieName        string
 	SessionTTLMinutes int
@@ -61,12 +65,32 @@ func InitLLM(cfg Config) {
 }
 
 func LoadWebConfig() (AppConfig, error) {
+	appHome, err := resolveAppHome()
+	if err != nil {
+		return AppConfig{}, err
+	}
+
 	llm, err := loadLLMConfig()
 	if err != nil {
 		return AppConfig{}, err
 	}
 
-	workspaceRoot := getenv("WORKSPACE_ROOT", filepath.Join("data", "workspaces"))
+	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", "skills"))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
+	}
+	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", filepath.Join("bin")))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("resolve command bin dir: %w", err)
+	}
+	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", filepath.Join("cmd")))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
+	}
+	workspaceRoot, err := resolvePath(appHome, getenv("WORKSPACE_ROOT", filepath.Join("data", "workspaces")))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
+	}
 	dbURL := getenv("DATABASE_URL", buildDefaultMySQLDSN())
 	redisDB, err := getenvInt("REDIS_DB", 0)
 	if err != nil {
@@ -82,6 +106,10 @@ func LoadWebConfig() (AppConfig, error) {
 		RedisPassword:     getenv("REDIS_PASSWORD", "213140"),
 		RedisDB:           redisDB,
 		JWTSecret:         getenv("JWT_SECRET", "nano-cc-local-secret"),
+		AppHome:           appHome,
+		BuiltinSkillsDir:  builtinSkillsDir,
+		CommandBinDir:     commandBinDir,
+		CommandScriptDir:  commandScriptDir,
 		WorkspaceRoot:     workspaceRoot,
 		CookieName:        getenv("SESSION_COOKIE_NAME", "nano_cc_session"),
 		SessionTTLMinutes: getenvIntOrDefault("SESSION_TTL_MINUTES", 60*24*7),
@@ -118,7 +146,11 @@ func loadLLMConfig() (Config, error) {
 }
 
 func loadConfigFile() (Config, error) {
-	data, err := os.ReadFile("config.json")
+	appHome, err := resolveAppHome()
+	if err != nil {
+		return Config{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(appHome, "config.json"))
 	if err != nil {
 		return Config{}, err
 	}
@@ -164,4 +196,27 @@ func getenvIntOrDefault(key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+func resolveAppHome() (string, error) {
+	appHome := getenv("APP_HOME", ".")
+	resolved, err := filepath.Abs(appHome)
+	if err != nil {
+		return "", fmt.Errorf("resolve APP_HOME: %w", err)
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func resolvePath(appHome, pathValue string) (string, error) {
+	if strings.TrimSpace(pathValue) == "" {
+		pathValue = "."
+	}
+	if !filepath.IsAbs(pathValue) {
+		pathValue = filepath.Join(appHome, pathValue)
+	}
+	resolved, err := filepath.Abs(pathValue)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
