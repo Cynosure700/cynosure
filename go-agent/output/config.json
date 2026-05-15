@@ -1,10 +1,6 @@
 {
     "base_url": "https://api.deepseek.com",
-    "api_key": "your-api-key",
+    "api_key": "sk-b6bf7342c586486fa9dea755ab769250",
     "model_id": "deepseek-v4-flash",
-    "builtin_skills_dir": "workspace/skills",
-    "command_bin_dir": "workspace/bin",
-    "command_script_dir": "workspace/cmd",
-    "workspace_root": "workspace",
-    "web_allowed_tools": "load_skill"
+    "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file"
 }
