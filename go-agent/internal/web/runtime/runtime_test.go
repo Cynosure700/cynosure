@@ -703,6 +703,69 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCall_AuditClassifiesDeploymentCommandArtifactSource(t *testing.T) {
+	appHome := t.TempDir()
+	workspace := filepath.Join(appHome, "output", "workspace")
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create deployment bin dir: %v", err)
+	}
+	command := filepath.Join(binDir, "helper")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatalf("write deployment helper: %v", err)
+	}
+
+	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+
+	if outcome.Audit.CommandArtifactSource != "deployment" {
+		t.Fatalf("expected deployment artifact source, got %#v", outcome.Audit)
+	}
+}
+
+func TestExecuteToolCall_AuditClassifiesLocalCommandArtifactSource(t *testing.T) {
+	appHome := t.TempDir()
+	workspace := filepath.Join(appHome, "workspace")
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create local bin dir: %v", err)
+	}
+	command := filepath.Join(binDir, "helper")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatalf("write local helper: %v", err)
+	}
+
+	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+
+	if outcome.Audit.CommandArtifactSource != "local" {
+		t.Fatalf("expected local artifact source, got %#v", outcome.Audit)
+	}
+}
+
+func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T) {
+	appHome := t.TempDir()
+	workspace := filepath.Join(appHome, "workspace")
+	customRoot := t.TempDir()
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("create workspace dir: %v", err)
+	}
+	command := filepath.Join(customRoot, "helper")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatalf("write custom helper: %v", err)
+	}
+
+	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: customRoot, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+
+	if outcome.Audit.CommandArtifactSource != "custom" {
+		t.Fatalf("expected custom artifact source, got %#v", outcome.Audit)
+	}
+}
+
 func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) openai.ChatCompletionMessage {
 	t.Helper()
 	for _, message := range messages {

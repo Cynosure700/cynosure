@@ -59,6 +59,7 @@ type toolExecutionAudit struct {
 	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
 	ResolvedCommandPath string `json:"resolved_command_path,omitempty"`
 	CommandArtifactPath string `json:"command_artifact_path,omitempty"`
+	CommandArtifactSource string `json:"command_artifact_source,omitempty"`
 	OutcomeSummary      string `json:"outcome_summary,omitempty"`
 	DenialReason        string `json:"denial_reason,omitempty"`
 }
@@ -146,9 +147,10 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 	runtimeEnv := s.Tools.runtimeEnv(toolCtx)
 	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, runtimeEnv.CommandBinDir, runtimeEnv.CommandScriptDir)
 	audit := toolExecutionAudit{
-		ResolvedCWD:         strings.TrimSpace(runtimeEnv.WorkspaceRoot),
-		ResolvedCommandPath: resolvedCommandPath,
-		CommandArtifactPath: commandArtifactPath,
+		ResolvedCWD:           strings.TrimSpace(runtimeEnv.WorkspaceRoot),
+		ResolvedCommandPath:   resolvedCommandPath,
+		CommandArtifactPath:   commandArtifactPath,
+		CommandArtifactSource: classifyCommandArtifactSource(s.Cfg.AppHome, runtimeEnv.WorkspaceRoot, commandArtifactPath),
 	}
 	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
@@ -170,15 +172,44 @@ func (o toolExecutionOutcome) MessageContent() string {
 func (o toolExecutionOutcome) AuditSummary() string {
 	data, err := json.Marshal(o.Audit)
 	if err != nil {
-		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"command_artifact_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
+		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"command_artifact_path":%q,"command_artifact_source":%q,"outcome_summary":%q,"denial_reason":%q}`,
 			o.Audit.ResolvedCWD,
 			o.Audit.ResolvedCommandPath,
 			o.Audit.CommandArtifactPath,
+			o.Audit.CommandArtifactSource,
 			o.Audit.OutcomeSummary,
 			o.Audit.DenialReason,
 		)
 	}
 	return string(data)
+}
+
+func classifyCommandArtifactSource(appHome, workspaceRoot, commandArtifactPath string) string {
+	if strings.TrimSpace(commandArtifactPath) == "" {
+		return ""
+	}
+	cleanArtifact := filepath.Clean(commandArtifactPath)
+	if appHome != "" {
+		deploymentRoot := filepath.Clean(filepath.Join(appHome, "output", "workspace"))
+		if cleanArtifact == deploymentRoot || strings.HasPrefix(cleanArtifact, deploymentRoot+string(os.PathSeparator)) {
+			return "deployment"
+		}
+		localRoot := filepath.Clean(filepath.Join(appHome, "workspace"))
+		if cleanArtifact == localRoot || strings.HasPrefix(cleanArtifact, localRoot+string(os.PathSeparator)) {
+			return "local"
+		}
+	}
+	cleanWorkspace := strings.TrimSpace(workspaceRoot)
+	if cleanWorkspace != "" {
+		cleanWorkspace = filepath.Clean(cleanWorkspace)
+		if cleanArtifact == cleanWorkspace || strings.HasPrefix(cleanArtifact, cleanWorkspace+string(os.PathSeparator)) {
+			if strings.Contains(cleanWorkspace, string(os.PathSeparator)+filepath.Join("output", "workspace")) {
+				return "deployment"
+			}
+			return "local"
+		}
+	}
+	return "custom"
 }
 
 func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, string) {
