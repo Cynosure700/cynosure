@@ -91,6 +91,10 @@ func LoadWebConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 
+	workspaceRoot, err := resolveWorkspaceRoot(appHome, getenv("WORKSPACE_ROOT", strings.TrimSpace(fileCfg.WorkspaceRoot)))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
+	}
 	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", firstNonEmpty(fileCfg.BuiltinSkillsDir, filepath.Join("workspace", "skills"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
@@ -102,10 +106,6 @@ func LoadWebConfig() (AppConfig, error) {
 	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", firstNonEmpty(fileCfg.CommandScriptDir, filepath.Join("workspace", "cmd"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
-	}
-	workspaceRoot, err := resolvePath(appHome, getenv("WORKSPACE_ROOT", firstNonEmpty(fileCfg.WorkspaceRoot, "workspace")))
-	if err != nil {
-		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
 	dbURL := getenv("DATABASE_URL", buildDefaultMySQLDSN())
 	redisDB, err := getenvInt("REDIS_DB", 0)
@@ -127,7 +127,7 @@ func LoadWebConfig() (AppConfig, error) {
 		CommandBinDir:     commandBinDir,
 		CommandScriptDir:  commandScriptDir,
 		WorkspaceRoot:     workspaceRoot,
-		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill"))),
+		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file"))),
 		CookieName:        getenv("SESSION_COOKIE_NAME", "nano_cc_session"),
 		SessionTTLMinutes: getenvIntOrDefault("SESSION_TTL_MINUTES", 60*24*7),
 	}, nil
@@ -315,4 +315,31 @@ func resolvePath(appHome, pathValue string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(resolved), nil
+}
+
+func resolveWorkspaceRoot(appHome, configured string) (string, error) {
+	configured = strings.TrimSpace(configured)
+	if configured != "" {
+		return resolvePath(appHome, configured)
+	}
+
+	for _, candidate := range []string{filepath.Join("output", "workspace"), "workspace"} {
+		resolved, err := resolvePath(appHome, candidate)
+		if err != nil {
+			return "", err
+		}
+		if workspaceExists(resolved) {
+			return resolved, nil
+		}
+	}
+
+	return resolvePath(appHome, "workspace")
+}
+
+func workspaceExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
