@@ -364,7 +364,7 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(nil, config.AppConfig{})
+	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/app", CommandBinDir: "/app/bin", CommandScriptDir: "/app/cmd"})
 
 	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
@@ -373,8 +373,39 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
+	if !contains(content, "<deployment-paths>") || !contains(content, "COMMAND_BIN_DIR=/app/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/app/cmd") {
+		t.Fatalf("expected loaded skill content to include deployment paths, got %q", content)
+	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
+	}
+}
+
+func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.AppHome + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
+	}
+
+	registry := NewToolRegistry(nil, config.AppConfig{
+		AppHome:          "/deploy/app",
+		CommandBinDir:    "/deploy/app/bin",
+		CommandScriptDir: "/deploy/app/cmd",
+		WebAllowedTools:  []string{"bash"},
+	})
+
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
+		t.Fatalf("expected runtime env in handler context, got %q", result)
 	}
 }
 

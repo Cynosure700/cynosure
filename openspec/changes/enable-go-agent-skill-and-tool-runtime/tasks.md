@@ -16,7 +16,7 @@
 - [x] 3.1 为 Web runtime 增加工具适配层，复用 `go-agent/internal/tools` 中的已注册工具定义与 handlers
 - [x] 3.2 定义并实现 Web 部署允许的工具白名单，确保只有显式允许的已注册工具会暴露给模型
 - [x] 3.3 将工具执行结果和拒绝结果统一回填到 runtime loop，保持 tool-calling 闭环
-- [ ] 3.4 为 skill / tool 注入共享命令产物根目录，使其可稳定调用部署包中的二进制或脚本文件
+- [x] 3.4 为 skill / tool 注入共享命令产物根目录，使其可稳定调用部署包中的二进制或脚本文件
 
 ## 4. User Workspace Isolation
 

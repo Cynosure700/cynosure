@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -60,13 +61,34 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 			return "", fmt.Errorf("no capabilities are available in this conversation")
 		}
 		skillName, _ := args["name"].(string)
-		return toolCtx.Loader.GetContent(skillName)
+		return r.loadSkillContent(toolCtx.Loader, skillName)
 	}
+	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return "", fmt.Errorf("tool %s has no handler", name)
 	}
 	return handler(ctx, args)
+}
+
+func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName string) (string, error) {
+	content, err := loader.GetContent(skillName)
+	if err != nil {
+		return "", err
+	}
+	envNote := formatRuntimeEnvNote(r.runtimeEnv())
+	if envNote == "" {
+		return content, nil
+	}
+	return content + "\n\n" + envNote, nil
+}
+
+func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
+	return agenttools.RuntimeEnv{
+		AppHome:          r.cfg.AppHome,
+		CommandBinDir:    r.cfg.CommandBinDir,
+		CommandScriptDir: r.cfg.CommandScriptDir,
+	}
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
@@ -113,4 +135,21 @@ func RegisteredTools(cfg config.AppConfig) []string {
 	names := registry.allowedToolNames()
 	sort.Strings(names)
 	return names
+}
+
+func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
+	lines := make([]string, 0, 3)
+	if env.AppHome != "" {
+		lines = append(lines, "APP_HOME="+env.AppHome)
+	}
+	if env.CommandBinDir != "" {
+		lines = append(lines, "COMMAND_BIN_DIR="+env.CommandBinDir)
+	}
+	if env.CommandScriptDir != "" {
+		lines = append(lines, "COMMAND_SCRIPT_DIR="+env.CommandScriptDir)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "<deployment-paths>\n" + strings.Join(lines, "\n") + "\n</deployment-paths>"
 }

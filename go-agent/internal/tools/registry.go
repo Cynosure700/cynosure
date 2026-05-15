@@ -10,6 +10,16 @@ import (
 
 type ToolHandler func(ctx context.Context, args map[string]any) (string, error)
 
+type RuntimeEnv struct {
+	AppHome          string
+	CommandBinDir    string
+	CommandScriptDir string
+}
+
+type contextKey string
+
+const runtimeEnvContextKey contextKey = "runtime_env"
+
 var Handlers = map[string]ToolHandler{
 	"bash":          handleBash,
 	"read_file":     handleRead,
@@ -24,6 +34,15 @@ var Handlers = map[string]ToolHandler{
 
 func SetHandler(name string, h ToolHandler) {
 	Handlers[name] = h
+}
+
+func WithRuntimeEnv(ctx context.Context, env RuntimeEnv) context.Context {
+	return context.WithValue(ctx, runtimeEnvContextKey, env)
+}
+
+func RuntimeEnvFromContext(ctx context.Context) (RuntimeEnv, bool) {
+	env, ok := ctx.Value(runtimeEnvContextKey).(RuntimeEnv)
+	return env, ok
 }
 
 func handleBash(ctx context.Context, args map[string]any) (string, error) {
