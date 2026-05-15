@@ -91,15 +91,15 @@ func LoadWebConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 
-	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", firstNonEmpty(fileCfg.BuiltinSkillsDir, filepath.Join("workspaces", "skills"))))
+	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", firstNonEmpty(fileCfg.BuiltinSkillsDir, filepath.Join("workspace", "skills"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
 	}
-	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", firstNonEmpty(fileCfg.CommandBinDir, filepath.Join("workspaces", "bin"))))
+	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", firstNonEmpty(fileCfg.CommandBinDir, filepath.Join("workspace", "bin"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command bin dir: %w", err)
 	}
-	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", firstNonEmpty(fileCfg.CommandScriptDir, filepath.Join("workspaces", "cmd"))))
+	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", firstNonEmpty(fileCfg.CommandScriptDir, filepath.Join("workspace", "cmd"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
 	}

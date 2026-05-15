@@ -170,13 +170,13 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "workspaces", "skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "workspace", "skills") {
 		t.Fatalf("expected default builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "workspaces", "bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "workspace", "bin") {
 		t.Fatalf("expected default command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "workspaces", "cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "workspace", "cmd") {
 		t.Fatalf("expected default command script dir, got %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "workspace") {
@@ -188,9 +188,9 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 	root := t.TempDir()
 	cfg := AppConfig{
 		AppHome:          root,
-		BuiltinSkillsDir: filepath.Join(root, "workspaces", "skills"),
-		CommandBinDir:    filepath.Join(root, "workspaces", "bin"),
-		CommandScriptDir: filepath.Join(root, "workspaces", "cmd"),
+		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
+		CommandBinDir:    filepath.Join(root, "workspace", "bin"),
+		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
 		WorkspaceRoot:    filepath.Join(root, "workspace"),
 	}
 
@@ -201,9 +201,9 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 	paths := []string{
 		root,
 		filepath.Join(root, "logs"),
-		filepath.Join(root, "workspaces", "skills"),
-		filepath.Join(root, "workspaces", "bin"),
-		filepath.Join(root, "workspaces", "cmd"),
+		filepath.Join(root, "workspace", "skills"),
+		filepath.Join(root, "workspace", "bin"),
+		filepath.Join(root, "workspace", "cmd"),
 		filepath.Join(root, "workspace"),
 	}
 	for _, path := range paths {
