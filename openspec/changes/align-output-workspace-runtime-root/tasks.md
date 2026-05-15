@@ -12,7 +12,7 @@
 
 ## 3. Tool execution boundary
 
-- [ ] 3.1 更新 bash/file 工具默认 cwd 选择逻辑，使其始终绑定解析后的 runtime workspace
+- [x] 3.1 更新 bash/file 工具默认 cwd 选择逻辑，使其始终绑定解析后的 runtime workspace
 - [ ] 3.2 保持越权校验基于活动 runtime workspace 生效，拒绝访问该根目录之外的绝对路径
 - [ ] 3.3 更新命令路径解析与审计输出，确保能区分部署态与本地调试态的命令资产来源
 

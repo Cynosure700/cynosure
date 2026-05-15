@@ -72,6 +72,21 @@ func TestHandleBash_UsesWorkspaceRootAsDefaultDir(t *testing.T) {
 	}
 }
 
+func TestHandleBash_UsesDeploymentWorkspaceAsDefaultDir(t *testing.T) {
+	appRoot := t.TempDir()
+	workspace := filepath.Join(appRoot, "output", "workspace")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("mkdir deployment workspace: %v", err)
+	}
+	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace}), map[string]any{"command": "pwd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if filepath.Clean(result) != filepath.Clean(workspace) {
+		t.Fatalf("expected pwd to run in deployment workspace %q, got %q", workspace, result)
+	}
+}
+
 func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
 	root := t.TempDir()
 	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "cat /tmp/outside.txt"})
