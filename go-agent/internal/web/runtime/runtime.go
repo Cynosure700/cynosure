@@ -125,46 +125,23 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 }
 
 func (s *Service) resolveUserWorkspace(userID string) (string, error) {
+	_ = userID
 	base := strings.TrimSpace(s.Cfg.WorkspaceRoot)
 	if base == "" {
 		return "", fmt.Errorf("workspace root is not configured")
 	}
-	workspaceRoot := filepath.Join(base, workspaceDirName(userID))
-	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
-		return "", fmt.Errorf("create user workspace: %w", err)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", fmt.Errorf("create workspace root: %w", err)
 	}
 	resolvedBase, err := filepath.Abs(base)
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root: %w", err)
 	}
-	resolvedWorkspace, err := filepath.Abs(workspaceRoot)
-	if err != nil {
-		return "", fmt.Errorf("resolve user workspace: %w", err)
-	}
 	cleanBase := filepath.Clean(resolvedBase)
-	cleanWorkspace := filepath.Clean(resolvedWorkspace)
-	if cleanWorkspace != cleanBase && !strings.HasPrefix(cleanWorkspace, cleanBase+string(os.PathSeparator)) {
-		return "", fmt.Errorf("user workspace escapes workspace root")
+	if overlapsAnyPath(cleanBase, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir, s.Cfg.AppHome) {
+		return "", fmt.Errorf("workspace root overlaps deployment command resources")
 	}
-	if overlapsAnyPath(cleanWorkspace, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir, s.Cfg.AppHome) {
-		return "", fmt.Errorf("user workspace overlaps deployment command resources")
-	}
-	return cleanWorkspace, nil
-}
-
-func workspaceDirName(userID string) string {
-	trimmed := strings.TrimSpace(userID)
-	if trimmed == "" {
-		return "anonymous"
-	}
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-			return r
-		default:
-			return '_'
-		}
-	}, trimmed)
+	return cleanBase, nil
 }
 
 func overlapsAnyPath(path string, others ...string) bool {

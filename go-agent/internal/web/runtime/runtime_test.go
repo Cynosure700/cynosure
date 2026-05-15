@@ -375,7 +375,7 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	}
 }
 
-func TestResolveUserWorkspace_CreatesUserScopedDirectory(t *testing.T) {
+func TestResolveUserWorkspace_UsesSharedWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
 
@@ -383,7 +383,7 @@ func TestResolveUserWorkspace_CreatesUserScopedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(root, "usr_123")
+	expected := root
 	if workspace != expected {
 		t.Fatalf("expected workspace %q, got %q", expected, workspace)
 	}
@@ -396,7 +396,7 @@ func TestResolveUserWorkspace_CreatesUserScopedDirectory(t *testing.T) {
 	}
 }
 
-func TestResolveUserWorkspace_SeparatesDifferentUsers(t *testing.T) {
+func TestResolveUserWorkspace_SharesSameDirectoryAcrossUsers(t *testing.T) {
 	root := t.TempDir()
 	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
 
@@ -408,8 +408,8 @@ func TestResolveUserWorkspace_SeparatesDifferentUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if first == second {
-		t.Fatalf("expected distinct workspaces, got %q and %q", first, second)
+	if first != second {
+		t.Fatalf("expected shared workspace, got %q and %q", first, second)
 	}
 }
 
@@ -422,7 +422,7 @@ func TestResolveUserWorkspace_RejectsOverlapWithDeploymentResources(t *testing.T
 	if err == nil {
 		t.Fatalf("expected overlapping workspace and command directory to be rejected")
 	}
-	if !contains(err.Error(), "overlaps deployment command resources") {
+	if !contains(err.Error(), "workspace root overlaps deployment command resources") {
 		t.Fatalf("expected overlap error, got %v", err)
 	}
 }
