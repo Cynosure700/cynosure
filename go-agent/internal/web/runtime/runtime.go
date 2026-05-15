@@ -64,7 +64,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err != nil {
 		return storage.Message{}, err
 	}
-	loader := buildDBSkillLoader(skills)
+	loader := s.buildConversationSkillLoader(skills)
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0
@@ -146,6 +146,10 @@ func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoa
 	})
 }
 
+func (s *Service) buildConversationSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
+	return sessions.MergeSkillLoaders(s.BuiltinSkills, buildDBSkillLoader(skills))
+}
+
 func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 	entries := make(map[string]*sessions.SkillEntry, len(skills))
 	for _, skill := range skills {
@@ -155,7 +159,7 @@ func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 			Path: "db://skills/" + skill.ID,
 		}
 	}
-	loader := &sessions.SkillLoader{Skills: make(map[string]*sessions.SkillEntry)}
+	loader := sessions.NewSkillLoader()
 	loader.LoadFromEntries(entries)
 	return loader
 }
