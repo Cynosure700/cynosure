@@ -55,3 +55,54 @@ func TestCanonicalSkillName_FallsBackToDirectoryName(t *testing.T) {
 		t.Fatalf("expected directory fallback, got %q", name)
 	}
 }
+
+func TestMergeSkillLoaders_PrefersLaterLoaderOnConflict(t *testing.T) {
+	builtin := NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*SkillEntry{
+		"shared": {
+			Meta: map[string]string{"description": "builtin"},
+			Body: "builtin body",
+			Path: "builtin://shared",
+		},
+		"builtin-only": {
+			Meta: map[string]string{"description": "builtin only"},
+			Body: "builtin only body",
+			Path: "builtin://only",
+		},
+	})
+
+	user := NewSkillLoader()
+	user.LoadFromEntries(map[string]*SkillEntry{
+		"shared": {
+			Meta: map[string]string{"description": "user"},
+			Body: "user body",
+			Path: "db://shared",
+		},
+		"user-only": {
+			Meta: map[string]string{"description": "user only"},
+			Body: "user only body",
+			Path: "db://only",
+		},
+	})
+
+	merged := MergeSkillLoaders(builtin, user)
+	if len(merged.Skills) != 3 {
+		t.Fatalf("expected 3 merged skills, got %d", len(merged.Skills))
+	}
+	if got := merged.Skills["shared"].Body; got != "user body" {
+		t.Fatalf("expected later loader to win conflict, got %q", got)
+	}
+	if got := merged.Skills["builtin-only"].Body; got != "builtin only body" {
+		t.Fatalf("unexpected builtin-only body: %q", got)
+	}
+	if got := merged.Skills["user-only"].Body; got != "user only body" {
+		t.Fatalf("unexpected user-only body: %q", got)
+	}
+
+	userEntry := user.Skills["shared"]
+	mergedEntry := merged.Skills["shared"]
+	mergedEntry.Meta["description"] = "changed"
+	if userEntry.Meta["description"] != "user" {
+		t.Fatalf("merged loader should clone entries instead of mutating source")
+	}
+}

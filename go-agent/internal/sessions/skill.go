@@ -87,7 +87,48 @@ func (sl *SkillLoader) LoadFromEntries(entries map[string]*SkillEntry) {
 
 	sl.Skills = make(map[string]*SkillEntry, len(entries))
 	for name, entry := range entries {
-		sl.Skills[name] = entry
+		sl.Skills[name] = cloneSkillEntry(entry)
+	}
+}
+
+func (sl *SkillLoader) Entries() map[string]*SkillEntry {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+
+	entries := make(map[string]*SkillEntry, len(sl.Skills))
+	for name, entry := range sl.Skills {
+		entries[name] = cloneSkillEntry(entry)
+	}
+	return entries
+}
+
+func MergeSkillLoaders(loaders ...*SkillLoader) *SkillLoader {
+	merged := NewSkillLoader()
+	entries := make(map[string]*SkillEntry)
+	for _, loader := range loaders {
+		if loader == nil {
+			continue
+		}
+		for name, entry := range loader.Entries() {
+			entries[name] = entry
+		}
+	}
+	merged.LoadFromEntries(entries)
+	return merged
+}
+
+func cloneSkillEntry(entry *SkillEntry) *SkillEntry {
+	if entry == nil {
+		return nil
+	}
+	meta := make(map[string]string, len(entry.Meta))
+	for key, value := range entry.Meta {
+		meta[key] = value
+	}
+	return &SkillEntry{
+		Meta: meta,
+		Body: entry.Body,
+		Path: entry.Path,
 	}
 }
 
