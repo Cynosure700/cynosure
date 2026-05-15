@@ -18,5 +18,5 @@
 ## 4. Build packaging and verification
 
 - [x] 4.1 新增或更新标准 `build.sh`，生成包含 `output/bin` 与 `output/workspace/...` 的部署产物结构
-- [ ] 4.2 调整 `cmd/build-artifacts` 或共享构建逻辑，使其与 `build.sh` 使用一致的 workspace 目录规则
+- [x] 4.2 调整 `cmd/build-artifacts` 或共享构建逻辑，使其与 `build.sh` 使用一致的 workspace 目录规则
 - [ ] 4.3 补充测试，覆盖 workspace 目录默认值、builtin skills 加载路径、命令产物输出路径与越权拒绝场景

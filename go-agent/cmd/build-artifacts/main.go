@@ -13,8 +13,8 @@ import (
 func main() {
 	appHome := flag.String("app-home", ".", "deployment application root")
 	commandSource := flag.String("command-source", "", "source cmd directory (default: <app-home>/cmd)")
-	commandBinDir := flag.String("command-bin-dir", "", "binary output directory (default: <app-home>/workspaces/bin)")
-	commandScriptDir := flag.String("command-script-dir", "", "script asset directory (default: <app-home>/workspaces/cmd)")
+	commandBinDir := flag.String("command-bin-dir", "", "binary output directory (default: <app-home>/workspace/bin)")
+	commandScriptDir := flag.String("command-script-dir", "", "script asset directory (default: <app-home>/workspace/cmd)")
 	goBinary := flag.String("go-binary", "go", "go executable used to build commands")
 	flag.Parse()
 
@@ -29,14 +29,14 @@ func main() {
 		*commandSource = filepath.Join(resolvedAppHome, "cmd")
 	}
 	if *commandBinDir == "" {
-		*commandBinDir = filepath.Join(resolvedAppHome, "workspaces", "bin")
+		*commandBinDir = filepath.Join(resolvedAppHome, "workspace", "bin")
 	}
 	if *commandScriptDir == "" {
-		*commandScriptDir = filepath.Join(resolvedAppHome, "workspaces", "cmd")
+		*commandScriptDir = filepath.Join(resolvedAppHome, "workspace", "cmd")
 	}
 	if err := config.EnsureAppLayout(config.AppConfig{
 		AppHome:          resolvedAppHome,
-		BuiltinSkillsDir: filepath.Join(resolvedAppHome, "workspaces", "skills"),
+		BuiltinSkillsDir: filepath.Join(resolvedAppHome, "workspace", "skills"),
 		CommandBinDir:    *commandBinDir,
 		CommandScriptDir: *commandScriptDir,
 		WorkspaceRoot:    filepath.Join(resolvedAppHome, "workspace"),
