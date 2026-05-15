@@ -182,6 +182,10 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	if cfg.WorkspaceRoot != filepath.Join(root, "workspace") {
 		t.Fatalf("expected default workspace root, got %q", cfg.WorkspaceRoot)
 	}
+	expectedTools := []string{"load_skill", "bash", "read_file", "write_file", "edit_file"}
+	if !reflect.DeepEqual(cfg.WebAllowedTools, expectedTools) {
+		t.Fatalf("expected default web tools %v, got %#v", expectedTools, cfg.WebAllowedTools)
+	}
 }
 
 func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {

@@ -211,7 +211,7 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		Status:      "enabled",
 	}}}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_3", Title: "新对话"}
 	user := storage.User{ID: "usr_3", Username: "carol"}
 
@@ -297,7 +297,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
 	user := storage.User{ID: "usr_4", Username: "dave"}
 
@@ -517,7 +517,12 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/app", WorkspaceRoot: "/app/workspace", CommandBinDir: "/app/bin", CommandScriptDir: "/app/cmd"})
+	registry := NewToolRegistry(nil, config.AppConfig{
+		AppHome:          "/deploy/app",
+		WorkspaceRoot:    "/deploy/app/output/workspace",
+		CommandBinDir:    "/deploy/app/output/workspace/bin",
+		CommandScriptDir: "/deploy/app/output/workspace/cmd",
+	})
 
 	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
@@ -526,14 +531,33 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
-	if !contains(content, "<deployment-paths>") || !contains(content, "COMMAND_BIN_DIR=/app/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/app/cmd") {
+	if !contains(content, "<deployment-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/output/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/output/workspace/cmd") {
 		t.Fatalf("expected loaded skill content to include deployment paths, got %q", content)
 	}
-	if !contains(content, "WORKSPACE_ROOT=/app/workspace") {
+	if !contains(content, "WORKSPACE_ROOT=/deploy/app/output/workspace") {
 		t.Fatalf("expected loaded skill content to include workspace root, got %q", content)
 	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
+	}
+}
+
+func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.T) {
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/repo/app", WorkspaceRoot: "/repo/app/workspace"})
+
+	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !contains(content, "COMMAND_BIN_DIR=/repo/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/repo/app/workspace/cmd") {
+		t.Fatalf("expected loaded skill content to derive command paths from local workspace, got %q", content)
+	}
+	if !contains(content, "WORKSPACE_ROOT=/repo/app/workspace") {
+		t.Fatalf("expected loaded skill content to include local workspace root, got %q", content)
 	}
 }
 
