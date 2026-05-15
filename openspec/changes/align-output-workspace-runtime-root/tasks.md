@@ -1,7 +1,7 @@
 ## 1. Runtime root resolution
 
 - [x] 1.1 在 `internal/config` 中收敛 runtime workspace 解析逻辑，支持显式配置覆盖、`output/workspace` 优先和源码 `workspace` 回退
-- [ ] 1.2 让 builtin skills、command bin、command scripts 的默认目录统一从解析后的 runtime workspace 派生
+- [x] 1.2 让 builtin skills、command bin、command scripts 的默认目录统一从解析后的 runtime workspace 派生
 - [ ] 1.3 更新 `config.json` 与 `output/config.json` 的默认约定，避免继续依赖进程 cwd 推断路径
 
 ## 2. Runtime and skill loading

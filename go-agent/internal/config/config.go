@@ -95,15 +95,15 @@ func LoadWebConfig() (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", firstNonEmpty(fileCfg.BuiltinSkillsDir, filepath.Join("workspace", "skills"))))
+	builtinSkillsDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("BUILTIN_SKILLS_DIR", strings.TrimSpace(fileCfg.BuiltinSkillsDir)), "skills")
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
 	}
-	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", firstNonEmpty(fileCfg.CommandBinDir, filepath.Join("workspace", "bin"))))
+	commandBinDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_BIN_DIR", strings.TrimSpace(fileCfg.CommandBinDir)), "bin")
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command bin dir: %w", err)
 	}
-	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", firstNonEmpty(fileCfg.CommandScriptDir, filepath.Join("workspace", "cmd"))))
+	commandScriptDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_SCRIPT_DIR", strings.TrimSpace(fileCfg.CommandScriptDir)), "cmd")
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
 	}
@@ -334,6 +334,14 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 	}
 
 	return resolvePath(appHome, "workspace")
+}
+
+func resolveRuntimeAssetDir(appHome, workspaceRoot, configured, subdir string) (string, error) {
+	configured = strings.TrimSpace(configured)
+	if configured != "" {
+		return resolvePath(appHome, configured)
+	}
+	return resolvePath(workspaceRoot, subdir)
 }
 
 func workspaceExists(path string) bool {
