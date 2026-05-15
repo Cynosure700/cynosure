@@ -138,6 +138,9 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 	if cleanWorkspace != cleanBase && !strings.HasPrefix(cleanWorkspace, cleanBase+string(os.PathSeparator)) {
 		return "", fmt.Errorf("user workspace escapes workspace root")
 	}
+	if overlapsAnyPath(cleanWorkspace, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir, s.Cfg.AppHome) {
+		return "", fmt.Errorf("user workspace overlaps deployment command resources")
+	}
 	return cleanWorkspace, nil
 }
 
@@ -154,6 +157,26 @@ func workspaceDirName(userID string) string {
 			return '_'
 		}
 	}, trimmed)
+}
+
+func overlapsAnyPath(path string, others ...string) bool {
+	for _, other := range others {
+		if pathsOverlap(path, other) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathsOverlap(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+	cleanA := filepath.Clean(a)
+	cleanB := filepath.Clean(b)
+	return cleanA == cleanB || strings.HasPrefix(cleanA, cleanB+string(os.PathSeparator)) || strings.HasPrefix(cleanB, cleanA+string(os.PathSeparator))
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {

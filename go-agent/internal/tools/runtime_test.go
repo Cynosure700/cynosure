@@ -78,3 +78,14 @@ func TestSafePathFromRoot_RejectsPathEscape(t *testing.T) {
 		t.Fatalf("expected path escape to be rejected")
 	}
 }
+
+func TestHandleWrite_DoesNotTouchDeploymentCommandDir(t *testing.T) {
+	workspace := t.TempDir()
+	commandDir := filepath.Join(workspace, "..", "cmd")
+	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CommandScriptDir: commandDir})
+
+	_, err := handleWrite(ctx, map[string]any{"path": filepath.Join("..", "cmd", "script.py"), "content": "print('x')"})
+	if err == nil {
+		t.Fatalf("expected write escaping workspace to be rejected")
+	}
+}

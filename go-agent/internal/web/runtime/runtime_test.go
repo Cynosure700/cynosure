@@ -386,6 +386,20 @@ func TestResolveUserWorkspace_SeparatesDifferentUsers(t *testing.T) {
 	}
 }
 
+func TestResolveUserWorkspace_RejectsOverlapWithDeploymentResources(t *testing.T) {
+	root := t.TempDir()
+	commandBinDir := filepath.Join(root, "bin")
+	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: commandBinDir, CommandBinDir: commandBinDir}}
+
+	_, err := service.resolveUserWorkspace("usr_overlap")
+	if err == nil {
+		t.Fatalf("expected overlapping workspace and command directory to be rejected")
+	}
+	if !contains(err.Error(), "overlaps deployment command resources") {
+		t.Fatalf("expected overlap error, got %v", err)
+	}
+}
+
 func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
 	loader := sessions.NewSkillLoader()
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
