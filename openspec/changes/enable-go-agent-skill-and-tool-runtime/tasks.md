@@ -9,7 +9,7 @@
 
 - [x] 2.1 抽象组合 skill loader，合并“共享内置 skill”与“当前用户已启用的数据库 skill”
 - [x] 2.2 调整 Web runtime 的 system prompt / `load_skill` 装配逻辑，使每轮对话都能看到合并后的 skill 集合
-- [ ] 2.3 为用户自定义 skill 增加与内置 skill 的标识符冲突校验，防止 shadow builtin skill
+- [x] 2.3 为用户自定义 skill 增加与内置 skill 的标识符冲突校验，防止 shadow builtin skill
 
 ## 3. Web Tool Runtime Integration
 

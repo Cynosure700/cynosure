@@ -18,12 +18,27 @@ import (
 	"nano_cc/internal/web/storage"
 )
 
+type serverStore interface {
+	HealthCheck(ctx context.Context) error
+	RunMigrations(ctx context.Context) error
+	ListSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error)
+	CreateSkill(ctx context.Context, skill storage.Skill) error
+	GetSkillByID(ctx context.Context, skillID string) (storage.Skill, error)
+	UpdateSkill(ctx context.Context, skill storage.Skill) error
+	DeleteSkill(ctx context.Context, skillID string) error
+	ListConversationsByUser(ctx context.Context, userID string) ([]storage.Conversation, error)
+	CreateConversation(ctx context.Context, conversation storage.Conversation) error
+	GetConversationByID(ctx context.Context, conversationID string) (storage.Conversation, error)
+	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
+}
+
 type Server struct {
-	cfg         config.AppConfig
-	store       *storage.Store
-	authService *auth.Service
-	runtime     *runtime.Service
-	mux         *http.ServeMux
+	cfg           config.AppConfig
+	store         serverStore
+	authService   *auth.Service
+	runtime       *runtime.Service
+	builtinSkills *sessions.SkillLoader
+	mux           *http.ServeMux
 }
 
 func NewServer() (*Server, error) {
@@ -53,7 +68,7 @@ func NewServer() (*Server, error) {
 	if err := builtinSkills.LoadAllFromDir(cfg.BuiltinSkillsDir); err != nil {
 		return nil, fmt.Errorf("load builtin skills: %w", err)
 	}
-	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg, builtinSkills), mux: http.NewServeMux()}
+	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg, builtinSkills), builtinSkills: builtinSkills, mux: http.NewServeMux()}
 	server.routes()
 	return server, nil
 }
@@ -160,6 +175,10 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, err)
 			return
 		}
+		if err := validateNoBuiltinConflict(skill, s.builtinSkills); err != nil {
+			badRequest(w, err)
+			return
+		}
 		if err := s.store.CreateSkill(r.Context(), skill); err != nil {
 			badRequest(w, err)
 			return
@@ -201,6 +220,10 @@ func (s *Server) handleSkillByID(w http.ResponseWriter, r *http.Request) {
 		skill.Content = body.Content
 		skill.Status = normalizeSkillStatus(body.Status)
 		if err := validateSkill(skill); err != nil {
+			badRequest(w, err)
+			return
+		}
+		if err := validateNoBuiltinConflict(skill, s.builtinSkills); err != nil {
 			badRequest(w, err)
 			return
 		}
@@ -369,6 +392,16 @@ func validateSkill(skill storage.Skill) error {
 	}
 	if strings.TrimSpace(skill.Slug) == "" {
 		return fmt.Errorf("skill slug is required")
+	}
+	return nil
+}
+
+func validateNoBuiltinConflict(skill storage.Skill, builtin *sessions.SkillLoader) error {
+	if builtin == nil {
+		return nil
+	}
+	if _, exists := builtin.Entries()[skill.Slug]; exists {
+		return fmt.Errorf("skill slug conflicts with builtin skill")
 	}
 	return nil
 }
