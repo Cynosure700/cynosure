@@ -415,14 +415,14 @@ func TestResolveUserWorkspace_SharesSameDirectoryAcrossUsers(t *testing.T) {
 
 func TestResolveUserWorkspace_RejectsOverlapWithDeploymentResources(t *testing.T) {
 	root := t.TempDir()
-	commandBinDir := filepath.Join(root, "bin")
-	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: commandBinDir, CommandBinDir: commandBinDir}}
+	builtinSkillsDir := filepath.Join(root, "workspaces", "skills")
+	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: builtinSkillsDir, BuiltinSkillsDir: builtinSkillsDir}}
 
 	_, err := service.resolveUserWorkspace("usr_overlap")
 	if err == nil {
 		t.Fatalf("expected overlapping workspace and command directory to be rejected")
 	}
-	if !contains(err.Error(), "workspace root overlaps deployment command resources") {
+	if !contains(err.Error(), "workspace root overlaps readonly deployment resources") {
 		t.Fatalf("expected overlap error, got %v", err)
 	}
 }

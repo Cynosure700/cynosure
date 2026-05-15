@@ -27,7 +27,15 @@ var (
 )
 
 func InitFileLogger() error {
-	return InitFileLoggerAt("log")
+	return InitFileLoggerAt("logs")
+}
+
+func InitFileLoggerUnderAppHome(appHome string) error {
+	base := strings.TrimSpace(appHome)
+	if base == "" {
+		return InitFileLogger()
+	}
+	return InitFileLoggerAt(filepath.Join(base, "logs"))
 }
 
 func InitFileLoggerAt(dir string) error {

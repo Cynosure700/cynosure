@@ -39,7 +39,7 @@
 ### Skill 管理
 
 - 创建、编辑、启用、禁用、删除个人 Skill
-- 启动时加载 `go-agent/skills` 下的内置 Skill catalog
+- 启动时加载 `APP_HOME/workspaces/skills` 下的内置 Skill catalog
 - 运行时合并“共享内置 Skill + 当前用户已启用 Skill”
 - 内置 Skill 通过 API 以只读条目暴露，不能被用户修改或删除
 - 按用户隔离 Skill 数据
@@ -52,7 +52,7 @@
 - 浏览器端仅暴露显式允许的已注册工具
 - 默认 Web runtime 当前仅暴露 `load_skill`，可通过 `WEB_ALLOWED_TOOLS` 扩展
 - 工具默认运行在服务端配置的统一 `WORKSPACE_ROOT` 下，并拒绝越权路径
-- 部署命令产物位于只读 `bin/` 与 `cmd/` 目录，不落入用户可写 workspace
+- 部署命令产物位于 `APP_HOME/workspaces/bin` 与 `APP_HOME/workspaces/cmd` 只读目录，不落入用户可写 workspace
 - 工具调用会记录审计摘要，包括 cwd、命令产物路径、结果摘要或拒绝原因
 - 浏览器端不会访问**用户本地机器**的 shell、目录或文件；如果启用工具，访问的也是服务端隔离 workspace
 
@@ -83,7 +83,12 @@ go-agent/
 │       ├── auth/               # 注册 / 登录 / Session / JWT
 │       ├── runtime/            # Web 聊天 runtime / tool registry / SSE
 │       └── storage/            # MySQL / Redis / migrations / repository
-└── skills/                     # 平台内置 Skill catalog（所有用户共享）
+├── logs/                       # 服务日志目录
+├── workspace/                  # 服务端统一共享 workspace
+└── workspaces/
+    ├── bin/                    # 部署阶段编译后的命令产物
+    ├── cmd/                    # 部署阶段发布的脚本资源
+    └── skills/                 # 平台内置 Skill catalog（所有用户共享）
 ```
 
 前端页面位于仓库根目录下的 `web/`。
@@ -102,7 +107,7 @@ go-agent/
 
 ## 配置说明
 
-后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时把 `APP_HOME`、builtin skills 目录、命令产物目录和 workspace 根目录解析为绝对路径。
+后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时把 `APP_HOME`、builtin skills 目录、命令产物目录和 workspace 根目录解析为绝对路径；日志文件会写入 `APP_HOME/logs/`。
 
 ### `config.json` 示例
 
@@ -110,7 +115,12 @@ go-agent/
 {
   "base_url": "https://api.deepseek.com",
   "api_key": "your-api-key",
-  "model_id": "deepseek-chat"
+  "model_id": "deepseek-chat",
+  "builtin_skills_dir": "workspaces/skills",
+  "command_bin_dir": "workspaces/bin",
+  "command_script_dir": "workspaces/cmd",
+  "workspace_root": "workspace",
+  "web_allowed_tools": "load_skill"
 }
 ```
 
@@ -125,10 +135,10 @@ SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
 
-BUILTIN_SKILLS_DIR=skills
-COMMAND_BIN_DIR=bin
-COMMAND_SCRIPT_DIR=cmd
-WORKSPACE_ROOT=data/workspaces
+BUILTIN_SKILLS_DIR=workspaces/skills
+COMMAND_BIN_DIR=workspaces/bin
+COMMAND_SCRIPT_DIR=workspaces/cmd
+WORKSPACE_ROOT=workspace
 WEB_ALLOWED_TOOLS=load_skill
 
 MYSQL_HOST=127.0.0.1
@@ -149,10 +159,11 @@ SESSION_TTL_MINUTES=10080
 说明：
 
 - `APP_HOME` 默认是当前工作目录，其他路径配置会相对它解析
-- `BUILTIN_SKILLS_DIR` 默认是 `APP_HOME/skills`
-- `COMMAND_BIN_DIR` 默认是 `APP_HOME/bin`
-- `COMMAND_SCRIPT_DIR` 默认是 `APP_HOME/cmd`
-- `WORKSPACE_ROOT` 默认是 `APP_HOME/data/workspaces`，工具会以它作为服务端统一工作目录根路径
+- `BUILTIN_SKILLS_DIR` 默认是 `APP_HOME/workspaces/skills`
+- `COMMAND_BIN_DIR` 默认是 `APP_HOME/workspaces/bin`
+- `COMMAND_SCRIPT_DIR` 默认是 `APP_HOME/workspaces/cmd`
+- `WORKSPACE_ROOT` 默认是 `APP_HOME/workspace`，工具会以它作为服务端统一工作目录根路径
+- 日志默认写入 `APP_HOME/logs/session_<timestamp>.log`
 - `WEB_ALLOWED_TOOLS` 默认是 `load_skill`；只有显式允许且已注册的工具才会暴露给模型
 - 即使启用 `bash` / `read_file` / `write_file` / `edit_file`，它们访问的也是服务端 workspace，而不是用户本地电脑
 - 如果未提供 MySQL / Redis 环境变量，程序会使用代码中的默认值构造连接
@@ -170,8 +181,8 @@ go run ./cmd/build-artifacts --app-home .
 
 这一步会：
 
-- 发现 `cmd/*/main.go` 并编译到 `bin/`
-- 复制 `.py` / `.sh` 等脚本资源到发布目录
+- 发现 `cmd/*/main.go` 并编译到 `workspaces/bin/`
+- 复制 `.py` / `.sh` 等脚本资源到 `workspaces/cmd/`
 
 ### 2）启动 Go 后端（默认入口）
 
@@ -272,7 +283,7 @@ npm run dev
 - 工具调用记录按用户与会话隔离存储
 - 如果启用工具，所有用户都共享服务端配置的统一 workspace
 - 相对路径与默认 cwd 都会解析到该统一 workspace
-- 访问 workspace 外部路径或越过只读部署目录会被拒绝
+- 访问 workspace 外部路径或越过 `APP_HOME/workspaces/skills`、`APP_HOME/workspaces/bin`、`APP_HOME/workspaces/cmd` 等只读部署目录会被拒绝
 
 ### 5. 工具暴露与审计
 
@@ -337,6 +348,7 @@ npm run build
 3. 如果登录后接口仍返回 401，请检查 Cookie 是否被浏览器拦截
 4. 浏览器聊天模式不是用户本地终端代理；即使启用工具，也是在服务端隔离 workspace 中运行
 5. 如果你要让 Skill 调用部署命令，建议先执行 `go run ./cmd/build-artifacts --app-home .`
+6. 默认日志文件位于 `APP_HOME/logs/`，默认共享 workspace 位于 `APP_HOME/workspace/`
 
 ---
 

@@ -12,8 +12,8 @@ import (
 func main() {
 	appHome := flag.String("app-home", ".", "deployment application root")
 	commandSource := flag.String("command-source", "", "source cmd directory (default: <app-home>/cmd)")
-	commandBinDir := flag.String("command-bin-dir", "", "binary output directory (default: <app-home>/bin)")
-	commandScriptDir := flag.String("command-script-dir", "", "script asset directory (default: <app-home>/cmd)")
+	commandBinDir := flag.String("command-bin-dir", "", "binary output directory (default: <app-home>/workspaces/bin)")
+	commandScriptDir := flag.String("command-script-dir", "", "script asset directory (default: <app-home>/workspaces/cmd)")
 	goBinary := flag.String("go-binary", "go", "go executable used to build commands")
 	flag.Parse()
 
@@ -28,10 +28,10 @@ func main() {
 		*commandSource = filepath.Join(resolvedAppHome, "cmd")
 	}
 	if *commandBinDir == "" {
-		*commandBinDir = filepath.Join(resolvedAppHome, "bin")
+		*commandBinDir = filepath.Join(resolvedAppHome, "workspaces", "bin")
 	}
 	if *commandScriptDir == "" {
-		*commandScriptDir = filepath.Join(resolvedAppHome, "cmd")
+		*commandScriptDir = filepath.Join(resolvedAppHome, "workspaces", "cmd")
 	}
 
 	if err := deploy.BuildCommandArtifacts(deploy.BuildOptions{

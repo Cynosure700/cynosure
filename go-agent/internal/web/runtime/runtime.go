@@ -138,8 +138,8 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 		return "", fmt.Errorf("resolve workspace root: %w", err)
 	}
 	cleanBase := filepath.Clean(resolvedBase)
-	if overlapsAnyPath(cleanBase, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir, s.Cfg.AppHome) {
-		return "", fmt.Errorf("workspace root overlaps deployment command resources")
+	if overlapsAnyPath(cleanBase, s.Cfg.BuiltinSkillsDir, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir) {
+		return "", fmt.Errorf("workspace root overlaps readonly deployment resources")
 	}
 	return cleanBase, nil
 }

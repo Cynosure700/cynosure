@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -19,7 +20,14 @@ func RunREPL() {
 
 	logger.Info("nano_cc (Go) — starting up...")
 
-	if err := logger.InitFileLogger(); err != nil {
+	appHome, _ := os.Getwd()
+	if envAppHome := strings.TrimSpace(os.Getenv("APP_HOME")); envAppHome != "" {
+		appHome = envAppHome
+	}
+	if resolvedAppHome, err := filepath.Abs(appHome); err == nil {
+		appHome = filepath.Clean(resolvedAppHome)
+	}
+	if err := logger.InitFileLoggerUnderAppHome(appHome); err != nil {
 		logger.Warn(fmt.Sprintf("failed to init file logger: %v", err))
 	} else {
 		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))
@@ -38,6 +46,7 @@ func RunREPL() {
 	}
 
 	// Load persistent memory
+
 	projectMemory := sessions.LoadProjectMemory()
 	userMemory := sessions.LoadUserMemory()
 	memorySection := ""
