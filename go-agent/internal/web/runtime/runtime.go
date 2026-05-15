@@ -36,10 +36,11 @@ type Service struct {
 	Store conversationStore
 	Cfg   config.AppConfig
 	Tools *ToolRegistry
+	BuiltinSkills *sessions.SkillLoader
 }
 
-func NewService(store *storage.Store, cfg config.AppConfig) *Service {
-	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(store, cfg)}
+func NewService(store *storage.Store, cfg config.AppConfig, builtinSkills *sessions.SkillLoader) *Service {
+	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(store, cfg), BuiltinSkills: builtinSkills}
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {

@@ -12,6 +12,7 @@ import (
 
 	"nano_cc/internal/config"
 	"nano_cc/internal/logger"
+	"nano_cc/internal/sessions"
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
@@ -48,7 +49,11 @@ func NewServer() (*Server, error) {
 	} else {
 		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))
 	}
-	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg), mux: http.NewServeMux()}
+	builtinSkills := sessions.NewSkillLoader()
+	if err := builtinSkills.LoadAllFromDir(cfg.BuiltinSkillsDir); err != nil {
+		return nil, fmt.Errorf("load builtin skills: %w", err)
+	}
+	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg, builtinSkills), mux: http.NewServeMux()}
 	server.routes()
 	return server, nil
 }

@@ -85,7 +85,7 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	config.Client = llm
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{})}
+	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: nil}
 	conversation := storage.Conversation{ID: "conv_1", Title: "新对话"}
 	user := storage.User{ID: "usr_1", Username: "alice"}
 
@@ -121,7 +121,7 @@ func TestRespondToConversation_BrowserCapabilityBoundarySkipsModel(t *testing.T)
 	config.Client = llm
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{})}
+	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: nil}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
 

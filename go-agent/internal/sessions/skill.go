@@ -28,12 +28,16 @@ var Skills = &SkillLoader{Skills: make(map[string]*SkillEntry)}
 const skillsDir = "skills"
 
 func (sl *SkillLoader) LoadAll() error {
+	return sl.LoadAllFromDir(skillsDir)
+}
+
+func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.Skills = make(map[string]*SkillEntry)
 
-	err := filepath.WalkDir(skillsDir, func(fullPath string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(fullPath string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -41,7 +45,7 @@ func (sl *SkillLoader) LoadAll() error {
 			return nil
 		}
 
-		relPath, _ := filepath.Rel(skillsDir, fullPath)
+		relPath, _ := filepath.Rel(dir, fullPath)
 		name := strings.TrimSuffix(relPath, ".md")
 
 		data, err := os.ReadFile(fullPath)
@@ -65,6 +69,10 @@ func (sl *SkillLoader) LoadAll() error {
 	}
 
 	return nil
+}
+
+func NewSkillLoader() *SkillLoader {
+	return &SkillLoader{Skills: make(map[string]*SkillEntry)}
 }
 
 func (sl *SkillLoader) LoadFromEntries(entries map[string]*SkillEntry) {
