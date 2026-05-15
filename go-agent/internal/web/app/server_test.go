@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,11 +72,31 @@ func (f *fakeServerStore) ListMessagesByConversation(ctx context.Context, conver
 	return nil, nil
 }
 
+func loadWorkspaceBuiltinSkillsForTest(t *testing.T) *sessions.SkillLoader {
+	t.Helper()
+	workspaceRoot := t.TempDir()
+	skillDir := filepath.Join(workspaceRoot, "skills", "builtin-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	skillDoc := `---
+name: builtin-skill
+description: Builtin from workspace
+---
+
+Builtin body.`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillDoc), 0o644); err != nil {
+		t.Fatalf("write skill doc: %v", err)
+	}
+	loader, err := sessions.LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot)
+	if err != nil {
+		t.Fatalf("load builtin skills: %v", err)
+	}
+	return loader
+}
+
 func TestHandleSkills_RejectsBuiltinSlugConflictOnCreate(t *testing.T) {
-	builtin := sessions.NewSkillLoader()
-	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin"}, Body: "builtin body", Path: "builtin://builtin-skill"},
-	})
+	builtin := loadWorkspaceBuiltinSkillsForTest(t)
 	store := &fakeServerStore{}
 	server := &Server{store: store, builtinSkills: builtin}
 
@@ -96,10 +118,7 @@ func TestHandleSkills_RejectsBuiltinSlugConflictOnCreate(t *testing.T) {
 }
 
 func TestHandleSkillByID_RejectsBuiltinSlugConflictOnUpdate(t *testing.T) {
-	builtin := sessions.NewSkillLoader()
-	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin"}, Body: "builtin body", Path: "builtin://builtin-skill"},
-	})
+	builtin := loadWorkspaceBuiltinSkillsForTest(t)
 	store := &fakeServerStore{skillToReturn: storage.Skill{ID: "skill_1", UserID: "usr_1", Name: "Original Skill", Slug: "original-skill", Content: "content", Status: "draft"}}
 	server := &Server{store: store, builtinSkills: builtin}
 
