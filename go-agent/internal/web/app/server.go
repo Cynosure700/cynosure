@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"nano_cc/internal/config"
+	"nano_cc/internal/logger"
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
@@ -41,6 +42,11 @@ func NewServer() (*Server, error) {
 	}
 	if err := store.RunMigrations(ctx); err != nil {
 		return nil, err
+	}
+	if err := logger.InitFileLogger(); err != nil {
+		logger.Warn(fmt.Sprintf("failed to init file logger: %v", err))
+	} else {
+		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))
 	}
 	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg), mux: http.NewServeMux()}
 	server.routes()

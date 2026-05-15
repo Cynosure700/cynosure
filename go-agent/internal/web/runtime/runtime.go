@@ -13,6 +13,7 @@ import (
 
 	"nano_cc/internal/assistant"
 	"nano_cc/internal/config"
+	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
 	"nano_cc/internal/web/storage"
 )
@@ -65,14 +66,19 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	loader := buildDBSkillLoader(skills)
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
+	round := 0
 
 	for {
+		round++
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
 			Messages: messages,
 			Tools:    s.Tools.Definitions(loader),
 		}
+		reqBody, _ := json.Marshal(req)
 		resp, err := config.Client.CreateChatCompletion(ctx, req)
+		respBody, _ := json.Marshal(resp)
+		logger.LogLLMRound(round, fmt.Sprintf("web-runtime conversation=%s", conversation.ID), reqBody, respBody, err)
 		if err != nil {
 			return storage.Message{}, err
 		}

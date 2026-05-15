@@ -21,6 +21,8 @@ func RunREPL() {
 
 	if err := logger.InitFileLogger(); err != nil {
 		logger.Warn(fmt.Sprintf("failed to init file logger: %v", err))
+	} else {
+		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))
 	}
 
 	if err := sessions.Skills.LoadAll(); err != nil {

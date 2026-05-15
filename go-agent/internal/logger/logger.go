@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,25 +20,49 @@ const (
 	cyan   = "\033[36m"
 )
 
-var logFile *os.File
+var (
+	logFile     *os.File
+	logFilePath string
+	logMu       sync.Mutex
+)
 
 func InitFileLogger() error {
-	if err := os.MkdirAll("log", 0o755); err != nil {
+	return InitFileLoggerAt("log")
+}
+
+func InitFileLoggerAt(dir string) error {
+	logMu.Lock()
+	defer logMu.Unlock()
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
-	path := filepath.Join("log", fmt.Sprintf("session_%s.log", timestamp))
+	path := filepath.Join(dir, fmt.Sprintf("session_%s.log", timestamp))
 
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create log file: %w", err)
 	}
+	if logFile != nil {
+		_ = logFile.Close()
+	}
 	logFile = f
+	logFilePath = path
 	return nil
 }
 
+func LogFilePath() string {
+	logMu.Lock()
+	defer logMu.Unlock()
+	return logFilePath
+}
+
 func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err error) {
+	logMu.Lock()
+	defer logMu.Unlock()
+
 	if logFile == nil {
 		return
 	}
@@ -73,6 +98,7 @@ func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err 
 	}
 
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("=", 80))
+	_ = logFile.Sync()
 }
 
 func Info(msg string) {
