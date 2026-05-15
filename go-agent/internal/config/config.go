@@ -133,6 +133,29 @@ func LoadWebConfig() (AppConfig, error) {
 	}, nil
 }
 
+func EnsureAppLayout(cfg AppConfig) error {
+	paths := []struct {
+		label string
+		path  string
+	}{
+		{label: "app home", path: cfg.AppHome},
+		{label: "logs", path: filepath.Join(cfg.AppHome, "logs")},
+		{label: "builtin skills dir", path: cfg.BuiltinSkillsDir},
+		{label: "command bin dir", path: cfg.CommandBinDir},
+		{label: "command script dir", path: cfg.CommandScriptDir},
+		{label: "workspace root", path: cfg.WorkspaceRoot},
+	}
+	for _, item := range paths {
+		if strings.TrimSpace(item.path) == "" {
+			continue
+		}
+		if err := os.MkdirAll(item.path, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", item.label, err)
+		}
+	}
+	return nil
+}
+
 func loadLLMConfig() (Config, error) {
 	cfg := Config{
 		BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),

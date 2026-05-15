@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"nano_cc/internal/config"
 	"nano_cc/internal/deploy"
 )
 
@@ -32,6 +33,16 @@ func main() {
 	}
 	if *commandScriptDir == "" {
 		*commandScriptDir = filepath.Join(resolvedAppHome, "workspaces", "cmd")
+	}
+	if err := config.EnsureAppLayout(config.AppConfig{
+		AppHome:          resolvedAppHome,
+		BuiltinSkillsDir: filepath.Join(resolvedAppHome, "workspaces", "skills"),
+		CommandBinDir:    *commandBinDir,
+		CommandScriptDir: *commandScriptDir,
+		WorkspaceRoot:    filepath.Join(resolvedAppHome, "workspace"),
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "ensure app layout: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := deploy.BuildCommandArtifacts(deploy.BuildOptions{

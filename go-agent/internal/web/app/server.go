@@ -47,6 +47,9 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := config.EnsureAppLayout(cfg); err != nil {
+		return nil, err
+	}
 	config.InitLLM(cfg.LLM)
 	store, err := storage.NewStore(cfg)
 	if err != nil {

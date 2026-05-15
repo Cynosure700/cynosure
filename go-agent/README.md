@@ -107,7 +107,7 @@ go-agent/
 
 ## 配置说明
 
-后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时把 `APP_HOME`、builtin skills 目录、命令产物目录和 workspace 根目录解析为绝对路径；日志文件会写入 `APP_HOME/logs/`。
+后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时把 `APP_HOME`、builtin skills 目录、命令产物目录和 workspace 根目录解析为绝对路径；日志文件会写入 `APP_HOME/logs/`。无论是执行部署构建命令还是直接启动 Web 服务，程序都会自动创建这套目录结构。
 
 ### `config.json` 示例
 
@@ -183,6 +183,7 @@ go run ./cmd/build-artifacts --app-home .
 
 - 发现 `cmd/*/main.go` 并编译到 `workspaces/bin/`
 - 复制 `.py` / `.sh` 等脚本资源到 `workspaces/cmd/`
+- 自动创建 `APP_HOME/logs/`、`APP_HOME/workspace/`、`APP_HOME/workspaces/{skills,bin,cmd}/`
 
 ### 2）启动 Go 后端（默认入口）
 
@@ -190,6 +191,8 @@ go run ./cmd/build-artifacts --app-home .
 cd go-agent
 go run .
 ```
+
+启动时也会自动补齐 `APP_HOME/logs/`、`APP_HOME/workspace/`、`APP_HOME/workspaces/{skills,bin,cmd}/`。
 
 也可以使用备用入口：
 

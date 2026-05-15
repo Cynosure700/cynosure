@@ -183,3 +183,36 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 		t.Fatalf("expected default workspace root, got %q", cfg.WorkspaceRoot)
 	}
 }
+
+func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
+	root := t.TempDir()
+	cfg := AppConfig{
+		AppHome:          root,
+		BuiltinSkillsDir: filepath.Join(root, "workspaces", "skills"),
+		CommandBinDir:    filepath.Join(root, "workspaces", "bin"),
+		CommandScriptDir: filepath.Join(root, "workspaces", "cmd"),
+		WorkspaceRoot:    filepath.Join(root, "workspace"),
+	}
+
+	if err := EnsureAppLayout(cfg); err != nil {
+		t.Fatalf("ensure app layout: %v", err)
+	}
+
+	paths := []string{
+		root,
+		filepath.Join(root, "logs"),
+		filepath.Join(root, "workspaces", "skills"),
+		filepath.Join(root, "workspaces", "bin"),
+		filepath.Join(root, "workspaces", "cmd"),
+		filepath.Join(root, "workspace"),
+	}
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("expected %q to exist: %v", path, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("expected %q to be a directory", path)
+		}
+	}
+}
