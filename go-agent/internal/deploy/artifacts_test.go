@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,73 @@ func TestCopyScriptAssets(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(targetRoot, "helpers", "ignore.go")); !os.IsNotExist(err) {
 		t.Fatalf("go source should not be copied as a script asset")
+	}
+}
+
+func TestBuildCommandArtifacts_BuildsCommandsAndCopiesScripts(t *testing.T) {
+	appHome := t.TempDir()
+	commandSource := filepath.Join(appHome, "cmd")
+	if err := os.MkdirAll(filepath.Join(commandSource, "demo"), 0o755); err != nil {
+		t.Fatalf("mkdir demo command: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(commandSource, "demo", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(commandSource, "helper.py"), []byte("print('ok')\n"), 0o755); err != nil {
+		t.Fatalf("write script asset: %v", err)
+	}
+
+	logPath := filepath.Join(appHome, "build.log")
+	fakeGo := filepath.Join(appHome, "fake-go.sh")
+	fakeGoScript := strings.Join([]string{
+		"#!/bin/sh",
+		"set -eu",
+		"if [ \"$1\" != \"build\" ] || [ \"$2\" != \"-o\" ]; then",
+		"  exit 99",
+		"fi",
+		"output=\"$3\"",
+		"pkg=\"$4\"",
+		"printf '%s|%s\\n' \"$PWD\" \"$pkg\" > \"$BUILD_LOG\"",
+		"printf 'binary for %s\\n' \"$pkg\" > \"$output\"",
+	}, "\n")
+	if err := os.WriteFile(fakeGo, []byte(fakeGoScript), 0o755); err != nil {
+		t.Fatalf("write fake go binary: %v", err)
+	}
+	t.Setenv("BUILD_LOG", logPath)
+
+	binDir := filepath.Join(appHome, "bin")
+	scriptDir := filepath.Join(appHome, "runtime-scripts")
+	if err := BuildCommandArtifacts(BuildOptions{
+		AppHome:          appHome,
+		CommandSource:    commandSource,
+		CommandBinDir:    binDir,
+		CommandScriptDir: scriptDir,
+		GoBinary:         fakeGo,
+	}); err != nil {
+		t.Fatalf("build command artifacts: %v", err)
+	}
+
+	binaryData, err := os.ReadFile(filepath.Join(binDir, "demo"))
+	if err != nil {
+		t.Fatalf("read built binary: %v", err)
+	}
+	if string(binaryData) != "binary for ./cmd/demo\n" {
+		t.Fatalf("unexpected built binary contents: %q", string(binaryData))
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read build log: %v", err)
+	}
+	if string(logData) != appHome+"|./cmd/demo\n" {
+		t.Fatalf("expected go build to run from app home with cmd package path, got %q", string(logData))
+	}
+
+	scriptData, err := os.ReadFile(filepath.Join(scriptDir, "helper.py"))
+	if err != nil {
+		t.Fatalf("read copied helper script: %v", err)
+	}
+	if string(scriptData) != "print('ok')\n" {
+		t.Fatalf("unexpected copied script contents: %q", string(scriptData))
 	}
 }

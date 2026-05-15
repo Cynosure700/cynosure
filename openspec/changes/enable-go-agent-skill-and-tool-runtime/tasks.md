@@ -29,4 +29,4 @@
 
 - [x] 5.1 扩展工具审计记录，保存 user、conversation、tool、resolved cwd、命令产物路径、状态与拒绝原因/结果摘要
 - [x] 5.2 调整 skill 管理接口或服务层校验，明确 builtin skill 只读且不能通过用户 API 修改
-- [ ] 5.3 补充测试，覆盖内置 skill 加载、内置+用户 skill 合并、工具白名单、workspace 隔离、命令产物构建与审计记录
+- [x] 5.3 补充测试，覆盖内置 skill 加载、内置+用户 skill 合并、工具白名单、workspace 隔离、命令产物构建与审计记录
