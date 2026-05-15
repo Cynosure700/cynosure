@@ -7,7 +7,7 @@
 ## 2. Runtime and skill loading
 
 - [x] 2.1 更新 `internal/web/app/server.go`，在启动阶段使用解析后的 runtime workspace 加载 builtin skills
-- [ ] 2.2 更新 `internal/web/runtime` 的环境注入逻辑，确保会话执行、tool runtime env 和审计字段共享同一 runtime root
+- [x] 2.2 更新 `internal/web/runtime` 的环境注入逻辑，确保会话执行、tool runtime env 和审计字段共享同一 runtime root
 - [ ] 2.3 校正 skill 与命令路径注入，确保部署态命中 `output/workspace/*`，本地态命中源码 `workspace/*`
 
 ## 3. Tool execution boundary
