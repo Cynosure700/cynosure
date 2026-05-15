@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"nano_cc/internal/safety"
@@ -88,4 +89,93 @@ func TestHandleWrite_DoesNotTouchDeploymentCommandDir(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected write escaping workspace to be rejected")
 	}
+}
+
+func TestValidatedWorkspaceRootFromContext_RequiresWorkspaceRoot(t *testing.T) {
+	_, err := validatedWorkspaceRootFromContext(context.Background())
+	if err == nil {
+		t.Fatalf("expected missing workspace root to be rejected")
+	}
+	if !strings.Contains(err.Error(), "workspace root is required") {
+		t.Fatalf("expected missing workspace error, got %v", err)
+	}
+}
+
+func TestValidatedWorkspaceRootFromContext_RejectsNonDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspace.txt")
+	if err := os.WriteFile(root, []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	_, err := validatedWorkspaceRootFromContext(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}))
+	if err == nil {
+		t.Fatalf("expected non-directory workspace root to be rejected")
+	}
+	if !strings.Contains(err.Error(), "workspace root is not a directory") {
+		t.Fatalf("expected non-directory workspace error, got %v", err)
+	}
+}
+
+func TestHandlers_RejectInvalidWorkspaceRoot(t *testing.T) {
+	handlers := []struct {
+		name string
+		fn   ToolHandler
+		args map[string]any
+	}{
+		{name: "bash", fn: handleBash, args: map[string]any{"command": "pwd"}},
+		{name: "read", fn: handleRead, args: map[string]any{"path": "note.txt"}},
+		{name: "write", fn: handleWrite, args: map[string]any{"path": "note.txt", "content": "hello"}},
+		{name: "edit", fn: handleEdit, args: map[string]any{"path": "note.txt", "old_text": "before", "new_text": "after"}},
+	}
+
+	t.Run("missing workspace root", func(t *testing.T) {
+		for _, tc := range handlers {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := tc.fn(context.Background(), tc.args)
+				if err == nil {
+					t.Fatalf("expected missing workspace root to be rejected")
+				}
+				if !strings.Contains(err.Error(), "workspace root is required") {
+					t.Fatalf("expected missing workspace error, got %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("non-directory workspace root", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "workspace.txt")
+		if err := os.WriteFile(root, []byte("not a dir"), 0o644); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+
+		for _, tc := range handlers {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root})
+				_, err := tc.fn(ctx, tc.args)
+				if err == nil {
+					t.Fatalf("expected non-directory workspace root to be rejected")
+				}
+				if !strings.Contains(err.Error(), "workspace root is not a directory") {
+					t.Fatalf("expected non-directory workspace error, got %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("unavailable workspace root", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "missing")
+
+		for _, tc := range handlers {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root})
+				_, err := tc.fn(ctx, tc.args)
+				if err == nil {
+					t.Fatalf("expected unavailable workspace root to be rejected")
+				}
+				if !strings.Contains(err.Error(), "workspace root is unavailable") {
+					t.Fatalf("expected unavailable workspace error, got %v", err)
+				}
+			})
+		}
+	})
 }

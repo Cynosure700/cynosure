@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -54,12 +57,35 @@ func workspaceRootFromContext(ctx context.Context) string {
 	return env.WorkspaceRoot
 }
 
+func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {
+	root := strings.TrimSpace(workspaceRootFromContext(ctx))
+	if root == "" {
+		return "", fmt.Errorf("workspace root is required")
+	}
+	resolved, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root: %w", err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("workspace root is unavailable: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workspace root is not a directory")
+	}
+	return filepath.Clean(resolved), nil
+}
+
 func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	cmd, _ := args["command"].(string)
 	if cmd == "" {
 		return "", fmt.Errorf("command is required")
 	}
-	return RunBashInDir(cmd, workspaceRootFromContext(ctx))
+	root, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return RunBashInDir(cmd, root)
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {
@@ -71,7 +97,11 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	return RunReadFromRoot(workspaceRootFromContext(ctx), path, limit)
+	root, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return RunReadFromRoot(root, path, limit)
 }
 
 func handleWrite(ctx context.Context, args map[string]any) (string, error) {
@@ -80,7 +110,11 @@ func handleWrite(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	return RunWriteFromRoot(workspaceRootFromContext(ctx), path, content)
+	root, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return RunWriteFromRoot(root, path, content)
 }
 
 func handleEdit(ctx context.Context, args map[string]any) (string, error) {
@@ -90,7 +124,11 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	return RunEditFromRoot(workspaceRootFromContext(ctx), path, oldText, newText)
+	root, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return RunEditFromRoot(root, path, oldText, newText)
 }
 
 func handleTodo(ctx context.Context, args map[string]any) (string, error) {
