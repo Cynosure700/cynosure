@@ -458,7 +458,7 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/app", CommandBinDir: "/app/bin", CommandScriptDir: "/app/cmd"})
+	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/app", WorkspaceRoot: "/app/workspace", CommandBinDir: "/app/bin", CommandScriptDir: "/app/cmd"})
 
 	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
@@ -469,6 +469,9 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	}
 	if !contains(content, "<deployment-paths>") || !contains(content, "COMMAND_BIN_DIR=/app/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/app/cmd") {
 		t.Fatalf("expected loaded skill content to include deployment paths, got %q", content)
+	}
+	if !contains(content, "WORKSPACE_ROOT=/app/workspace") {
+		t.Fatalf("expected loaded skill content to include workspace root, got %q", content)
 	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
@@ -489,6 +492,7 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 
 	registry := NewToolRegistry(nil, config.AppConfig{
 		AppHome:          "/deploy/app",
+		WorkspaceRoot:    "/deploy/app/workspace",
 		CommandBinDir:    "/deploy/app/bin",
 		CommandScriptDir: "/deploy/app/cmd",
 		WebAllowedTools:  []string{"bash"},
@@ -500,6 +504,28 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 	}
 	if result != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
 		t.Fatalf("expected runtime env in handler context, got %q", result)
+	}
+}
+
+func TestToolRegistryExecute_UsesWorkspaceDerivedCommandDirsWhenUnset(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.WorkspaceRoot + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
+	}
+
+	registry := NewToolRegistry(nil, config.AppConfig{WorkspaceRoot: "/deploy/app/workspace", WebAllowedTools: []string{"bash"}})
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "/deploy/app/workspace|/deploy/app/workspace/bin|/deploy/app/workspace/cmd" {
+		t.Fatalf("expected workspace-derived runtime env, got %q", result)
 	}
 }
 

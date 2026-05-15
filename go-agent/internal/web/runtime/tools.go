@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -77,7 +78,7 @@ func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName 
 	if err != nil {
 		return "", err
 	}
-	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{}))
+	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{WorkspaceRoot: r.cfg.WorkspaceRoot}))
 	if envNote == "" {
 		return content, nil
 	}
@@ -85,11 +86,23 @@ func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName 
 }
 
 func (r *ToolRegistry) runtimeEnv(toolCtx ToolContext) agenttools.RuntimeEnv {
+	workspaceRoot := strings.TrimSpace(toolCtx.WorkspaceRoot)
+	if workspaceRoot == "" {
+		workspaceRoot = strings.TrimSpace(r.cfg.WorkspaceRoot)
+	}
+	commandBinDir := strings.TrimSpace(r.cfg.CommandBinDir)
+	if commandBinDir == "" && workspaceRoot != "" {
+		commandBinDir = filepath.Join(workspaceRoot, "bin")
+	}
+	commandScriptDir := strings.TrimSpace(r.cfg.CommandScriptDir)
+	if commandScriptDir == "" && workspaceRoot != "" {
+		commandScriptDir = filepath.Join(workspaceRoot, "cmd")
+	}
 	return agenttools.RuntimeEnv{
 		AppHome:          r.cfg.AppHome,
-		CommandBinDir:    r.cfg.CommandBinDir,
-		CommandScriptDir: r.cfg.CommandScriptDir,
-		WorkspaceRoot:    toolCtx.WorkspaceRoot,
+		CommandBinDir:    commandBinDir,
+		CommandScriptDir: commandScriptDir,
+		WorkspaceRoot:    workspaceRoot,
 	}
 }
 
