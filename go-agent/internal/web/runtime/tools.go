@@ -10,6 +10,7 @@ import (
 
 	"nano_cc/internal/config"
 	"nano_cc/internal/sessions"
+	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
@@ -29,9 +30,17 @@ func NewToolRegistry(store *storage.Store, cfg config.AppConfig) *ToolRegistry {
 }
 
 func (r *ToolRegistry) Definitions(loader *sessions.SkillLoader) []openai.Tool {
-	toolDefs := []openai.Tool{}
-	if loader != nil && loader.GetDescriptions() != "" {
-		toolDefs = append(toolDefs, toolDef("load_skill", "Load one of the current user's enabled capabilities", map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}))
+	allowed := r.allowedToolNames()
+	toolDefs := make([]openai.Tool, 0, len(allowed))
+	for _, name := range allowed {
+		if name == "load_skill" && (loader == nil || loader.GetDescriptions() == "") {
+			continue
+		}
+		def, ok := lookupRegisteredTool(name)
+		if !ok {
+			continue
+		}
+		toolDefs = append(toolDefs, def)
 	}
 	return toolDefs
 }
@@ -51,33 +60,37 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		skillName, _ := args["name"].(string)
 		return toolCtx.Loader.GetContent(skillName)
 	}
-	return "", fmt.Errorf("tool %s is not available in browser chat", name)
+	handler, ok := agenttools.Handlers[name]
+	if !ok || handler == nil {
+		return "", fmt.Errorf("tool %s has no handler", name)
+	}
+	return handler(ctx, args)
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
-	allowed := []string{"load_skill"}
-	for _, item := range allowed {
-		if item == name {
+	for _, toolName := range r.allowedToolNames() {
+		if toolName == name {
 			return true
 		}
 	}
 	return false
 }
 
-func toolDef(name, desc string, params any) openai.Tool {
-	return openai.Tool{Type: "function", Function: &openai.FunctionDefinition{Name: name, Description: desc, Parameters: mustMarshal(params)}}
+func (r *ToolRegistry) allowedToolNames() []string {
+	return []string{"load_skill"}
 }
 
-func mustMarshal(v any) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
+func lookupRegisteredTool(name string) (openai.Tool, bool) {
+	for _, tool := range agenttools.ChildToolDefs {
+		if tool.Function != nil && tool.Function.Name == name {
+			return tool, true
+		}
 	}
-	return data
+	return openai.Tool{}, false
 }
 
 func RegisteredTools() []string {
-	tools := []string{"load_skill"}
-	sort.Strings(tools)
-	return tools
+	names := []string{"load_skill"}
+	sort.Strings(names)
+	return names
 }

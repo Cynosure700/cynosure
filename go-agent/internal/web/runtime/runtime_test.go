@@ -9,6 +9,7 @@ import (
 
 	"nano_cc/internal/config"
 	"nano_cc/internal/sessions"
+	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
@@ -194,6 +195,58 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 	}
 	if !contains(systemPrompt, "- user-skill: User description") {
 		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
+	}
+}
+
+func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+	registry := NewToolRegistry(nil, config.AppConfig{})
+
+	defs := registry.Definitions(loader)
+	if len(defs) != 1 {
+		t.Fatalf("expected one web tool definition, got %d", len(defs))
+	}
+	expected, ok := lookupRegisteredTool("load_skill")
+	if !ok {
+		t.Fatalf("expected load_skill to exist in registered tool definitions")
+	}
+	if defs[0].Function == nil || expected.Function == nil {
+		t.Fatalf("expected function definitions to be present")
+	}
+	if defs[0].Function.Name != expected.Function.Name {
+		t.Fatalf("expected tool name %q, got %q", expected.Function.Name, defs[0].Function.Name)
+	}
+	if defs[0].Function.Description != expected.Function.Description {
+		t.Fatalf("expected tool description %q, got %q", expected.Function.Description, defs[0].Function.Description)
+	}
+}
+
+func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+	registry := NewToolRegistry(nil, config.AppConfig{})
+
+	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
+		t.Fatalf("expected loaded skill content, got %q", content)
+	}
+	if _, ok := agenttools.Handlers["load_skill"]; !ok {
+		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
+	}
+}
+
+func TestRegisteredTools_UsesCurrentWebAllowList(t *testing.T) {
+	tools := RegisteredTools()
+	if len(tools) != 1 || tools[0] != "load_skill" {
+		t.Fatalf("expected only load_skill to be registered for web runtime, got %v", tools)
 	}
 }
 
