@@ -98,6 +98,51 @@ func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
 	}
 }
 
+func TestHandleRead_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+
+	_, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside})
+	if err == nil {
+		t.Fatalf("expected absolute path outside workspace to be rejected")
+	}
+	if !strings.Contains(err.Error(), "path escapes workspace") {
+		t.Fatalf("expected workspace escape error, got %v", err)
+	}
+}
+
+func TestHandleWrite_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+
+	_, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside, "content": "blocked"})
+	if err == nil {
+		t.Fatalf("expected absolute path outside workspace to be rejected")
+	}
+	if !strings.Contains(err.Error(), "path escapes workspace") {
+		t.Fatalf("expected workspace escape error, got %v", err)
+	}
+}
+
+func TestHandleEdit_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("before"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+
+	_, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside, "old_text": "before", "new_text": "after"})
+	if err == nil {
+		t.Fatalf("expected absolute path outside workspace to be rejected")
+	}
+	if !strings.Contains(err.Error(), "path escapes workspace") {
+		t.Fatalf("expected workspace escape error, got %v", err)
+	}
+}
+
 func TestSafePathFromRoot_RejectsPathEscape(t *testing.T) {
 	root := t.TempDir()
 	_, err := safety.SafePathFromRoot(root, "../escape.txt")
