@@ -209,7 +209,7 @@ export function App() {
                     <div className="section-title"><h2>辅助面板</h2></div>
                     <div className="secondary-buttons">
                         <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
-                        <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>运行详情</button>
+                        <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
                     </div>
                     <p className="muted">这些内容默认收起，只在你需要时再展开查看。</p>
                 </section>
@@ -224,7 +224,7 @@ export function App() {
                         </div>
                         <div className="panel-actions">
                             <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
-                            <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>详情</button>
+                            <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
                         </div>
                     </div>
                     <div className="messages">
@@ -259,11 +259,11 @@ export function App() {
                         {sidePanel === "details" ? (
                             <div className="panel-box">
                                 <div className="section-title">
-                                    <h3>运行详情</h3>
+                                    <h3>工具调用</h3>
                                     <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                 </div>
                                 <div className="tool-events">
-                                    {toolEvents.length === 0 ? <div className="muted">这轮对话还没有额外运行详情</div> : toolEvents.map((event, index) => (
+                                    {toolEvents.length === 0 ? <div className="muted">这轮对话还没有工具调用</div> : toolEvents.map((event, index) => (
                                         <div key={`${event.name}-${index}`} className="tool-event">
                                             <strong>{event.name}</strong>
                                             <span className={`status ${event.status}`}>{event.status}</span>
