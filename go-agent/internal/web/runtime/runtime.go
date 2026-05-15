@@ -42,8 +42,16 @@ type Service struct {
 }
 
 type toolExecutionOutcome struct {
-	Status string `json:"status"`
-	Result string `json:"result"`
+	Status string             `json:"status"`
+	Result string             `json:"result"`
+	Audit  toolExecutionAudit `json:"-"`
+}
+
+type toolExecutionAudit struct {
+	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
+	CommandArtifactPath string `json:"command_artifact_path,omitempty"`
+	OutcomeSummary      string `json:"outcome_summary,omitempty"`
+	DenialReason        string `json:"denial_reason,omitempty"`
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig, builtinSkills *sessions.SkillLoader) *Service {
@@ -107,7 +115,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 
 		for _, tc := range msg.ToolCalls {
 			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, WorkspaceRoot: workspaceRoot}, tc.Function.Name, tc.Function.Arguments)
-			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: truncate(outcome.Result, 500)})
+			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
 			}
@@ -180,11 +188,17 @@ func pathsOverlap(a, b string) bool {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
+	audit := toolExecutionAudit{
+		ResolvedCWD:         strings.TrimSpace(toolCtx.WorkspaceRoot),
+		CommandArtifactPath: resolveCommandArtifactPath(name, rawArgs, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir),
+	}
 	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
-		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err)}
+		audit.DenialReason = err.Error()
+		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
-	return toolExecutionOutcome{Status: "success", Result: result}
+	audit.OutcomeSummary = truncate(result, 500)
+	return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
 }
 
 func (o toolExecutionOutcome) MessageContent() string {
@@ -193,6 +207,55 @@ func (o toolExecutionOutcome) MessageContent() string {
 		return fmt.Sprintf(`{"status":%q,"result":%q}`, o.Status, o.Result)
 	}
 	return string(data)
+}
+
+func (o toolExecutionOutcome) AuditSummary() string {
+	data, err := json.Marshal(o.Audit)
+	if err != nil {
+		return fmt.Sprintf(`{"resolved_cwd":%q,"command_artifact_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
+			o.Audit.ResolvedCWD,
+			o.Audit.CommandArtifactPath,
+			o.Audit.OutcomeSummary,
+			o.Audit.DenialReason,
+		)
+	}
+	return string(data)
+}
+
+func resolveCommandArtifactPath(toolName, rawArgs string, roots ...string) string {
+	if toolName != "bash" {
+		return ""
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
+		return ""
+	}
+	command, _ := args["command"].(string)
+	for _, token := range strings.Fields(command) {
+		candidate := strings.Trim(token, "\"'`;,()[]{}")
+		if candidate == "" || !filepath.IsAbs(candidate) {
+			continue
+		}
+		resolved, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		cleanResolved := filepath.Clean(resolved)
+		for _, root := range roots {
+			if root == "" {
+				continue
+			}
+			resolvedRoot, err := filepath.Abs(root)
+			if err != nil {
+				continue
+			}
+			cleanRoot := filepath.Clean(resolvedRoot)
+			if cleanResolved == cleanRoot || strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
+				return cleanResolved
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {

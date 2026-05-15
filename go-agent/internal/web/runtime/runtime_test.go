@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -268,6 +269,19 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	if store.toolCalls[0].Status != "success" {
 		t.Fatalf("expected tool call status success, got %q", store.toolCalls[0].Status)
 	}
+	var audit toolExecutionAudit
+	if err := json.Unmarshal([]byte(store.toolCalls[0].Summary), &audit); err != nil {
+		t.Fatalf("expected tool call summary to be audit JSON, got error: %v, content: %q", err, store.toolCalls[0].Summary)
+	}
+	if audit.ResolvedCWD == "" || !strings.HasPrefix(audit.ResolvedCWD, cfg.WorkspaceRoot) {
+		t.Fatalf("expected audit resolved cwd under workspace root %q, got %q", cfg.WorkspaceRoot, audit.ResolvedCWD)
+	}
+	if audit.OutcomeSummary == "" || !contains(audit.OutcomeSummary, "<skill name=\"builtin-skill\">") {
+		t.Fatalf("expected audit outcome summary to include tool result, got %#v", audit)
+	}
+	if audit.DenialReason != "" {
+		t.Fatalf("expected no denial reason for successful tool call, got %#v", audit)
+	}
 	toolMessage := findToolMessage(t, llm.reqs[1].Messages)
 	var outcome toolExecutionOutcome
 	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
@@ -334,6 +348,19 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	}
 	if store.toolCalls[0].Status != "rejected" {
 		t.Fatalf("expected tool call status rejected, got %q", store.toolCalls[0].Status)
+	}
+	var audit toolExecutionAudit
+	if err := json.Unmarshal([]byte(store.toolCalls[0].Summary), &audit); err != nil {
+		t.Fatalf("expected tool call summary to be audit JSON, got error: %v, content: %q", err, store.toolCalls[0].Summary)
+	}
+	if audit.ResolvedCWD == "" || !strings.HasPrefix(audit.ResolvedCWD, cfg.WorkspaceRoot) {
+		t.Fatalf("expected audit resolved cwd under workspace root %q, got %q", cfg.WorkspaceRoot, audit.ResolvedCWD)
+	}
+	if audit.DenialReason == "" || !contains(audit.DenialReason, "unknown skill \"missing-skill\"") {
+		t.Fatalf("expected audit denial reason to include tool error, got %#v", audit)
+	}
+	if audit.OutcomeSummary != "" {
+		t.Fatalf("expected no outcome summary for rejected tool call, got %#v", audit)
 	}
 	toolMessage := findToolMessage(t, llm.reqs[1].Messages)
 	var outcome toolExecutionOutcome
@@ -509,6 +536,26 @@ func TestRegisteredTools_UsesConfiguredWebAllowList(t *testing.T) {
 	tools := RegisteredTools(config.AppConfig{WebAllowedTools: []string{"load_skill", "missing_tool", "load_skill"}})
 	if len(tools) != 1 || tools[0] != "load_skill" {
 		t.Fatalf("expected configured allowlist to be filtered to registered tools, got %v", tools)
+	}
+}
+
+func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	script := filepath.Join(binDir, "helper")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatalf("write helper script: %v", err)
+	}
+
+	cfg := config.AppConfig{CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: filepath.Join(root, "workspace")}, "bash", `{"command":"`+script+` --flag"}`)
+
+	if outcome.Audit.CommandArtifactPath != script {
+		t.Fatalf("expected audit command artifact path %q, got %#v", script, outcome.Audit)
 	}
 }
 
