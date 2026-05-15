@@ -56,6 +56,35 @@ func TestCanonicalSkillName_FallsBackToDirectoryName(t *testing.T) {
 	}
 }
 
+func TestLoadBuiltinSkillsFromWorkspaceRoot_LoadsWorkspaceSkillsDirectory(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	skillDir := filepath.Join(workspaceRoot, "skills", "workspace-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	skillDoc := `---
+name: workspace-skill
+description: Loaded from workspace root
+---
+
+Do workspace thing.`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillDoc), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	loader, err := LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot)
+	if err != nil {
+		t.Fatalf("load builtin skills from workspace root: %v", err)
+	}
+	entry, ok := loader.Skills["workspace-skill"]
+	if !ok {
+		t.Fatalf("expected workspace skill to be loaded")
+	}
+	if got := entry.Meta["description"]; got != "Loaded from workspace root" {
+		t.Fatalf("unexpected description: %q", got)
+	}
+}
+
 func TestMergeSkillLoaders_PrefersLaterLoaderOnConflict(t *testing.T) {
 	builtin := NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*SkillEntry{

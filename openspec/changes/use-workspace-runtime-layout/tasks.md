@@ -5,7 +5,7 @@
 
 ## 2. Runtime skill and command loading
 
-- [ ] 2.1 更新内置 skill 加载逻辑，使 Web runtime 在初始化时从 `workspace/skills` 扫描共享 skills
+- [x] 2.1 更新内置 skill 加载逻辑，使 Web runtime 在初始化时从 `workspace/skills` 扫描共享 skills
 - [ ] 2.2 更新 runtime 环境注入逻辑，使工具与 skill 能稳定解析 `workspace/bin` 和 `workspace/cmd` 路径
 - [ ] 2.3 为用户自定义 skill 与 builtin skill 的标识符冲突增加校验，避免覆盖 `workspace/skills` 中的部署技能
 

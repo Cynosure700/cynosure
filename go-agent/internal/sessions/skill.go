@@ -74,6 +74,18 @@ func NewSkillLoader() *SkillLoader {
 	return &SkillLoader{Skills: make(map[string]*SkillEntry)}
 }
 
+func LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot string) (*SkillLoader, error) {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	if workspaceRoot == "" {
+		return nil, fmt.Errorf("workspace root is required")
+	}
+	loader := NewSkillLoader()
+	if err := loader.LoadAllFromDir(filepath.Join(workspaceRoot, skillsDir)); err != nil {
+		return nil, err
+	}
+	return loader, nil
+}
+
 func canonicalSkillName(fullPath string, meta map[string]string) string {
 	if name := strings.TrimSpace(meta["name"]); name != "" {
 		return name

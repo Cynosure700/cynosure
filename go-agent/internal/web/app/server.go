@@ -71,8 +71,8 @@ func NewServer() (*Server, error) {
 	} else {
 		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))
 	}
-	builtinSkills := sessions.NewSkillLoader()
-	if err := builtinSkills.LoadAllFromDir(cfg.BuiltinSkillsDir); err != nil {
+	builtinSkills, err := sessions.LoadBuiltinSkillsFromWorkspaceRoot(cfg.WorkspaceRoot)
+	if err != nil {
 		return nil, fmt.Errorf("load builtin skills: %w", err)
 	}
 	server := &Server{cfg: cfg, store: store, authService: auth.NewService(store, cfg), runtime: runtime.NewService(store, cfg, builtinSkills), builtinSkills: builtinSkills, mux: http.NewServeMux()}
