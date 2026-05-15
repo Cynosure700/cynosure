@@ -766,6 +766,44 @@ func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T
 	}
 }
 
+func TestExecuteToolCall_AuditCapturesDeploymentWorkspaceResolution(t *testing.T) {
+	appHome := t.TempDir()
+	workspace := filepath.Join(appHome, "output", "workspace")
+	binDir := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create deployment bin dir: %v", err)
+	}
+	command := filepath.Join(binDir, "helper")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\npwd\n"), 0o755); err != nil {
+		t.Fatalf("write deployment helper: %v", err)
+	}
+
+	cfg := config.AppConfig{
+		AppHome:       appHome,
+		WorkspaceRoot: workspace,
+		CommandBinDir: binDir,
+		WebAllowedTools: []string{"bash"},
+	}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+
+	if outcome.Status != "success" {
+		t.Fatalf("expected successful outcome, got %#v", outcome)
+	}
+	if filepath.Clean(outcome.Result) != filepath.Clean(workspace) {
+		t.Fatalf("expected command to run in deployment workspace %q, got %#v", workspace, outcome)
+	}
+	if outcome.Audit.ResolvedCWD != workspace {
+		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
+	}
+	if outcome.Audit.CommandArtifactPath != command {
+		t.Fatalf("expected audit command artifact path %q, got %#v", command, outcome.Audit)
+	}
+	if outcome.Audit.CommandArtifactSource != "deployment" {
+		t.Fatalf("expected deployment artifact source, got %#v", outcome.Audit)
+	}
+}
+
 func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) openai.ChatCompletionMessage {
 	t.Helper()
 	for _, message := range messages {
