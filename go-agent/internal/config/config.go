@@ -18,6 +18,16 @@ type Config struct {
 	ModelID string `json:"model_id"`
 }
 
+type fileConfig struct {
+	Config
+	AppHome          string `json:"app_home"`
+	BuiltinSkillsDir string `json:"builtin_skills_dir"`
+	CommandBinDir    string `json:"command_bin_dir"`
+	CommandScriptDir string `json:"command_script_dir"`
+	WorkspaceRoot    string `json:"workspace_root"`
+	WebAllowedTools  string `json:"web_allowed_tools"`
+}
+
 type AppConfig struct {
 	LLM               Config
 	ServerAddr        string
@@ -66,7 +76,12 @@ func InitLLM(cfg Config) {
 }
 
 func LoadWebConfig() (AppConfig, error) {
-	appHome, err := resolveAppHome()
+	fileCfg, err := loadConfigFile()
+	if err != nil && !os.IsNotExist(err) {
+		return AppConfig{}, err
+	}
+
+	appHome, err := resolveAppHome(fileCfg)
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -76,19 +91,19 @@ func LoadWebConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 
-	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", "skills"))
+	builtinSkillsDir, err := resolvePath(appHome, getenv("BUILTIN_SKILLS_DIR", firstNonEmpty(fileCfg.BuiltinSkillsDir, "skills")))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
 	}
-	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", filepath.Join("bin")))
+	commandBinDir, err := resolvePath(appHome, getenv("COMMAND_BIN_DIR", firstNonEmpty(fileCfg.CommandBinDir, filepath.Join("bin"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command bin dir: %w", err)
 	}
-	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", filepath.Join("cmd")))
+	commandScriptDir, err := resolvePath(appHome, getenv("COMMAND_SCRIPT_DIR", firstNonEmpty(fileCfg.CommandScriptDir, filepath.Join("cmd"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
 	}
-	workspaceRoot, err := resolvePath(appHome, getenv("WORKSPACE_ROOT", filepath.Join("data", "workspaces")))
+	workspaceRoot, err := resolvePath(appHome, getenv("WORKSPACE_ROOT", firstNonEmpty(fileCfg.WorkspaceRoot, filepath.Join("data", "workspaces"))))
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -112,7 +127,7 @@ func LoadWebConfig() (AppConfig, error) {
 		CommandBinDir:     commandBinDir,
 		CommandScriptDir:  commandScriptDir,
 		WorkspaceRoot:     workspaceRoot,
-		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", "load_skill")),
+		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill"))),
 		CookieName:        getenv("SESSION_COOKIE_NAME", "nano_cc_session"),
 		SessionTTLMinutes: getenvIntOrDefault("SESSION_TTL_MINUTES", 60*24*7),
 	}, nil
@@ -131,13 +146,13 @@ func loadLLMConfig() (Config, error) {
 	}
 
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = fileCfg.BaseURL
+		cfg.BaseURL = fileCfg.Config.BaseURL
 	}
 	if cfg.APIKey == "" {
-		cfg.APIKey = fileCfg.APIKey
+		cfg.APIKey = fileCfg.Config.APIKey
 	}
 	if cfg.ModelID == "" {
-		cfg.ModelID = fileCfg.ModelID
+		cfg.ModelID = fileCfg.Config.ModelID
 	}
 
 	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.ModelID == "" {
@@ -147,19 +162,15 @@ func loadLLMConfig() (Config, error) {
 	return cfg, nil
 }
 
-func loadConfigFile() (Config, error) {
-	appHome, err := resolveAppHome()
+func loadConfigFile() (fileConfig, error) {
+	data, err := os.ReadFile(configFilePath())
 	if err != nil {
-		return Config{}, err
-	}
-	data, err := os.ReadFile(filepath.Join(appHome, "config.json"))
-	if err != nil {
-		return Config{}, err
+		return fileConfig{}, err
 	}
 
-	var cfg Config
+	var cfg fileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("failed to parse config.json: %w", err)
+		return fileConfig{}, fmt.Errorf("failed to parse config.json: %w", err)
 	}
 	return cfg, nil
 }
@@ -218,13 +229,29 @@ func parseCSVList(value string) []string {
 	return items
 }
 
-func resolveAppHome() (string, error) {
-	appHome := getenv("APP_HOME", ".")
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func resolveAppHome(fileCfg fileConfig) (string, error) {
+	appHome := getenv("APP_HOME", firstNonEmpty(fileCfg.AppHome, "."))
 	resolved, err := filepath.Abs(appHome)
 	if err != nil {
 		return "", fmt.Errorf("resolve APP_HOME: %w", err)
 	}
 	return filepath.Clean(resolved), nil
+}
+
+func configFilePath() string {
+	if appHome := strings.TrimSpace(os.Getenv("APP_HOME")); appHome != "" {
+		return filepath.Join(appHome, "config.json")
+	}
+	return "config.json"
 }
 
 func resolvePath(appHome, pathValue string) (string, error) {
