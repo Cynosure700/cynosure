@@ -20,6 +20,10 @@ const maxOutputLen = 50000
 const defaultTimeout = 120 * time.Second
 
 func RunBash(command string) (string, error) {
+	return RunBashInDir(command, "")
+}
+
+func RunBashInDir(command, dir string) (string, error) {
 	for _, pattern := range dangerousPatterns {
 		if strings.Contains(command, pattern) {
 			return "", fmt.Errorf("dangerous command blocked: contains %q", pattern)
@@ -30,6 +34,9 @@ func RunBash(command string) (string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	output, err := cmd.CombinedOutput()
 
 	if ctx.Err() == context.DeadlineExceeded {

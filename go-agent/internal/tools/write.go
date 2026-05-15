@@ -9,7 +9,11 @@ import (
 )
 
 func RunWrite(path, content string) (string, error) {
-	resolved, err := safety.SafePath(path)
+	return RunWriteFromRoot("", path, content)
+}
+
+func RunWriteFromRoot(root, path, content string) (string, error) {
+	resolved, err := safety.SafePathFromRoot(root, path)
 	if err != nil {
 		return "", err
 	}

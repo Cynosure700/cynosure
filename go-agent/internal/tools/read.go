@@ -11,7 +11,11 @@ import (
 const maxReadLen = 50000
 
 func RunRead(path string, limit int) (string, error) {
-	resolved, err := safety.SafePath(path)
+	return RunReadFromRoot("", path, limit)
+}
+
+func RunReadFromRoot(root, path string, limit int) (string, error) {
+	resolved, err := safety.SafePathFromRoot(root, path)
 	if err != nil {
 		return "", err
 	}

@@ -46,12 +46,20 @@ func RuntimeEnvFromContext(ctx context.Context) (RuntimeEnv, bool) {
 	return env, ok
 }
 
+func workspaceRootFromContext(ctx context.Context) string {
+	env, ok := RuntimeEnvFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	return env.WorkspaceRoot
+}
+
 func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	cmd, _ := args["command"].(string)
 	if cmd == "" {
 		return "", fmt.Errorf("command is required")
 	}
-	return RunBash(cmd)
+	return RunBashInDir(cmd, workspaceRootFromContext(ctx))
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {
@@ -63,7 +71,7 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	return RunRead(path, limit)
+	return RunReadFromRoot(workspaceRootFromContext(ctx), path, limit)
 }
 
 func handleWrite(ctx context.Context, args map[string]any) (string, error) {
@@ -72,7 +80,7 @@ func handleWrite(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	return RunWrite(path, content)
+	return RunWriteFromRoot(workspaceRootFromContext(ctx), path, content)
 }
 
 func handleEdit(ctx context.Context, args map[string]any) (string, error) {
@@ -82,7 +90,7 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	return RunEdit(path, oldText, newText)
+	return RunEditFromRoot(workspaceRootFromContext(ctx), path, oldText, newText)
 }
 
 func handleTodo(ctx context.Context, args map[string]any) (string, error) {

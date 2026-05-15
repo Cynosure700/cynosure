@@ -21,7 +21,7 @@
 ## 4. User Workspace Isolation
 
 - [x] 4.1 为每个用户创建并解析独立的 workspace 根目录，默认路径落在配置的 `WorkspaceRoot/<user_id>/`
-- [ ] 4.2 让 shell / 文件类工具在 Web 场景下使用用户 workspace 作为默认 cwd，并正确解析相对路径
+- [x] 4.2 让 shell / 文件类工具在 Web 场景下使用用户 workspace 作为默认 cwd，并正确解析相对路径
 - [ ] 4.3 区分用户 workspace 与只读部署命令目录，确保共享命令产物不落入用户可写路径
 - [ ] 4.4 增加越权路径与非法 cwd 校验，拒绝访问用户 workspace 之外的资源以及未授权的部署目录
 

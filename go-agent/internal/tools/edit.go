@@ -9,7 +9,11 @@ import (
 )
 
 func RunEdit(path, oldText, newText string) (string, error) {
-	resolved, err := safety.SafePath(path)
+	return RunEditFromRoot("", path, oldText, newText)
+}
+
+func RunEditFromRoot(root, path, oldText, newText string) (string, error) {
+	resolved, err := safety.SafePathFromRoot(root, path)
 	if err != nil {
 		return "", err
 	}
