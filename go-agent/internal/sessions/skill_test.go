@@ -85,6 +85,47 @@ Do workspace thing.`
 	}
 }
 
+func TestLoadBuiltinSkillsFromDir_LoadsResolvedBuiltinSkillDirectory(t *testing.T) {
+	testCases := []struct {
+		name        string
+		skillsDir    string
+		description string
+	}{
+		{name: "deployment", skillsDir: filepath.Join(t.TempDir(), "output", "workspace", "skills"), description: "Loaded from deployment skills dir"},
+		{name: "local", skillsDir: filepath.Join(t.TempDir(), "workspace", "skills"), description: "Loaded from local skills dir"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			skillDir := filepath.Join(tc.skillsDir, "resolved-skill")
+			if err := os.MkdirAll(skillDir, 0o755); err != nil {
+				t.Fatalf("mkdir skill dir: %v", err)
+			}
+			skillDoc := `---
+name: resolved-skill
+description: ` + tc.description + `
+---
+
+Resolved skill body.`
+			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillDoc), 0o644); err != nil {
+				t.Fatalf("write skill: %v", err)
+			}
+
+			loader, err := LoadBuiltinSkillsFromDir(tc.skillsDir)
+			if err != nil {
+				t.Fatalf("load builtin skills from dir: %v", err)
+			}
+			entry, ok := loader.Skills["resolved-skill"]
+			if !ok {
+				t.Fatalf("expected resolved skill to be loaded")
+			}
+			if got := entry.Meta["description"]; got != tc.description {
+				t.Fatalf("unexpected description: %q", got)
+			}
+		})
+	}
+}
+
 func TestMergeSkillLoaders_PrefersLaterLoaderOnConflict(t *testing.T) {
 	builtin := NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*SkillEntry{
