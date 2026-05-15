@@ -130,15 +130,21 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	}
 }
 
-func TestRespondToConversation_BrowserCapabilityBoundarySkipsModel(t *testing.T) {
+func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
 
-	llm := &fakeLLMClient{}
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
+		Choices: []openai.ChatCompletionChoice{{
+			FinishReason: openai.FinishReasonStop,
+			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "我会在 workspace 中执行命令。"},
+		}},
+	}}}
 	config.Client = llm
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"bash"}
 	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: nil}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
@@ -147,14 +153,17 @@ func TestRespondToConversation_BrowserCapabilityBoundarySkipsModel(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if llm.calls != 0 {
-		t.Fatalf("expected llm not to be called for browser boundary request, got %d", llm.calls)
+	if llm.calls != 1 {
+		t.Fatalf("expected llm to be called for shell request, got %d", llm.calls)
 	}
 	if len(store.toolCalls) != 0 {
-		t.Fatalf("expected no tool calls for browser boundary request, got %d", len(store.toolCalls))
+		t.Fatalf("expected no tool execution for direct model response, got %d", len(store.toolCalls))
 	}
-	if got := message.Content; got == "" || !contains(got, "不能访问你的本地 shell") {
-		t.Fatalf("expected browser capability explanation, got %q", got)
+	if got := message.Content; got != "我会在 workspace 中执行命令。" {
+		t.Fatalf("unexpected assistant content: %q", got)
+	}
+	if len(llm.lastReq.Tools) != 1 || llm.lastReq.Tools[0].Function == nil || llm.lastReq.Tools[0].Function.Name != "bash" {
+		t.Fatalf("expected shell request to expose bash tool, got %#v", llm.lastReq.Tools)
 	}
 	if len(store.messages) != 2 {
 		t.Fatalf("expected user and assistant messages to be persisted, got %d", len(store.messages))

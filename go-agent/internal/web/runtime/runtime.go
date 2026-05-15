@@ -75,10 +75,6 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 
-	if boundary := browserCapabilityBoundaryReply(userMessage); boundary != "" {
-		return s.persistAssistantReply(ctx, conversation, user.ID, history, boundary, writer)
-	}
-
 	skills, err := s.Store.ListEnabledSkillsByUser(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
@@ -302,27 +298,6 @@ func fallbackAssistantContent(content string) string {
 		return "(no response)"
 	}
 	return content
-}
-
-func browserCapabilityBoundaryReply(userMessage string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(userMessage))
-	if trimmed == "" {
-		return ""
-	}
-
-	keywords := []string{
-		"shell", "bash", "terminal", "cmd", "powershell", "zsh", "执行命令", "运行命令", "终端",
-		"本地文件", "本地目录", "用户目录", "工作区", "workspace", "打开文件", "修改文件", "写文件", "读文件", "遍历目录",
-		"ls ", "cat ", "pwd", "cd ", "rm ", "mkdir ",
-	}
-
-	for _, keyword := range keywords {
-		if strings.Contains(trimmed, keyword) {
-			return "当前网页聊天版本不能访问你的本地 shell、文件目录或用户工作区，所以我不能直接替你执行命令、读写本地文件或浏览目录。\n\n不过我仍然可以继续帮你：\n1. 解释你想执行的命令或操作\n2. 帮你写出可手动执行的命令、脚本或步骤\n3. 根据你贴出的文件内容、报错或目录信息继续分析问题"
-		}
-	}
-
-	return ""
 }
 
 func inferConversationTitle(currentTitle, userMessage string) string {
