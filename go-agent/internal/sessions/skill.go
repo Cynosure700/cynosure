@@ -26,6 +26,7 @@ type SkillLoader struct {
 var Skills = &SkillLoader{Skills: make(map[string]*SkillEntry)}
 
 const skillsDir = "skills"
+const skillEntryFileName = "SKILL.md"
 
 func (sl *SkillLoader) LoadAll() error {
 	return sl.LoadAllFromDir(skillsDir)
@@ -41,12 +42,9 @@ func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+		if d.IsDir() || d.Name() != skillEntryFileName {
 			return nil
 		}
-
-		relPath, _ := filepath.Rel(dir, fullPath)
-		name := strings.TrimSuffix(relPath, ".md")
 
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
@@ -54,6 +52,7 @@ func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 		}
 
 		meta, body := parseFrontmatter(string(data))
+		name := canonicalSkillName(fullPath, meta)
 		sl.Skills[name] = &SkillEntry{
 			Meta: meta,
 			Body: body,
@@ -73,6 +72,13 @@ func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 
 func NewSkillLoader() *SkillLoader {
 	return &SkillLoader{Skills: make(map[string]*SkillEntry)}
+}
+
+func canonicalSkillName(fullPath string, meta map[string]string) string {
+	if name := strings.TrimSpace(meta["name"]); name != "" {
+		return name
+	}
+	return filepath.Base(filepath.Dir(fullPath))
 }
 
 func (sl *SkillLoader) LoadFromEntries(entries map[string]*SkillEntry) {
