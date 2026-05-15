@@ -16,9 +16,10 @@ import (
 )
 
 type ToolContext struct {
-	User         storage.User
-	Conversation storage.Conversation
-	Loader       *sessions.SkillLoader
+	User          storage.User
+	Conversation  storage.Conversation
+	Loader        *sessions.SkillLoader
+	WorkspaceRoot string
 }
 
 type ToolRegistry struct {
@@ -63,7 +64,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		skillName, _ := args["name"].(string)
 		return r.loadSkillContent(toolCtx.Loader, skillName)
 	}
-	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
+	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv(toolCtx))
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return "", fmt.Errorf("tool %s has no handler", name)
@@ -76,18 +77,19 @@ func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName 
 	if err != nil {
 		return "", err
 	}
-	envNote := formatRuntimeEnvNote(r.runtimeEnv())
+	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{}))
 	if envNote == "" {
 		return content, nil
 	}
 	return content + "\n\n" + envNote, nil
 }
 
-func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
+func (r *ToolRegistry) runtimeEnv(toolCtx ToolContext) agenttools.RuntimeEnv {
 	return agenttools.RuntimeEnv{
 		AppHome:          r.cfg.AppHome,
 		CommandBinDir:    r.cfg.CommandBinDir,
 		CommandScriptDir: r.cfg.CommandScriptDir,
+		WorkspaceRoot:    toolCtx.WorkspaceRoot,
 	}
 }
 
@@ -138,7 +140,7 @@ func RegisteredTools(cfg config.AppConfig) []string {
 }
 
 func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
-	lines := make([]string, 0, 3)
+	lines := make([]string, 0, 4)
 	if env.AppHome != "" {
 		lines = append(lines, "APP_HOME="+env.AppHome)
 	}
@@ -147,6 +149,9 @@ func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
 	}
 	if env.CommandScriptDir != "" {
 		lines = append(lines, "COMMAND_SCRIPT_DIR="+env.CommandScriptDir)
+	}
+	if env.WorkspaceRoot != "" {
+		lines = append(lines, "WORKSPACE_ROOT="+env.WorkspaceRoot)
 	}
 	if len(lines) == 0 {
 		return ""

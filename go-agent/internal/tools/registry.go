@@ -14,6 +14,7 @@ type RuntimeEnv struct {
 	AppHome          string
 	CommandBinDir    string
 	CommandScriptDir string
+	WorkspaceRoot    string
 }
 
 type contextKey string

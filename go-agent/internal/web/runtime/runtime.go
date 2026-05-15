@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -60,6 +62,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err := s.Store.TouchConversation(ctx, conversation.ID, inferConversationTitle(conversation.Title, userMessage)); err != nil {
 		return storage.Message{}, err
 	}
+	workspaceRoot, err := s.resolveUserWorkspace(user.ID)
+	if err != nil {
+		return storage.Message{}, err
+	}
 
 	if boundary := browserCapabilityBoundaryReply(userMessage); boundary != "" {
 		return s.persistAssistantReply(ctx, conversation, user.ID, history, boundary, writer)
@@ -100,7 +106,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, WorkspaceRoot: workspaceRoot}, tc.Function.Name, tc.Function.Arguments)
 			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: truncate(outcome.Result, 500)})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
@@ -108,6 +114,46 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: outcome.MessageContent()})
 		}
 	}
+}
+
+func (s *Service) resolveUserWorkspace(userID string) (string, error) {
+	base := strings.TrimSpace(s.Cfg.WorkspaceRoot)
+	if base == "" {
+		return "", fmt.Errorf("workspace root is not configured")
+	}
+	workspaceRoot := filepath.Join(base, workspaceDirName(userID))
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		return "", fmt.Errorf("create user workspace: %w", err)
+	}
+	resolvedBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root: %w", err)
+	}
+	resolvedWorkspace, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve user workspace: %w", err)
+	}
+	cleanBase := filepath.Clean(resolvedBase)
+	cleanWorkspace := filepath.Clean(resolvedWorkspace)
+	if cleanWorkspace != cleanBase && !strings.HasPrefix(cleanWorkspace, cleanBase+string(os.PathSeparator)) {
+		return "", fmt.Errorf("user workspace escapes workspace root")
+	}
+	return cleanWorkspace, nil
+}
+
+func workspaceDirName(userID string) string {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return "anonymous"
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, trimmed)
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {

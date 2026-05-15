@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,6 +67,14 @@ type fakeLLMClient struct {
 	reqs      []openai.ChatCompletionRequest
 }
 
+func testAppConfig(t *testing.T) config.AppConfig {
+	t.Helper()
+	return config.AppConfig{
+		LLM:           config.Config{ModelID: "test-model"},
+		WorkspaceRoot: t.TempDir(),
+	}
+}
+
 func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
 	f.calls++
 	f.lastReq = req
@@ -90,7 +100,8 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	config.Client = llm
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: nil}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: nil}
 	conversation := storage.Conversation{ID: "conv_1", Title: "新对话"}
 	user := storage.User{ID: "usr_1", Username: "alice"}
 
@@ -126,7 +137,8 @@ func TestRespondToConversation_BrowserCapabilityBoundarySkipsModel(t *testing.T)
 	config.Client = llm
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: nil}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: nil}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
 
@@ -178,7 +190,8 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		Content:     "user body",
 		Status:      "enabled",
 	}}}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: builtin}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_3", Title: "新对话"}
 	user := storage.User{ID: "usr_3", Username: "carol"}
 
@@ -234,7 +247,8 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	})
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: builtin}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
 	user := storage.User{ID: "usr_4", Username: "dave"}
 
@@ -300,7 +314,8 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	})
 
 	store := &fakeStore{}
-	service := &Service{Store: store, Cfg: config.AppConfig{LLM: config.Config{ModelID: "test-model"}}, Tools: NewToolRegistry(nil, config.AppConfig{}), BuiltinSkills: builtin}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_5", Title: "新对话"}
 	user := storage.User{ID: "usr_5", Username: "erin"}
 
@@ -330,6 +345,44 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	}
 	if !contains(outcome.Result, "Error: unknown skill \"missing-skill\"") {
 		t.Fatalf("expected rejection result to include tool error, got %q", outcome.Result)
+	}
+}
+
+func TestResolveUserWorkspace_CreatesUserScopedDirectory(t *testing.T) {
+	root := t.TempDir()
+	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
+
+	workspace, err := service.resolveUserWorkspace("usr_123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := filepath.Join(root, "usr_123")
+	if workspace != expected {
+		t.Fatalf("expected workspace %q, got %q", expected, workspace)
+	}
+	info, err := os.Stat(workspace)
+	if err != nil {
+		t.Fatalf("expected workspace to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected workspace path to be directory")
+	}
+}
+
+func TestResolveUserWorkspace_SeparatesDifferentUsers(t *testing.T) {
+	root := t.TempDir()
+	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
+
+	first, err := service.resolveUserWorkspace("usr_a")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := service.resolveUserWorkspace("usr_b")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if first == second {
+		t.Fatalf("expected distinct workspaces, got %q and %q", first, second)
 	}
 }
 
@@ -406,6 +459,28 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 	}
 	if result != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
 		t.Fatalf("expected runtime env in handler context, got %q", result)
+	}
+}
+
+func TestToolRegistryExecute_InjectsWorkspaceIntoToolHandler(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.WorkspaceRoot, nil
+	}
+
+	registry := NewToolRegistry(nil, config.AppConfig{WebAllowedTools: []string{"bash"}})
+	result, err := registry.Execute(context.Background(), ToolContext{WorkspaceRoot: "/workspaces/usr_1"}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "/workspaces/usr_1" {
+		t.Fatalf("expected workspace root in handler context, got %q", result)
 	}
 }
 
