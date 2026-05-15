@@ -29,6 +29,8 @@ type Skill struct {
 	Description string    `json:"description"`
 	Content     string    `json:"content"`
 	Status      string    `json:"status"`
+	Source      string    `json:"source,omitempty"`
+	ReadOnly    bool      `json:"readonly,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
