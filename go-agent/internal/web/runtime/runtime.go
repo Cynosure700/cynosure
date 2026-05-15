@@ -49,6 +49,7 @@ type toolExecutionOutcome struct {
 
 type toolExecutionAudit struct {
 	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
+	ResolvedCommandPath string `json:"resolved_command_path,omitempty"`
 	CommandArtifactPath string `json:"command_artifact_path,omitempty"`
 	OutcomeSummary      string `json:"outcome_summary,omitempty"`
 	DenialReason        string `json:"denial_reason,omitempty"`
@@ -137,9 +138,11 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
+	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir)
 	audit := toolExecutionAudit{
 		ResolvedCWD:         strings.TrimSpace(toolCtx.WorkspaceRoot),
-		CommandArtifactPath: resolveCommandArtifactPath(name, rawArgs, s.Cfg.CommandBinDir, s.Cfg.CommandScriptDir),
+		ResolvedCommandPath: resolvedCommandPath,
+		CommandArtifactPath: commandArtifactPath,
 	}
 	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
@@ -161,8 +164,9 @@ func (o toolExecutionOutcome) MessageContent() string {
 func (o toolExecutionOutcome) AuditSummary() string {
 	data, err := json.Marshal(o.Audit)
 	if err != nil {
-		return fmt.Sprintf(`{"resolved_cwd":%q,"command_artifact_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
+		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"command_artifact_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
 			o.Audit.ResolvedCWD,
+			o.Audit.ResolvedCommandPath,
 			o.Audit.CommandArtifactPath,
 			o.Audit.OutcomeSummary,
 			o.Audit.DenialReason,
@@ -171,13 +175,13 @@ func (o toolExecutionOutcome) AuditSummary() string {
 	return string(data)
 }
 
-func resolveCommandArtifactPath(toolName, rawArgs string, roots ...string) string {
+func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, string) {
 	if toolName != "bash" {
-		return ""
+		return "", ""
 	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
-		return ""
+		return "", ""
 	}
 	command, _ := args["command"].(string)
 	for _, token := range strings.Fields(command) {
@@ -200,11 +204,12 @@ func resolveCommandArtifactPath(toolName, rawArgs string, roots ...string) strin
 			}
 			cleanRoot := filepath.Clean(resolvedRoot)
 			if cleanResolved == cleanRoot || strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
-				return cleanResolved
+				return cleanResolved, cleanResolved
 			}
 		}
+		return cleanResolved, ""
 	}
-	return ""
+	return "", ""
 }
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {

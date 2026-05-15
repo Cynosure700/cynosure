@@ -603,6 +603,41 @@ func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
 	if outcome.Audit.CommandArtifactPath != script {
 		t.Fatalf("expected audit command artifact path %q, got %#v", script, outcome.Audit)
 	}
+	if outcome.Audit.ResolvedCommandPath != script {
+		t.Fatalf("expected audit resolved command path %q, got %#v", script, outcome.Audit)
+	}
+}
+
+func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("create workspace dir: %v", err)
+	}
+	outside := filepath.Join(root, "outside.sh")
+	if err := os.WriteFile(outside, []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
+		t.Fatalf("write outside script: %v", err)
+	}
+
+	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+outside+`"}`)
+
+	if outcome.Status != "rejected" {
+		t.Fatalf("expected rejected outcome, got %#v", outcome)
+	}
+	if outcome.Audit.ResolvedCWD != workspace {
+		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
+	}
+	if outcome.Audit.ResolvedCommandPath != outside {
+		t.Fatalf("expected audit resolved command path %q, got %#v", outside, outcome.Audit)
+	}
+	if outcome.Audit.CommandArtifactPath != "" {
+		t.Fatalf("expected no command artifact path for outside command, got %#v", outcome.Audit)
+	}
+	if !contains(outcome.Audit.DenialReason, "command path escapes workspace") {
+		t.Fatalf("expected denial reason to mention workspace escape, got %#v", outcome.Audit)
+	}
 }
 
 func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) openai.ChatCompletionMessage {

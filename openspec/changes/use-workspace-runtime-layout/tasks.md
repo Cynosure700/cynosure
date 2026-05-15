@@ -13,7 +13,7 @@
 
 - [x] 3.1 调整 Web runtime 默认 cwd 与相对路径解析逻辑，使终端和文件工具默认在部署 workspace 内运行
 - [x] 3.2 增加 workspace 越权校验，拒绝访问或执行落在 deployment workspace 之外的宿主机路径
-- [ ] 3.3 更新工具审计或错误回填，确保 workspace 路径拒绝与命令路径解析结果可观测
+- [x] 3.3 更新工具审计或错误回填，确保 workspace 路径拒绝与命令路径解析结果可观测
 
 ## 4. Build packaging and verification
 
