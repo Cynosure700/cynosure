@@ -21,7 +21,7 @@
 1. **Go Web 服务**：提供鉴权、会话、聊天、能力管理 API
 2. **React 前端**：提供 conversation-first 的网页聊天界面
 
-仓库里仍保留了一部分旧的 CLI / 本地工具相关代码，主要用于历史兼容或被 Web runtime 复用，但它们**不再是正式产品入口**。
+历史 CLI / REPL 入口已经移除；当前保留的 `workspace/bin`、`workspace/cmd` 与 `workspace/skills` 是 Web agent 运行时资产，而不是 CLI 历史包袱。
 
 ---
 
@@ -65,20 +65,17 @@
 go-agent/
 ├── main.go                     # 默认入口：启动 Web 服务
 ├── cmd/
-│   ├── build-artifacts/
-│   │   └── main.go             # 兼容入口：构建 workspace 命令产物与脚本资源
-│   └── web/
-│       └── main.go             # Web 服务备用入口（等价启动方式）
+│   └── build-artifacts/
+│       └── main.go             # 构建 runtime workspace 命令产物与脚本资源
 ├── build.sh                    # 标准部署打包脚本
 ├── config.json                 # LLM 配置文件（可选）
 ├── internal/
-│   ├── agent/                  # 旧的 agent/REPL 相关实现（非正式产品入口）
 │   ├── assistant/              # 通用 assistant system prompt 构造
 │   ├── config/                 # LLM / Web 配置
 │   ├── deploy/                 # 部署产物构建逻辑
 │   ├── logger/                 # 日志
 │   ├── safety/                 # 路径与访问安全辅助
-│   ├── sessions/               # memory / skill / subagent / compact
+│   ├── sessions/               # builtin Skill 加载与合并
 │   ├── tools/                  # 共享工具注册与执行逻辑（Web runtime 复用）
 │   └── web/
 │       ├── app/                # HTTP Server 与路由
@@ -359,13 +356,6 @@ sudo journalctl -u go-agent -f
 - 反向代理不要过早切断 SSE 连接
 - `ALLOWED_ORIGIN` 要与实际前端域名一致
 - 生产环境不要继续使用示例里的默认数据库密码、JWT secret
-
-也可以使用备用入口：
-
-```bash
-cd go-agent
-go run ./cmd/web
-```
 
 默认后端地址：
 
