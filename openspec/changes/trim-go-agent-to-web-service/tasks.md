@@ -1,7 +1,7 @@
 ## 1. 收敛 Web 服务启动链路
 
 - [x] 1.1 梳理 `main.go`、`cmd/web`、`internal/web/app` 的调用关系并删除重复启动入口
-- [ ] 1.2 从 Web 服务依赖链中移除 CLI/REPL 相关模块与无入口历史 session 能力
+- [x] 1.2 从 Web 服务依赖链中移除 CLI/REPL 相关模块与无入口历史 session 能力
 - [ ] 1.3 调整包引用与测试，使 Web 服务仅依赖配置、日志、存储、鉴权、聊天 runtime 及其所需 runtime workspace 资产解析链路
 
 ## 2. 简化运行时与部署布局

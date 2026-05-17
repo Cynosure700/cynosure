@@ -29,11 +29,7 @@ var Handlers = map[string]ToolHandler{
 	"read_file":     handleRead,
 	"write_file":    handleWrite,
 	"edit_file":     handleEdit,
-	"todo":          handleTodo,
-	"update_memory": nil, // set by sessions package
-	"task":          nil, // set by sessions package
 	"load_skill":    nil, // set by sessions package
-	"compact":       nil, // set by sessions package
 }
 
 func SetHandler(name string, h ToolHandler) {
@@ -153,17 +149,6 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 	return RunEditFromRoot(root, path, oldText, newText)
 }
 
-func handleTodo(ctx context.Context, args map[string]any) (string, error) {
-	items, _ := args["items"].([]any)
-	list := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		if m, ok := item.(map[string]any); ok {
-			list = append(list, m)
-		}
-	}
-	return Todo.Update(list)
-}
-
 func mustMarshal(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -240,54 +225,3 @@ var baseToolDefs = []openai.Tool{
 }
 
 var ChildToolDefs = baseToolDefs
-
-var ParentToolDefs []openai.Tool
-
-func init() {
-	ParentToolDefs = append(ParentToolDefs, baseToolDefs...)
-	ParentToolDefs = append(ParentToolDefs,
-		toolDef("todo", "Update the task list to track progress", map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"items": map[string]any{
-					"type": "array",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"id":     strParam("Task identifier", false),
-							"text":   strParam("Task description", true),
-							"status": strParam("Task status: pending, in_progress, or completed", false),
-						},
-					},
-				},
-			},
-			"required": []string{"items"},
-		}),
-		toolDef("update_memory", "Update persistent memory in AGENTS.md. Use action=append to add to the end, or action=replace to overwrite the entire file.", map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action": map[string]any{
-					"type":        "string",
-					"description": "append (add to end of file) or replace (overwrite entire file)",
-					"enum":        []string{"append", "replace"},
-				},
-				"content": strParam("The memory content to store", true),
-			},
-			"required": []string{"content"},
-		}),
-		toolDef("compact", "Manually trigger context compaction to summarize conversation history", map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"focus": strParam("Optional focus area for the summary", false),
-			},
-		}),
-		toolDef("task", "Delegate a task to a subagent with isolated context", map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"prompt":      strParam("The task prompt for the subagent", true),
-				"description": strParam("Brief description of the task", false),
-			},
-			"required": []string{"prompt"},
-		}),
-	)
-}
