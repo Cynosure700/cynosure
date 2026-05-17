@@ -39,7 +39,7 @@
 ### Skill 管理
 
 - 创建、编辑、启用、禁用、删除个人 Skill
-- 启动时从**已解析的 runtime workspace** 下加载内置 Skill catalog：优先 `APP_HOME/output/workspace/skills`
+- 启动时从**已解析的 runtime workspace** 下加载内置 Skill catalog：默认来自 `<resolved-workspace>/skills`
 - 运行时合并“共享内置 Skill + 当前用户已启用 Skill”
 - 内置 Skill 通过 API 以只读条目暴露，不能被用户修改或删除
 - 按用户隔离 Skill 数据
@@ -50,11 +50,11 @@
 - Redis 缓存活跃会话上下文
 - 多用户数据隔离
 - 浏览器端仅暴露显式允许的已注册工具
-- `WORKSPACE_ROOT` 未显式配置时，runtime 会优先使用 `APP_HOME/output/workspace`；若部署产物不存在，则回退到 `APP_HOME/workspace`
+- `WORKSPACE_ROOT` 未显式配置时，runtime 会优先使用 `APP_HOME/output/workspace`；若该目录不存在，则回退到 `APP_HOME/workspace`
 - 默认 Web runtime 当前会暴露 `load_skill,bash,read_file,write_file,edit_file`；也可以通过 `WEB_ALLOWED_TOOLS` 显式覆盖
 - 工具默认运行在服务端解析后的统一 `WORKSPACE_ROOT` 下，并拒绝越权路径
 - 命令产物目录会从解析后的 runtime workspace 派生，即 `<resolved-workspace>/bin` 与 `<resolved-workspace>/cmd`
-- 工具调用会记录审计摘要，包括 cwd、命令产物路径、命令产物来源（deployment/local/custom）、结果摘要或拒绝原因
+- 工具调用会记录审计摘要，包括 cwd、命令产物路径、命令产物来源（workspace/custom）、结果摘要或拒绝原因
 - 浏览器端不会访问**用户本地机器**的 shell、目录或文件；如果启用工具，访问的也是服务端隔离 workspace
 
 ---
@@ -82,12 +82,13 @@ go-agent/
 │       ├── auth/               # 注册 / 登录 / Session / JWT
 │       ├── runtime/            # Web 聊天 runtime / tool registry / SSE
 │       └── storage/            # MySQL / Redis / migrations / repository
+├── skills/                     # 源码内置 Skill catalog（构建时复制到部署包）
 ├── logs/                       # 服务日志目录
 ├── workspace/                  # 本地调试时使用的 runtime workspace（源码侧回退目录）
 │   ├── bin/                    # 本地调试态命令产物
 │   ├── cmd/                    # 本地调试态脚本资源
 │   └── skills/                 # 本地调试态 builtin Skill catalog
-└── output/                     # build.sh 生成的部署输出目录
+└── output/                     # build.sh 生成的部署输出目录（生成物，不纳入版本控制）
     ├── bin/
     └── workspace/              # 部署态 runtime workspace（优先使用）
         ├── bin/
@@ -117,6 +118,7 @@ go-agent/
 
 1. 如果显式设置 `WORKSPACE_ROOT`，优先使用该值
 2. 否则如果 `APP_HOME/output/workspace` 存在，优先使用它
+3. 否则回退到 `APP_HOME/workspace`
 
 `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 在未显式配置时，都会从上面解析出的 runtime workspace 自动派生。
 
@@ -177,7 +179,7 @@ SESSION_TTL_MINUTES=10080
 说明：
 
 - `APP_HOME` 默认是当前工作目录，其他路径配置会相对它解析
-- `WORKSPACE_ROOT` 如果未显式设置：在源码目录运行时会优先解析到 `APP_HOME/output/workspace`，否则回退到 `APP_HOME/workspace`
+- `WORKSPACE_ROOT` 如果未显式设置：优先解析 `APP_HOME/output/workspace`，不存在时回退到 `APP_HOME/workspace`
 - `BUILTIN_SKILLS_DIR` 默认从解析后的 `WORKSPACE_ROOT/skills` 派生
 - `COMMAND_BIN_DIR` 默认从解析后的 `WORKSPACE_ROOT/bin` 派生
 - `COMMAND_SCRIPT_DIR` 默认从解析后的 `WORKSPACE_ROOT/cmd` 派生
@@ -190,7 +192,52 @@ SESSION_TTL_MINUTES=10080
 
 ## 启动方式
 
-### 1）执行标准部署打包脚本（推荐在部署阶段执行）
+### 1）本地最短启动路径
+
+先准备必须依赖：
+
+- MySQL
+- Redis
+- OpenAI 兼容模型服务
+
+然后在 `go-agent/` 下设置最小环境变量并启动：
+
+```bash
+cd go-agent
+
+export OPENAI_BASE_URL=https://api.deepseek.com
+export OPENAI_API_KEY=your-api-key
+export MODEL_ID=deepseek-chat
+
+export MYSQL_HOST=127.0.0.1
+export MYSQL_PORT=3306
+export MYSQL_USER=root
+export MYSQL_PASSWORD=your-password
+export MYSQL_DATABASE=vibe_coding
+
+export REDIS_ADDR=127.0.0.1:6379
+export JWT_SECRET=replace-with-your-own-secret
+
+go run .
+```
+
+默认情况下：
+
+- Web 服务监听 `http://localhost:8080`
+- `APP_HOME` 默认为当前目录
+- runtime workspace 默认解析到 `APP_HOME/workspace`
+- 如果你之前执行过 `./build.sh` 且当前目录下存在 `output/workspace`，则会优先使用该部署态 runtime workspace
+
+如果你只想在源码目录补齐 Web agent 所需命令产物，而不打完整发布包，可执行：
+
+```bash
+cd go-agent
+go run ./cmd/build-artifacts --app-home .
+```
+
+这会把命令二进制和脚本资源补齐到当前 `workspace/bin` 与 `workspace/cmd`。
+
+### 2）标准部署打包脚本（推荐在发布阶段执行）
 
 ```bash
 cd go-agent
@@ -201,36 +248,12 @@ cd go-agent
 
 - 清理并重新生成 `output/`
 - 编译主服务到 `output/bin/go-agent`
-- 发现 `cmd/*/main.go` 并编译到 `output/workspace/bin/`
-- 复制 `.py` / `.sh` 等脚本资源到 `output/workspace/cmd/`
+- 调用统一的 `cmd/build-artifacts` 流程构建 `output/workspace/bin/` 中的命令产物
+- 复制 `.py` / `.sh` / `.rb` / `.pl` 等脚本资源到 `output/workspace/cmd/`
 - 复制内置 skills 到 `output/workspace/skills/`
 - 复制 `config.json` 到 `output/`（如果存在）
 
-如果你只是想在当前目录补齐 `workspace/bin` 和 `workspace/cmd`，也可以继续使用兼容入口：
-
-```bash
-cd go-agent
-go run ./cmd/build-artifacts --app-home .
-```
-
-### 2）启动 Go 后端（默认入口）
-
-```bash
-cd go-agent
-go run .
-```
-
-启动时也会自动补齐 `APP_HOME/logs/` 以及当前解析到的 runtime workspace 目录树。
-
-如果你是在源码目录本地调试，通常会落到：
-
-- `APP_HOME/workspace/`
-
-如果你是在部署产物目录运行，并且存在 `output/workspace/`，则默认会落到：
-
-- `APP_HOME/output/workspace/`
-
-### 2.1）云端部署推荐方式（生产环境）
+### 3）云端部署推荐方式（生产环境）
 
 推荐把 `go-agent` 当作一个**长期运行的 Web 服务**部署，而不是在云端直接以源码目录 `go run .` 的方式启动。
 
@@ -243,7 +266,7 @@ cd go-agent
 ./build.sh
 ```
 
-2. **把整个 `output/` 目录发布到云端机器**，例如发布到：
+2. **把整个 `output/` 目录发布到云端机器**。建议把 `output/` 的内容直接放到目标目录，例如：
 
 ```text
 /srv/go-agent/
@@ -284,20 +307,20 @@ export JWT_SECRET=replace-with-production-secret
 在这个部署模型下：
 
 - `APP_HOME` 应该指向**部署包根目录**，例如 `/srv/go-agent`
-- 云端推荐的最终目录结构是：
+- 云端运行时目录结构是：
   - `APP_HOME/bin/go-agent`
   - `APP_HOME/workspace/bin`
   - `APP_HOME/workspace/cmd`
   - `APP_HOME/workspace/skills`
-- 也就是说，云端运行时真正使用的是部署包中的 `APP_HOME/workspace/`，而不是源码仓库里的 `go-agent/workspace/`
-- README 前面提到的 `APP_HOME/output/workspace` 优先规则，主要是为了兼容**源码目录本地调试**场景
+- 云端运行时真正使用的是部署包中的 `APP_HOME/workspace/`
+- 也就是说，部署后的 `APP_HOME` 应该指向发布包根目录，而不是源码仓库根目录
 
 可以简单理解为：
 
-- **本地源码运行**：`APP_HOME=go-agent/`，runtime 可能命中 `go-agent/output/workspace` 或 `go-agent/workspace`
-- **云端部署运行**：`APP_HOME=/srv/go-agent`，runtime 直接命中部署包中的 `APP_HOME/workspace`
+- **本地源码运行**：`APP_HOME=go-agent/`，runtime 会使用 `go-agent/workspace`，若存在 `go-agent/output/workspace` 且未显式覆盖则优先使用它
+- **云端部署运行**：`APP_HOME=/srv/go-agent`，runtime 使用部署包中的 `APP_HOME/workspace`
 
-### 2.2）systemd 示例（推荐）
+### 3.1）systemd 示例（推荐）
 
 如果你在 Linux 云主机上部署，推荐使用 `systemd` 托管服务：
 
@@ -342,7 +365,7 @@ sudo systemctl status go-agent
 sudo journalctl -u go-agent -f
 ```
 
-### 2.3）Nginx / 负载均衡建议
+### 3.2）Nginx / 负载均衡建议
 
 如果前端与后端分域部署，建议在 Nginx 或网关层处理：
 
@@ -433,7 +456,7 @@ npm run dev
 2. 从数据库读取该用户所有 `enabled` 状态的 Skill
 3. 合并成当前对话的运行时 Skill Loader
 4. 将合并后的能力描述注入 system prompt
-5. 在模型请求 `load_skill` 时返回对应能力正文，并附带解析后的 deployment/runtime 路径提示
+5. 在模型请求 `load_skill` 时返回对应能力正文，并附带当前 runtime 路径提示
 
 ### 4. 多用户数据与 workspace 隔离
 
@@ -451,7 +474,7 @@ npm run dev
 - 默认暴露 `load_skill,bash,read_file,write_file,edit_file`
 - 可以通过 `WEB_ALLOWED_TOOLS` 覆盖或收缩已注册工具集合
 - 每次工具执行都会记录状态与审计摘要
-- 对于 `bash` 等工具，会附带解析后的 cwd、命令产物路径、命令产物来源、成功摘要或拒绝原因
+- 对于 `bash` 等工具，会附带解析后的 cwd、命令产物路径、命令产物来源（workspace/custom）、成功摘要或拒绝原因
 
 需要注意的是：这里的工具执行发生在**服务端部署环境**中，而不是用户本地浏览器所在机器上。如果用户请求访问“本地 shell / 本地目录 / 本地文件”，系统仍会返回清晰边界说明，并继续提供替代帮助，例如：
 
@@ -470,6 +493,7 @@ cd go-agent
 
 gofmt -w ./...
 go test ./...
+./build.sh
 ```
 
 ### 前端
@@ -486,17 +510,13 @@ npm run build
 
 ## 已验证内容
 
-当前实现已经完成以下验证：
+当前重构已完成以下验证：
 
-- Go 测试通过
-- 前端 `typecheck` / `build` 通过
-- 默认入口 `go run .` 可直接启动 Web 服务
-- 健康检查接口可用
-- 用户注册 / 建会话 / SSE 发消息主流程已真实走通
-- 通用问答、写作、规划类请求可正常返回，不依赖 CLI 心智
+- `go test ./...` 通过
+- `./build.sh` 可生成单一发布包目录 `output/`
+- 发布包包含 `output/bin/go-agent` 与 `output/workspace/{bin,cmd,skills}`
 - runtime workspace 解析已覆盖显式覆盖、deployment 优先、本地回退三种分支
 - builtin Skill 加载、builtin+user Skill 合并、工具白名单、workspace 隔离、命令产物构建、命令产物来源审计均已补充测试
-- shell / 本地文件 / 用户目录请求会返回明确的能力边界说明
 
 ---
 
@@ -507,7 +527,7 @@ npm run build
 3. 如果登录后接口仍返回 401，请检查 Cookie 是否被浏览器拦截
 4. 浏览器聊天模式不是用户本地终端代理；即使启用工具，也是在服务端隔离 workspace 中运行
 5. 如果你要生成完整部署产物，建议优先执行 `./build.sh`；如果只需在当前 `APP_HOME` 下补齐运行时命令目录，可执行 `go run ./cmd/build-artifacts --app-home .`
-6. 默认日志文件位于 `APP_HOME/logs/`；源码目录运行时共享 workspace 会优先解析到 `APP_HOME/output/workspace/`，云端部署时则通常直接使用部署包里的 `APP_HOME/workspace/`
+6. 默认日志文件位于 `APP_HOME/logs/`；源码目录运行时会优先使用 `APP_HOME/output/workspace/`（如果存在），否则回退到 `APP_HOME/workspace/`
 
 ---
 

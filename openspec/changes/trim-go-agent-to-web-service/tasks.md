@@ -14,11 +14,11 @@
 
 - [x] 3.1 精简或替换 `build.sh`、`cmd/build-artifacts`、`internal/deploy` 等构建逻辑，只保留 Web 服务正式构建路径，并继续正确产出 `workspace/bin`、`workspace/cmd` 等 runtime 资产
 - [x] 3.2 清理与 Web 服务启动无关的目录约定、产物说明和历史兼容脚本引用，但保留 Web agent 必需的 workspace 资产目录约定
-- [ ] 3.3 验证精简后的构建产物能够以单一正式服务发布包方式启动，且该发布包包含 Web agent 所需的 runtime workspace 资产
+- [x] 3.3 验证精简后的构建产物能够以单一正式服务发布包方式启动，且该发布包包含 Web agent 所需的 runtime workspace 资产
 
 ## 4. 更新文档与验证
 
-- [ ] 4.1 重写 `README.md` 的项目结构说明，只描述保留后的 Web 服务目录与职责
-- [ ] 4.2 重写 `README.md` 的本地部署步骤，提供最短可运行路径
-- [ ] 4.3 重写 `README.md` 的云服务器部署步骤，提供构建、上传、启动与运维建议
-- [ ] 4.4 运行 Go 测试与最小启动验证，确认核心 Web 服务流程在重构后仍可用，且 runtime workspace 资产解析与命令执行链路未被破坏
+- [x] 4.1 重写 `README.md` 的项目结构说明，只描述保留后的 Web 服务目录与职责
+- [x] 4.2 重写 `README.md` 的本地部署步骤，提供最短可运行路径
+- [x] 4.3 重写 `README.md` 的云服务器部署步骤，提供构建、上传、启动与运维建议
+- [x] 4.4 运行 Go 测试与最小启动验证，确认核心 Web 服务流程在重构后仍可用，且 runtime workspace 资产解析与命令执行链路未被破坏
