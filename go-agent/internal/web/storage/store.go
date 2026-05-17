@@ -3,10 +3,9 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +20,11 @@ type Store struct {
 	Redis *redis.Client
 	Cfg   config.AppConfig
 }
+
+var (
+	//go:embed migrations/*.sql
+	migrationFiles embed.FS
+)
 
 func NewStore(cfg config.AppConfig) (*Store, error) {
 	db, err := sql.Open("mysql", cfg.DatabaseURL)
@@ -61,7 +65,7 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) RunMigrations(ctx context.Context) error {
-	data, err := os.ReadFile(filepath.Join("internal", "web", "storage", "migrations", "001_init.sql"))
+	data, err := migrationFiles.ReadFile("migrations/001_init.sql")
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)
 	}

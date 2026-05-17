@@ -8,7 +8,7 @@
 
 - [x] 2.1 调整配置解析与启动校验逻辑，明确 `output/workspace` / `workspace` 是 Web runtime 资产目录，并保留 `workspace/bin`、`workspace/cmd` 作为 agent 命令执行所需路径
 - [x] 2.2 清理这些 runtime 资产目录与 CLI/REPL 历史结构之间的错误耦合，使服务仅校验 Web 服务与 agent runtime 实际需要的依赖
-- [ ] 2.3 处理数据库迁移和其他服务必需资源的加载方式，确保本地运行与部署运行一致
+- [x] 2.3 处理数据库迁移和其他服务必需资源的加载方式，确保本地运行与部署运行一致
 
 ## 3. 清理构建与发布结构
 
