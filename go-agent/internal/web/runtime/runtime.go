@@ -42,7 +42,7 @@ type Service struct {
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig) *Service {
-	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(store, cfg)}
+	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 }
 
 func (s *Service) SetBuiltinSkills(loader *sessions.SkillLoader) {
@@ -56,12 +56,12 @@ type toolExecutionOutcome struct {
 }
 
 type toolExecutionAudit struct {
-	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
-	ResolvedCommandPath string `json:"resolved_command_path,omitempty"`
-	CommandArtifactPath string `json:"command_artifact_path,omitempty"`
+	ResolvedCWD           string `json:"resolved_cwd,omitempty"`
+	ResolvedCommandPath   string `json:"resolved_command_path,omitempty"`
+	CommandArtifactPath   string `json:"command_artifact_path,omitempty"`
 	CommandArtifactSource string `json:"command_artifact_source,omitempty"`
-	OutcomeSummary      string `json:"outcome_summary,omitempty"`
-	DenialReason        string `json:"denial_reason,omitempty"`
+	OutcomeSummary        string `json:"outcome_summary,omitempty"`
+	DenialReason          string `json:"denial_reason,omitempty"`
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
@@ -77,8 +77,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 
-	workspaceRoot, err := s.resolveUserWorkspace(user.ID)
-	if err != nil {
+	if _, err := s.resolveUserWorkspace(user.ID); err != nil {
 		return storage.Message{}, err
 	}
 
@@ -96,7 +95,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
 			Messages: messages,
-			Tools:    s.Tools.Definitions(loader),
+			Tools:    s.Tools.Definitions(),
 		}
 		reqBody, _ := json.Marshal(req)
 		resp, err := config.Client.CreateChatCompletion(ctx, req)
@@ -117,7 +116,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, WorkspaceRoot: workspaceRoot}, tc.Function.Name, tc.Function.Arguments)
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
 			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
@@ -144,7 +143,7 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
-	runtimeEnv := s.Tools.runtimeEnv(toolCtx)
+	runtimeEnv := s.Tools.runtimeEnv()
 	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, runtimeEnv.CommandBinDir, runtimeEnv.CommandScriptDir)
 	audit := toolExecutionAudit{
 		ResolvedCWD:           strings.TrimSpace(runtimeEnv.WorkspaceRoot),
@@ -268,7 +267,7 @@ func (s *Service) loadConversationMessages(ctx context.Context, conversationID s
 func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoader) string {
 	toolNames := []string(nil)
 	if s.Tools != nil {
-		toolDefs := s.Tools.Definitions(loader)
+		toolDefs := s.Tools.Definitions()
 		toolNames = make([]string, 0, len(toolDefs))
 		for _, def := range toolDefs {
 			if def.Function == nil || strings.TrimSpace(def.Function.Name) == "" {

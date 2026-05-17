@@ -102,7 +102,7 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	conversation := storage.Conversation{ID: "conv_1", Title: "新对话"}
 	user := storage.User{ID: "usr_1", Username: "alice"}
 
@@ -116,8 +116,8 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	if llm.calls != 1 {
 		t.Fatalf("expected llm to be called once, got %d", llm.calls)
 	}
-	if len(llm.lastReq.Tools) != 0 {
-		t.Fatalf("expected no tools for direct answer, got %d", len(llm.lastReq.Tools))
+	if len(llm.lastReq.Tools) != 1 || llm.lastReq.Tools[0].Function == nil || llm.lastReq.Tools[0].Function.Name != "load_skill" {
+		t.Fatalf("expected startup-loaded default load_skill tool, got %#v", llm.lastReq.Tools)
 	}
 	if len(store.toolCalls) != 0 {
 		t.Fatalf("expected no tool calls to be stored, got %d", len(store.toolCalls))
@@ -145,7 +145,7 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
 
@@ -211,7 +211,7 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		Status:      "enabled",
 	}}}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_3", Title: "新对话"}
 	user := storage.User{ID: "usr_3", Username: "carol"}
 
@@ -297,7 +297,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
 	user := storage.User{ID: "usr_4", Username: "dave"}
 
@@ -377,7 +377,7 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(nil, cfg), BuiltinSkills: builtin}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_5", Title: "新对话"}
 	user := storage.User{ID: "usr_5", Username: "erin"}
 
@@ -487,13 +487,9 @@ func TestResolveUserWorkspace_AllowsWorkspaceWithEmbeddedDeploymentResources(t *
 }
 
 func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
-	loader := sessions.NewSkillLoader()
-	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
-	})
-	registry := NewToolRegistry(nil, config.AppConfig{})
+	registry := NewToolRegistry(config.AppConfig{})
 
-	defs := registry.Definitions(loader)
+	defs := registry.Definitions()
 	if len(defs) != 1 {
 		t.Fatalf("expected one web tool definition, got %d", len(defs))
 	}
@@ -512,12 +508,23 @@ func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
 	}
 }
 
+func TestToolRegistryDefinitions_AreLoadedAtRegistryCreation(t *testing.T) {
+	cfg := config.AppConfig{WebAllowedTools: []string{"bash"}}
+	registry := NewToolRegistry(cfg)
+	cfg.WebAllowedTools = []string{"read_file"}
+
+	defs := registry.Definitions()
+	if len(defs) != 1 || defs[0].Function == nil || defs[0].Function.Name != "bash" {
+		t.Fatalf("expected registry to keep startup-loaded bash definition, got %#v", defs)
+	}
+}
+
 func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	loader := sessions.NewSkillLoader()
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(nil, config.AppConfig{
+	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/deploy/app",
 		WorkspaceRoot:    "/deploy/app/output/workspace",
 		CommandBinDir:    "/deploy/app/output/workspace/bin",
@@ -547,7 +554,7 @@ func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(nil, config.AppConfig{AppHome: "/repo/app", WorkspaceRoot: "/repo/app/workspace"})
+	registry := NewToolRegistry(config.AppConfig{AppHome: "/repo/app", WorkspaceRoot: "/repo/app/workspace"})
 
 	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
@@ -573,7 +580,7 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 		return env.AppHome + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
 	}
 
-	registry := NewToolRegistry(nil, config.AppConfig{
+	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/deploy/app",
 		WorkspaceRoot:    "/deploy/app/workspace",
 		CommandBinDir:    "/deploy/app/bin",
@@ -602,7 +609,7 @@ func TestToolRegistryExecute_UsesWorkspaceDerivedCommandDirsWhenUnset(t *testing
 		return env.WorkspaceRoot + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
 	}
 
-	registry := NewToolRegistry(nil, config.AppConfig{WorkspaceRoot: "/deploy/app/workspace", WebAllowedTools: []string{"bash"}})
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/deploy/app/workspace", WebAllowedTools: []string{"bash"}})
 	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -624,8 +631,8 @@ func TestToolRegistryExecute_InjectsWorkspaceIntoToolHandler(t *testing.T) {
 		return env.WorkspaceRoot, nil
 	}
 
-	registry := NewToolRegistry(nil, config.AppConfig{WebAllowedTools: []string{"bash"}})
-	result, err := registry.Execute(context.Background(), ToolContext{WorkspaceRoot: "/workspaces/usr_1"}, "bash", `{"command":"pwd"}`)
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/workspaces/usr_1", WebAllowedTools: []string{"bash"}})
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -659,9 +666,14 @@ func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
 		t.Fatalf("write helper script: %v", err)
 	}
 
-	cfg := config.AppConfig{CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: filepath.Join(root, "workspace")}, "bash", `{"command":"`+script+` --flag"}`)
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("create workspace dir: %v", err)
+	}
+
+	cfg := config.AppConfig{WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+script+` --flag"}`)
 
 	if outcome.Audit.CommandArtifactPath != script {
 		t.Fatalf("expected audit command artifact path %q, got %#v", script, outcome.Audit)
@@ -683,8 +695,8 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 	}
 
 	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+outside+`"}`)
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+outside+`"}`)
 
 	if outcome.Status != "rejected" {
 		t.Fatalf("expected rejected outcome, got %#v", outcome)
@@ -716,8 +728,8 @@ func TestExecuteToolCall_AuditClassifiesWorkspaceCommandArtifactSource(t *testin
 	}
 
 	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Audit.CommandArtifactSource != "workspace" {
 		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
@@ -737,8 +749,8 @@ func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T
 	}
 
 	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: customRoot, WebAllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Audit.CommandArtifactSource != "custom" {
 		t.Fatalf("expected custom artifact source, got %#v", outcome.Audit)
@@ -758,13 +770,13 @@ func TestExecuteToolCall_AuditCapturesDeploymentWorkspaceResolution(t *testing.T
 	}
 
 	cfg := config.AppConfig{
-		AppHome:       appHome,
-		WorkspaceRoot: workspace,
-		CommandBinDir: binDir,
+		AppHome:         appHome,
+		WorkspaceRoot:   workspace,
+		CommandBinDir:   binDir,
 		WebAllowedTools: []string{"bash"},
 	}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Status != "success" {
 		t.Fatalf("expected successful outcome, got %#v", outcome)
