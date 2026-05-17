@@ -139,7 +139,7 @@ func EnsureAppLayout(cfg AppConfig) error {
 		path  string
 	}{
 		{label: "app home", path: cfg.AppHome},
-		{label: "logs", path: filepath.Join(cfg.AppHome, "logs")},
+		{label: "logs", path: filepath.Join(cfg.WorkspaceRoot, "logs")},
 		{label: "builtin skills dir", path: cfg.BuiltinSkillsDir},
 		{label: "command bin dir", path: cfg.CommandBinDir},
 		{label: "command script dir", path: cfg.CommandScriptDir},

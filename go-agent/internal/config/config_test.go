@@ -358,11 +358,11 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 
 	paths := []string{
 		root,
-		filepath.Join(root, "logs"),
 		filepath.Join(root, "workspace", "skills"),
 		filepath.Join(root, "workspace", "bin"),
 		filepath.Join(root, "workspace", "cmd"),
 		filepath.Join(root, "workspace"),
+		filepath.Join(root, "workspace", "logs"),
 	}
 	for _, path := range paths {
 		info, err := os.Stat(path)

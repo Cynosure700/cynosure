@@ -30,8 +30,8 @@ func InitFileLogger() error {
 	return InitFileLoggerAt("logs")
 }
 
-func InitFileLoggerUnderAppHome(appHome string) error {
-	base := strings.TrimSpace(appHome)
+func InitFileLoggerUnderWorkspaceRoot(workspaceRoot string) error {
+	base := strings.TrimSpace(workspaceRoot)
 	if base == "" {
 		return InitFileLogger()
 	}

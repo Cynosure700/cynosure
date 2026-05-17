@@ -1,9 +1,5 @@
-# deployment-runtime-layout Specification
+## MODIFIED Requirements
 
-## Purpose
-Define how the web service resolves its deployment-aware runtime workspace root and separates application-root service paths from workspace-derived runtime command assets.
-
-## Requirements
 ### Requirement: Runtime workspace root SHALL prefer packaged deployment assets
 The system SHALL continue to resolve a deployment-aware runtime workspace root for the web service, SHALL prefer packaged deployment assets under `output/workspace` when present, and SHALL fall back to the source `workspace` layout for local debugging when packaged assets are absent.
 

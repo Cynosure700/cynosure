@@ -166,6 +166,8 @@ This section is one continuous sequence — don't stop partway through. Do NOT u
 
 Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Within the workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-0/`, `eval-1/`, etc.). Don't create all of this upfront — just create directories as you go.
 
+**Go agent runtime:** Bash commands run from the configured workspace root, not from this skill directory. Reference bundled files as `skills/skill-creator/...`, run Python modules with `PYTHONPATH=skills/skill-creator`, keep temporary/output files inside the workspace, avoid `/tmp` and `> /dev/null`, and write background process IDs to files because shell variables do not persist across tool calls.
+
 ### Step 1: Spawn all runs (with-skill AND baseline) in the same turn
 
 For each test case, spawn two subagents in the same turn — one with the skill, one without. This is important: don't spawn the with-skill runs first and then come back for baselines later. Launch everything at once so it all finishes around the same time.
@@ -218,7 +220,7 @@ When each subagent task completes, you receive a notification containing `total_
 
 This is the only opportunity to capture this data — it comes through the task notification and isn't persisted elsewhere. Process each notification as it arrives rather than trying to batch them.
 
-### Step 4: Grade, aggregate, and launch the viewer
+### Step 4: Grade, aggregate, and generate the viewer
 
 Once all runs are done:
 
@@ -226,21 +228,23 @@ Once all runs are done:
 
 2. **Aggregate into benchmark** — run the aggregation script from the skill-creator directory:
    ```bash
-   python -m scripts.aggregate_benchmark <workspace>/iteration-N --skill-name <name>
+   PYTHONPATH=skills/skill-creator python -m scripts.aggregate_benchmark \
+     <workspace>/iteration-N \
+     --skill-name <name>
    ```
    This produces `benchmark.json` and `benchmark.md` with pass_rate, time, and tokens for each configuration, with mean ± stddev and the delta. If generating benchmark.json manually, see `references/schemas.md` for the exact schema the viewer expects.
 Put each with_skill version before its baseline counterpart.
 
 3. **Do an analyst pass** — read the benchmark data and surface patterns the aggregate stats might hide. See `agents/analyzer.md` (the "Analyzing Benchmark Results" section) for what to look for — things like assertions that always pass regardless of skill (non-discriminating), high-variance evals (possibly flaky), and time/token tradeoffs.
 
-4. **Launch the viewer** with both qualitative outputs and quantitative data:
+4. **Generate the review viewer** with both qualitative outputs and quantitative data:
    ```bash
-   nohup python <skill-creator-path>/eval-viewer/generate_review.py \
+   python skills/skill-creator/eval-viewer/generate_review.py \
      <workspace>/iteration-N \
      --skill-name "my-skill" \
      --benchmark <workspace>/iteration-N/benchmark.json \
-     > /dev/null 2>&1 &
-   VIEWER_PID=$!
+     --static <workspace>/iteration-N/review.html \
+     > <workspace>/iteration-N/viewer.log 2>&1
    ```
    For iteration 2+, also pass `--previous-workspace <workspace>/iteration-<N-1>`.
 
@@ -248,7 +252,7 @@ Put each with_skill version before its baseline counterpart.
 
 Note: please use generate_review.py to create the viewer; there's no need to write custom HTML.
 
-5. **Tell the user** something like: "I've opened the results in your browser. There are two tabs — 'Outputs' lets you click through each test case and leave feedback, 'Benchmark' shows the quantitative comparison. When you're done, come back here and let me know."
+5. **Tell the user** something like: "I've generated the review page at `<workspace>/iteration-N/review.html`. There are two tabs — 'Outputs' lets you click through each test case and leave feedback, 'Benchmark' shows the quantitative comparison. When you're done, come back here and let me know."
 
 ### What the user sees in the viewer
 
@@ -281,10 +285,12 @@ When the user tells you they're done, read `feedback.json`:
 
 Empty feedback means the user thought it was fine. Focus your improvements on the test cases where the user had specific complaints.
 
-Kill the viewer server when you're done with it:
+If you explicitly started a viewer server instead of generating static HTML, kill it when you're done:
 
 ```bash
-kill $VIEWER_PID 2>/dev/null
+if [ -f <workspace>/iteration-N/viewer.pid ]; then
+  kill "$(cat <workspace>/iteration-N/viewer.pid)" > <workspace>/iteration-N/viewer-kill.log 2>&1 || true
+fi
 ```
 
 ---
@@ -366,7 +372,7 @@ Present the eval set to the user for review using the HTML template:
    - `__EVAL_DATA_PLACEHOLDER__` → the JSON array of eval items (no quotes around it — it's a JS variable assignment)
    - `__SKILL_NAME_PLACEHOLDER__` → the skill's name
    - `__SKILL_DESCRIPTION_PLACEHOLDER__` → the skill's current description
-3. Write to a temp file (e.g., `/tmp/eval_review_<skill-name>.html`) and open it: `open /tmp/eval_review_<skill-name>.html`
+3. Write to a workspace file (e.g., `skill-creator-review/eval_review_<skill-name>.html`) and give the user that path. Only use `open` if the runtime explicitly supports opening a local browser.
 4. The user can edit queries, toggle should-trigger, add/remove entries, then click "Export Eval Set"
 5. The file downloads to `~/Downloads/eval_set.json` — check the Downloads folder for the most recent version in case there are multiple (e.g., `eval_set (1).json`)
 
@@ -379,19 +385,21 @@ Tell the user: "This will take some time — I'll run the optimization loop in t
 Save the eval set to the workspace, then run in the background:
 
 ```bash
-python -m scripts.run_loop \
+nohup env PYTHONPATH=skills/skill-creator python -m scripts.run_loop \
   --eval-set <path-to-trigger-eval.json> \
   --skill-path <path-to-skill> \
   --model <model-id-powering-this-session> \
   --max-iterations 5 \
-  --verbose
+  --verbose \
+  > skill-creator-run-loop.log 2>&1 &
+echo $! > skill-creator-run-loop.pid
 ```
 
 Use the model ID from your system prompt (the one powering the current session) so the triggering test matches what the user actually experiences.
 
 While it runs, periodically tail the output to give the user updates on which iteration it's on and what the scores look like.
 
-This handles the full optimization loop automatically. It splits the eval set into 60% train and 40% held-out test, evaluates the current description (running each query 3 times to get a reliable trigger rate), then calls Claude to propose improvements based on what failed. It re-evaluates each new description on both train and test, iterating up to 5 times. When it's done, it opens an HTML report in the browser showing the results per iteration and returns JSON with `best_description` — selected by test score rather than train score to avoid overfitting.
+This handles the full optimization loop automatically. It splits the eval set into 60% train and 40% held-out test, evaluates the current description (running each query 3 times to get a reliable trigger rate), then calls Claude to propose improvements based on what failed. It re-evaluates each new description on both train and test, iterating up to 5 times. When it's done, check the log/output for the report path and JSON with `best_description` — selected by test score rather than train score to avoid overfitting.
 
 ### How skill triggering works
 
@@ -410,7 +418,7 @@ Take `best_description` from the JSON output and update the skill's SKILL.md fro
 Check whether you have access to the `present_files` tool. If you don't, skip this step. If you do, package the skill and present the .skill file to the user:
 
 ```bash
-python -m scripts.package_skill <path/to/skill-folder>
+PYTHONPATH=skills/skill-creator python -m scripts.package_skill <path/to/skill-folder>
 ```
 
 After packaging, direct the user to the resulting `.skill` file path so they can install it.
@@ -437,8 +445,8 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 
 **Updating an existing skill**: The user might be asking you to update an existing skill, not create a new one. In this case:
 - **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, output `research-helper.skill` (not `research-helper-v2`).
-- **Copy to a writeable location before editing.** The installed skill path may be read-only. Copy to `/tmp/skill-name/`, edit there, and package from the copy.
-- **If packaging manually, stage in `/tmp/` first**, then copy to the output directory -- direct writes may fail due to permissions.
+- **Copy to a writeable location before editing.** The installed skill path may be read-only. Copy to a workspace directory such as `scratch/skill-name/`, edit there, and package from the copy.
+- **If packaging manually, stage inside the workspace first**, then copy to the output directory -- direct writes may fail due to permissions.
 
 ---
 
