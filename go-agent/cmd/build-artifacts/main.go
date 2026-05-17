@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"nano_cc/internal/config"
 	"nano_cc/internal/deploy"
 )
 
@@ -15,8 +14,6 @@ type buildConfig struct {
 	CommandSource    string
 	CommandBinDir    string
 	CommandScriptDir string
-	WorkspaceRoot    string
-	BuiltinSkillsDir string
 }
 
 func main() {
@@ -32,15 +29,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "resolve build config: %v\n", err)
 		os.Exit(1)
 	}
-	if err := config.EnsureAppLayout(config.AppConfig{
-		AppHome:          built.AppHome,
-		BuiltinSkillsDir: built.BuiltinSkillsDir,
-		CommandBinDir:    built.CommandBinDir,
-		CommandScriptDir: built.CommandScriptDir,
-		WorkspaceRoot:    built.WorkspaceRoot,
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "ensure app layout: %v\n", err)
-		os.Exit(1)
+	for label, path := range map[string]string{
+		"app home":           built.AppHome,
+		"command bin dir":    built.CommandBinDir,
+		"command script dir": built.CommandScriptDir,
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "ensure %s: %v\n", label, err)
+			os.Exit(1)
+		}
 	}
 
 	if err := deploy.BuildCommandArtifacts(deploy.BuildOptions{
@@ -77,7 +74,5 @@ func resolveBuildConfig(appHome, commandSource, commandBinDir, commandScriptDir 
 		CommandSource:    commandSource,
 		CommandBinDir:    commandBinDir,
 		CommandScriptDir: commandScriptDir,
-		WorkspaceRoot:    filepath.Join(resolvedAppHome, "workspace"),
-		BuiltinSkillsDir: filepath.Join(resolvedAppHome, "workspace", "skills"),
 	}, nil
 }

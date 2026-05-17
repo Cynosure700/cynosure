@@ -29,11 +29,7 @@ var Handlers = map[string]ToolHandler{
 	"read_file":     handleRead,
 	"write_file":    handleWrite,
 	"edit_file":     handleEdit,
-	"load_skill":    nil, // set by sessions package
-}
-
-func SetHandler(name string, h ToolHandler) {
-	Handlers[name] = h
+	"load_skill":    nil, // handled by web runtime registry
 }
 
 func WithRuntimeEnv(ctx context.Context, env RuntimeEnv) context.Context {

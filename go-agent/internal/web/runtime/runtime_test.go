@@ -531,8 +531,8 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
-	if !contains(content, "<deployment-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/output/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/output/workspace/cmd") {
-		t.Fatalf("expected loaded skill content to include deployment paths, got %q", content)
+	if !contains(content, "<runtime-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/output/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/output/workspace/cmd") {
+		t.Fatalf("expected loaded skill content to include runtime paths, got %q", content)
 	}
 	if !contains(content, "WORKSPACE_ROOT=/deploy/app/output/workspace") {
 		t.Fatalf("expected loaded skill content to include workspace root, got %q", content)
@@ -703,7 +703,7 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCall_AuditClassifiesDeploymentCommandArtifactSource(t *testing.T) {
+func TestExecuteToolCall_AuditClassifiesWorkspaceCommandArtifactSource(t *testing.T) {
 	appHome := t.TempDir()
 	workspace := filepath.Join(appHome, "output", "workspace")
 	binDir := filepath.Join(workspace, "bin")
@@ -719,29 +719,8 @@ func TestExecuteToolCall_AuditClassifiesDeploymentCommandArtifactSource(t *testi
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
 	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
 
-	if outcome.Audit.CommandArtifactSource != "deployment" {
-		t.Fatalf("expected deployment artifact source, got %#v", outcome.Audit)
-	}
-}
-
-func TestExecuteToolCall_AuditClassifiesLocalCommandArtifactSource(t *testing.T) {
-	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "workspace")
-	binDir := filepath.Join(workspace, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("create local bin dir: %v", err)
-	}
-	command := filepath.Join(binDir, "helper")
-	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatalf("write local helper: %v", err)
-	}
-
-	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(nil, cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{WorkspaceRoot: workspace}, "bash", `{"command":"`+command+`"}`)
-
-	if outcome.Audit.CommandArtifactSource != "local" {
-		t.Fatalf("expected local artifact source, got %#v", outcome.Audit)
+	if outcome.Audit.CommandArtifactSource != "workspace" {
+		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
 	}
 }
 
@@ -799,8 +778,8 @@ func TestExecuteToolCall_AuditCapturesDeploymentWorkspaceResolution(t *testing.T
 	if outcome.Audit.CommandArtifactPath != command {
 		t.Fatalf("expected audit command artifact path %q, got %#v", command, outcome.Audit)
 	}
-	if outcome.Audit.CommandArtifactSource != "deployment" {
-		t.Fatalf("expected deployment artifact source, got %#v", outcome.Audit)
+	if outcome.Audit.CommandArtifactSource != "workspace" {
+		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
 	}
 }
 

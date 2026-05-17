@@ -150,7 +150,7 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		ResolvedCWD:           strings.TrimSpace(runtimeEnv.WorkspaceRoot),
 		ResolvedCommandPath:   resolvedCommandPath,
 		CommandArtifactPath:   commandArtifactPath,
-		CommandArtifactSource: classifyCommandArtifactSource(s.Cfg.AppHome, runtimeEnv.WorkspaceRoot, commandArtifactPath),
+		CommandArtifactSource: classifyCommandArtifactSource(runtimeEnv.WorkspaceRoot, commandArtifactPath),
 	}
 	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
@@ -184,29 +184,16 @@ func (o toolExecutionOutcome) AuditSummary() string {
 	return string(data)
 }
 
-func classifyCommandArtifactSource(appHome, workspaceRoot, commandArtifactPath string) string {
+func classifyCommandArtifactSource(workspaceRoot, commandArtifactPath string) string {
 	if strings.TrimSpace(commandArtifactPath) == "" {
 		return ""
 	}
 	cleanArtifact := filepath.Clean(commandArtifactPath)
-	if appHome != "" {
-		deploymentRoot := filepath.Clean(filepath.Join(appHome, "output", "workspace"))
-		if cleanArtifact == deploymentRoot || strings.HasPrefix(cleanArtifact, deploymentRoot+string(os.PathSeparator)) {
-			return "deployment"
-		}
-		localRoot := filepath.Clean(filepath.Join(appHome, "workspace"))
-		if cleanArtifact == localRoot || strings.HasPrefix(cleanArtifact, localRoot+string(os.PathSeparator)) {
-			return "local"
-		}
-	}
 	cleanWorkspace := strings.TrimSpace(workspaceRoot)
 	if cleanWorkspace != "" {
 		cleanWorkspace = filepath.Clean(cleanWorkspace)
 		if cleanArtifact == cleanWorkspace || strings.HasPrefix(cleanArtifact, cleanWorkspace+string(os.PathSeparator)) {
-			if strings.Contains(cleanWorkspace, string(os.PathSeparator)+filepath.Join("output", "workspace")) {
-				return "deployment"
-			}
-			return "local"
+			return "workspace"
 		}
 	}
 	return "custom"

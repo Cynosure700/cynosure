@@ -25,12 +25,6 @@ func TestResolveBuildConfig_UsesWorkspaceDefaults(t *testing.T) {
 	if built.CommandScriptDir != filepath.Join(appHome, "workspace", "cmd") {
 		t.Fatalf("expected command script dir under workspace/cmd, got %q", built.CommandScriptDir)
 	}
-	if built.WorkspaceRoot != filepath.Join(appHome, "workspace") {
-		t.Fatalf("expected workspace root under app home, got %q", built.WorkspaceRoot)
-	}
-	if built.BuiltinSkillsDir != filepath.Join(appHome, "workspace", "skills") {
-		t.Fatalf("expected builtin skills dir under workspace/skills, got %q", built.BuiltinSkillsDir)
-	}
 }
 
 func TestResolveBuildConfig_PreservesExplicitCommandPaths(t *testing.T) {

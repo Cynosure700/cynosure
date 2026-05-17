@@ -48,7 +48,15 @@ func BuildCommandArtifacts(opts BuildOptions) error {
 		return err
 	}
 	for _, cmdName := range commands {
-		pkgPath := "./" + filepath.ToSlash(filepath.Join("cmd", cmdName))
+		pkgDir := filepath.Join(opts.CommandSource, cmdName)
+		relPkgDir, err := filepath.Rel(opts.AppHome, pkgDir)
+		if err != nil {
+			return fmt.Errorf("resolve command package %s: %w", cmdName, err)
+		}
+		if relPkgDir == ".." || strings.HasPrefix(relPkgDir, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("command source %q must stay under app home %q", pkgDir, opts.AppHome)
+		}
+		pkgPath := "./" + filepath.ToSlash(relPkgDir)
 		output := filepath.Join(opts.CommandBinDir, cmdName)
 		cmd := exec.Command(opts.GoBinary, "build", "-o", output, pkgPath)
 		cmd.Dir = opts.AppHome

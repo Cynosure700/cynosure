@@ -88,7 +88,7 @@ Builtin body.`
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillDoc), 0o644); err != nil {
 		t.Fatalf("write skill doc: %v", err)
 	}
-	loader, err := sessions.LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot)
+	loader, err := sessions.LoadBuiltinSkillsFromDir(filepath.Join(workspaceRoot, "skills"))
 	if err != nil {
 		t.Fatalf("load builtin skills: %v", err)
 	}

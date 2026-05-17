@@ -68,7 +68,7 @@ func TestCopyScriptAssets(t *testing.T) {
 
 func TestBuildCommandArtifacts_BuildsCommandsAndCopiesScripts(t *testing.T) {
 	appHome := t.TempDir()
-	commandSource := filepath.Join(appHome, "cmd")
+	commandSource := filepath.Join(appHome, "runtime-cmd")
 	if err := os.MkdirAll(filepath.Join(commandSource, "demo"), 0o755); err != nil {
 		t.Fatalf("mkdir demo command: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestBuildCommandArtifacts_BuildsCommandsAndCopiesScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read built binary: %v", err)
 	}
-	if string(binaryData) != "binary for ./cmd/demo\n" {
+	if string(binaryData) != "binary for ./runtime-cmd/demo\n" {
 		t.Fatalf("unexpected built binary contents: %q", string(binaryData))
 	}
 
@@ -121,8 +121,8 @@ func TestBuildCommandArtifacts_BuildsCommandsAndCopiesScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read build log: %v", err)
 	}
-	if string(logData) != appHome+"|./cmd/demo\n" {
-		t.Fatalf("expected go build to run from app home with cmd package path, got %q", string(logData))
+	if string(logData) != appHome+"|./runtime-cmd/demo\n" {
+		t.Fatalf("expected go build to run from app home with command source package path, got %q", string(logData))
 	}
 
 	scriptData, err := os.ReadFile(filepath.Join(scriptDir, "helper.py"))

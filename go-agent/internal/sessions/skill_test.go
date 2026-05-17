@@ -56,7 +56,7 @@ func TestCanonicalSkillName_FallsBackToDirectoryName(t *testing.T) {
 	}
 }
 
-func TestLoadBuiltinSkillsFromWorkspaceRoot_LoadsWorkspaceSkillsDirectory(t *testing.T) {
+func TestLoadBuiltinSkillsFromDir_LoadsWorkspaceSkillsDirectory(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	skillDir := filepath.Join(workspaceRoot, "skills", "workspace-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -72,9 +72,9 @@ Do workspace thing.`
 		t.Fatalf("write skill: %v", err)
 	}
 
-	loader, err := LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot)
+	loader, err := LoadBuiltinSkillsFromDir(filepath.Join(workspaceRoot, "skills"))
 	if err != nil {
-		t.Fatalf("load builtin skills from workspace root: %v", err)
+		t.Fatalf("load builtin skills from dir: %v", err)
 	}
 	entry, ok := loader.Skills["workspace-skill"]
 	if !ok {

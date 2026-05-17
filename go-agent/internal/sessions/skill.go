@@ -1,15 +1,12 @@
 package sessions
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-
-	"nano_cc/internal/tools"
 )
 
 type SkillEntry struct {
@@ -23,14 +20,7 @@ type SkillLoader struct {
 	Skills map[string]*SkillEntry
 }
 
-var Skills = &SkillLoader{Skills: make(map[string]*SkillEntry)}
-
-const skillsDir = "skills"
 const skillEntryFileName = "SKILL.md"
-
-func (sl *SkillLoader) LoadAll() error {
-	return sl.LoadAllFromDir(skillsDir)
-}
 
 func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 	sl.mu.Lock()
@@ -84,14 +74,6 @@ func LoadBuiltinSkillsFromDir(dir string) (*SkillLoader, error) {
 		return nil, err
 	}
 	return loader, nil
-}
-
-func LoadBuiltinSkillsFromWorkspaceRoot(workspaceRoot string) (*SkillLoader, error) {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
-	if workspaceRoot == "" {
-		return nil, fmt.Errorf("workspace root is required")
-	}
-	return LoadBuiltinSkillsFromDir(filepath.Join(workspaceRoot, skillsDir))
 }
 
 func canonicalSkillName(fullPath string, meta map[string]string) string {
@@ -226,18 +208,4 @@ func (sl *SkillLoader) GetContent(name string) (string, error) {
 	}
 
 	return fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", name, skill.Body), nil
-}
-
-func init() {
-	tools.SetHandler("load_skill", func(ctx context.Context, args map[string]any) (string, error) {
-		name, _ := args["name"].(string)
-		if name == "" {
-			return "", fmt.Errorf("skill name is required")
-		}
-		content, err := Skills.GetContent(name)
-		if err != nil {
-			return err.Error(), nil
-		}
-		return content, nil
-	})
 }

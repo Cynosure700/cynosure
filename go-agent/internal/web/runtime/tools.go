@@ -169,5 +169,5 @@ func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return "<deployment-paths>\n" + strings.Join(lines, "\n") + "\n</deployment-paths>"
+	return "<runtime-paths>\n" + strings.Join(lines, "\n") + "\n</runtime-paths>"
 }
