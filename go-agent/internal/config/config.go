@@ -337,11 +337,24 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 }
 
 func resolveRuntimeAssetDir(appHome, workspaceRoot, configured, subdir string) (string, error) {
-	configured = strings.TrimSpace(configured)
-	if configured != "" {
-		return resolvePath(appHome, configured)
+	expected, err := resolvePath(workspaceRoot, subdir)
+	if err != nil {
+		return "", err
 	}
-	return resolvePath(workspaceRoot, subdir)
+
+	configured = strings.TrimSpace(configured)
+	if configured == "" {
+		return expected, nil
+	}
+
+	resolved, err := resolvePath(appHome, configured)
+	if err != nil {
+		return "", err
+	}
+	if resolved != expected {
+		return "", fmt.Errorf("runtime asset dir must stay under workspace root: expected %q", expected)
+	}
+	return resolved, nil
 }
 
 func workspaceExists(path string) bool {

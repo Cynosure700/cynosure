@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -15,9 +16,9 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `",
-		"builtin_skills_dir": "custom-skills",
-		"command_bin_dir": "custom-bin",
-		"command_script_dir": "custom-cmd",
+		"builtin_skills_dir": "shared-workspace/skills",
+		"command_bin_dir": "shared-workspace/bin",
+		"command_script_dir": "shared-workspace/cmd",
 		"workspace_root": "shared-workspace",
 		"web_allowed_tools": "load_skill,bash"
 	}`
@@ -54,13 +55,13 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	if cfg.AppHome != filepath.Clean(root) {
 		t.Fatalf("expected app home %q, got %q", filepath.Clean(root), cfg.AppHome)
 	}
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "custom-skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "shared-workspace", "skills") {
 		t.Fatalf("unexpected builtin skills dir: %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "custom-bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "shared-workspace", "bin") {
 		t.Fatalf("unexpected command bin dir: %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "custom-cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "shared-workspace", "cmd") {
 		t.Fatalf("unexpected command script dir: %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "shared-workspace") {
@@ -103,9 +104,9 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("MODEL_ID", "")
 	t.Setenv("APP_HOME", root)
-	t.Setenv("BUILTIN_SKILLS_DIR", "env-skills")
-	t.Setenv("COMMAND_BIN_DIR", "env-bin")
-	t.Setenv("COMMAND_SCRIPT_DIR", "env-cmd")
+	t.Setenv("BUILTIN_SKILLS_DIR", filepath.Join("env-workspace", "skills"))
+	t.Setenv("COMMAND_BIN_DIR", filepath.Join("env-workspace", "bin"))
+	t.Setenv("COMMAND_SCRIPT_DIR", filepath.Join("env-workspace", "cmd"))
 	t.Setenv("WORKSPACE_ROOT", "env-workspace")
 	t.Setenv("WEB_ALLOWED_TOOLS", "load_skill,edit_file")
 
@@ -114,13 +115,13 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "env-skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "env-workspace", "skills") {
 		t.Fatalf("expected env builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "env-bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "env-workspace", "bin") {
 		t.Fatalf("expected env command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "env-cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "env-workspace", "cmd") {
 		t.Fatalf("expected env command script dir, got %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "env-workspace") {
@@ -297,6 +298,47 @@ func TestLoadWebConfig_ExplicitWorkspaceOverrideDrivesDefaultAssetDirs(t *testin
 	}
 	if cfg.CommandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
 		t.Fatalf("expected derived command script dir, got %q", cfg.CommandScriptDir)
+	}
+}
+
+func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config.json")
+	configBody := `{
+		"base_url": "https://example.com",
+		"api_key": "test-key",
+		"model_id": "test-model",
+		"app_home": "` + root + `"
+	}`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir to temp root: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("MODEL_ID", "")
+	t.Setenv("APP_HOME", "")
+	t.Setenv("WORKSPACE_ROOT", filepath.Join("custom", "runtime-workspace"))
+	t.Setenv("BUILTIN_SKILLS_DIR", "other-skills")
+	t.Setenv("COMMAND_BIN_DIR", "")
+	t.Setenv("COMMAND_SCRIPT_DIR", "")
+	t.Setenv("WEB_ALLOWED_TOOLS", "")
+
+	_, err = LoadWebConfig()
+	if err == nil {
+		t.Fatalf("expected runtime asset override outside workspace root to be rejected")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "runtime asset dir must stay under workspace root") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
