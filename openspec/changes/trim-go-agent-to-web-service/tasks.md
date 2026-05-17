@@ -12,7 +12,7 @@
 
 ## 3. 清理构建与发布结构
 
-- [ ] 3.1 精简或替换 `build.sh`、`cmd/build-artifacts`、`internal/deploy` 等构建逻辑，只保留 Web 服务正式构建路径，并继续正确产出 `workspace/bin`、`workspace/cmd` 等 runtime 资产
+- [x] 3.1 精简或替换 `build.sh`、`cmd/build-artifacts`、`internal/deploy` 等构建逻辑，只保留 Web 服务正式构建路径，并继续正确产出 `workspace/bin`、`workspace/cmd` 等 runtime 资产
 - [ ] 3.2 清理与 Web 服务启动无关的目录约定、产物说明和历史兼容脚本引用，但保留 Web agent 必需的 workspace 资产目录约定
 - [ ] 3.3 验证精简后的构建产物能够以单一正式服务发布包方式启动，且该发布包包含 Web agent 所需的 runtime workspace 资产
 
