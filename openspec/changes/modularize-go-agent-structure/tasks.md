@@ -2,7 +2,7 @@
 
 - [x] 1.1 拆分 `go-agent/internal/web/app/server.go`，将路由注册、鉴权 handler、Skill handler、Conversation handler 与 HTTP 辅助逻辑整理到职责清晰的同包文件中。
 - [x] 1.2 拆分 `go-agent/internal/web/runtime/runtime.go`，分离会话编排、tool 执行、prompt 构造、SSE 输出等逻辑，同时保持现有运行时行为不变。
-- [ ] 1.3 梳理 `go-agent/internal/web/runtime/tools.go` 与 `go-agent/internal/tools/registry.go` 的边界，把 Web runtime 专属逻辑与通用工具定义 / handler 拆开。
+- [x] 1.3 梳理 `go-agent/internal/web/runtime/tools.go` 与 `go-agent/internal/tools/registry.go` 的边界，把 Web runtime 专属逻辑与通用工具定义 / handler 拆开。
 
 ## 2. 配置、存储与 Skill 加载整理
 
