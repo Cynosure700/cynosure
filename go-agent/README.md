@@ -71,17 +71,17 @@ go-agent/
 ├── config.json                 # LLM 配置文件（可选）
 ├── internal/
 │   ├── assistant/              # 通用 assistant system prompt 构造
-│   ├── config/                 # LLM / Web 配置
+│   ├── config/                 # 配置装配：LLM、Web 配置、runtime 路径、layout 校验、env 辅助
 │   ├── deploy/                 # 部署产物构建逻辑
 │   ├── logger/                 # 日志
 │   ├── safety/                 # 路径与访问安全辅助
-│   ├── sessions/               # builtin Skill 加载与合并
-│   ├── tools/                  # 共享工具注册与执行逻辑（Web runtime 复用）
+│   ├── sessions/               # Skill loader：扫描、frontmatter 解析、merge、render
+│   ├── tools/                  # 共享工具层：runtime env、path guard、handlers、tool definitions
 │   └── web/
-│       ├── app/                # HTTP Server 与路由
+│       ├── app/                # HTTP 入口层：server 装配、routes、auth/skill/conversation handlers
 │       ├── auth/               # 注册 / 登录 / Session / JWT
-│       ├── runtime/            # Web 聊天 runtime / tool registry / SSE
-│       └── storage/            # MySQL / Redis / migrations / repository
+│       ├── runtime/            # Web 聊天编排：conversation flow、tool registry、prompt、audit、SSE
+│       └── storage/            # 存储层：store、migrations、repos、cache、scan helpers
 ├── skills/                     # 源码内置 Skill catalog（构建时复制到部署包）
 ├── logs/                       # 服务日志目录
 ├── workspace/                  # 本地调试时使用的 runtime workspace（源码侧回退目录）
@@ -505,6 +505,10 @@ npm run dev
 ```bash
 cd go-agent
 
+# 可选：先按模块做快速回归
+go test ./internal/config ./internal/sessions ./internal/tools ./internal/web/app ./internal/web/runtime
+
+# 再跑全量验证
 gofmt -w ./...
 go test ./...
 ./build.sh
