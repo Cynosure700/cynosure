@@ -140,6 +140,11 @@ select {
     color: #fca5a5;
 }
 
+.list-delete-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .main-content {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

@@ -17,6 +17,7 @@ export function App() {
     const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
+    const [deletingConversationId, setDeletingConversationId] = useState("");
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
     const [skillForm, setSkillForm] = useState({ id: "", name: "", description: "", content: "", status: "draft" as Skill["status"] });
@@ -144,11 +145,22 @@ export function App() {
     }
 
     async function handleDeleteConversation(conversationId: string) {
-        await api.deleteConversation(conversationId);
-        const nextConversations = conversations.filter((item) => item.id !== conversationId);
-        setConversations(nextConversations);
-        if (conversationId === activeConversationId) {
-            setActiveConversationId(nextConversations[0]?.id ?? "");
+        setDeletingConversationId(conversationId);
+        setError("");
+        try {
+            await api.deleteConversation(conversationId);
+            const nextConversations = conversations.filter((item) => item.id !== conversationId);
+            setConversations(nextConversations);
+            if (conversationId === activeConversationId) {
+                setActiveConversationId(nextConversations[0]?.id ?? "");
+                setMessages([]);
+                setToolEvents([]);
+                setChatInput("");
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "删除会话失败");
+        } finally {
+            setDeletingConversationId("");
         }
     }
 
@@ -213,8 +225,9 @@ export function App() {
                                 <button
                                     className="list-delete-button"
                                     onClick={() => void handleDeleteConversation(conversation.id)}
+                                    disabled={deletingConversationId === conversation.id}
                                 >
-                                    删除
+                                    {deletingConversationId === conversation.id ? "删除中..." : "删除"}
                                 </button>
                             </div>
                         ))}
