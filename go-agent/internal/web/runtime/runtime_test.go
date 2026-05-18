@@ -695,6 +695,70 @@ func TestToolRegistryExecute_BashUsesActiveSkillDirWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestToolRegistryExecute_LoadSkillLeavesActiveSkillDirEmptyForDBSkill(t *testing.T) {
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"db-skill": {Meta: map[string]string{"description": "DB description"}, Body: "db body", Path: "db://skills/skill_1"},
+	})
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/repo/app/workspace"})
+
+	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"db-skill"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ActiveSkillDir != "" {
+		t.Fatalf("expected db skill to expose no active skill dir, got %#v", result)
+	}
+}
+
+func TestToolRegistryExecute_BashFallsBackToWorkspaceWhenSkillDirOutsideWorkspace(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.CurrentWorkingDir, nil
+	}
+
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
+
+	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: outside}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != filepath.Clean(workspace) {
+		t.Fatalf("expected workspace fallback in runtime env, got %#v", result)
+	}
+}
+
+func TestToolRegistryExecute_BashFallsBackToWorkspaceWhenSkillDirMissing(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.CurrentWorkingDir, nil
+	}
+
+	workspace := t.TempDir()
+	missing := filepath.Join(workspace, "skills", "missing-skill")
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
+
+	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: missing}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != filepath.Clean(workspace) {
+		t.Fatalf("expected workspace fallback for missing skill dir, got %#v", result)
+	}
+}
+
 func TestRegisteredTools_UsesCurrentWebAllowList(t *testing.T) {
 	tools := RegisteredTools(config.AppConfig{})
 	if len(tools) != 1 || tools[0] != "load_skill" {

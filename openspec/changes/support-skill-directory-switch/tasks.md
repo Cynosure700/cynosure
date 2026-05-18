@@ -6,7 +6,7 @@
 ## 2. Tool working directory resolution
 
 - [x] 2.1 Update runtime environment injection and default cwd resolution so skill-driven tool calls prefer the active skill directory and otherwise fall back to the workspace root.
-- [ ] 2.2 Preserve workspace-boundary validation for skill-driven cwd switching, including fallback or rejection behavior for non-filesystem or out-of-scope skills.
+- [x] 2.2 Preserve workspace-boundary validation for skill-driven cwd switching, including fallback or rejection behavior for non-filesystem or out-of-scope skills.
 - [ ] 2.3 Ensure tool audit metadata records the resolved cwd produced by skill-directory execution.
 
 ## 3. Regression coverage
