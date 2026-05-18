@@ -74,6 +74,26 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if len(parts) == 1 && r.Method == http.MethodPatch {
+		var body struct{ Title string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			badRequest(w, err)
+			return
+		}
+		title := strings.TrimSpace(body.Title)
+		if title == "" {
+			http.Error(w, "conversation title is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.store.TouchConversation(r.Context(), conversation.ID, title); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		conversation.Title = title
+		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation})
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "stream" && r.Method == http.MethodPost {
 		var body struct{ Content string }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

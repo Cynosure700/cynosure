@@ -25,6 +25,7 @@ type serverStore interface {
 	ListConversationsByUser(ctx context.Context, userID string) ([]storage.Conversation, error)
 	CreateConversation(ctx context.Context, conversation storage.Conversation) error
 	GetConversationByID(ctx context.Context, conversationID string) (storage.Conversation, error)
+	TouchConversation(ctx context.Context, conversationID, title string) error
 	DeleteConversation(ctx context.Context, conversationID string) error
 	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
 }

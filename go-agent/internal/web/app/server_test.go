@@ -24,6 +24,7 @@ type fakeServerStore struct {
 	updateCalled         bool
 	deleteCalled         bool
 	deleteConversation   bool
+	touchConversation    bool
 	getCalled            bool
 }
 
@@ -71,6 +72,14 @@ func (f *fakeServerStore) GetConversationByID(ctx context.Context, conversationI
 		return storage.Conversation{}, sql.ErrNoRows
 	}
 	return f.conversationToReturn, nil
+}
+
+func (f *fakeServerStore) TouchConversation(ctx context.Context, conversationID, title string) error {
+	f.touchConversation = true
+	if f.conversationToReturn.ID == conversationID {
+		f.conversationToReturn.Title = title
+	}
+	return nil
 }
 
 func (f *fakeServerStore) DeleteConversation(ctx context.Context, conversationID string) error {
@@ -332,5 +341,68 @@ func TestHandleConversationByID_ReturnsNotFoundAfterDelete(t *testing.T) {
 
 	if getResp.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d after delete, got %d", http.StatusNotFound, getResp.Code)
+	}
+}
+
+func TestHandleConversationByID_RenamesOwnedConversation(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "旧标题"}}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/conversations/conv_1", strings.NewReader(`{"title":"  新标题  "}`))
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+	if !store.touchConversation {
+		t.Fatalf("expected touch conversation to be called")
+	}
+	var body struct {
+		Conversation storage.Conversation `json:"conversation"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Conversation.Title != "新标题" {
+		t.Fatalf("expected trimmed title, got %#v", body.Conversation)
+	}
+}
+
+func TestHandleConversationByID_RejectsEmptyRename(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "旧标题"}}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/conversations/conv_1", strings.NewReader(`{"title":"   "}`))
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	}
+	if store.touchConversation {
+		t.Fatalf("expected rename not to reach store")
+	}
+}
+
+func TestHandleConversationByID_RejectsRenamingOtherUsersConversation(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_other", Title: "test"}}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/conversations/conv_1", strings.NewReader(`{"title":"新标题"}`))
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.Code)
+	}
+	if store.touchConversation {
+		t.Fatalf("expected rename not to reach store")
 	}
 }
