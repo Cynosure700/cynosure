@@ -423,7 +423,7 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	}
 }
 
-func TestRespondToConversation_CarriesFilesystemSkillDirAcrossMultiToolTurn(t *testing.T) {
+func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T) {
 	originalClient := config.Client
 	originalBash := agenttools.Handlers["bash"]
 	defer func() {
@@ -488,16 +488,16 @@ func TestRespondToConversation_CarriesFilesystemSkillDirAcrossMultiToolTurn(t *t
 	if err := json.Unmarshal([]byte(store.toolCalls[1].Summary), &audit); err != nil {
 		t.Fatalf("parse second tool audit: %v", err)
 	}
-	if filepath.Clean(audit.ResolvedCWD) != filepath.Clean(skillDir) {
-		t.Fatalf("expected bash audit cwd %q, got %#v", skillDir, audit)
+	if filepath.Clean(audit.ResolvedCWD) != filepath.Clean(workspace) {
+		t.Fatalf("expected bash audit cwd %q, got %#v", workspace, audit)
 	}
 	toolMessage := findToolMessageByID(t, llm.reqs[1].Messages, "tool_bash")
 	var outcome toolExecutionOutcome
 	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
 		t.Fatalf("parse bash tool outcome: %v", err)
 	}
-	if filepath.Clean(outcome.Result) != filepath.Clean(skillDir) {
-		t.Fatalf("expected bash tool result %q, got %q", skillDir, outcome.Result)
+	if filepath.Clean(outcome.Result) != filepath.Clean(workspace) {
+		t.Fatalf("expected bash tool result %q, got %q", workspace, outcome.Result)
 	}
 }
 
@@ -703,9 +703,6 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
 	}
-	if result.ActiveSkillDir != "" {
-		t.Fatalf("expected non-filesystem skill path to expose no active skill dir, got %q", result.ActiveSkillDir)
-	}
 }
 
 func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testing.T) {
@@ -811,29 +808,7 @@ func TestToolRegistryExecute_InjectsWorkspaceIntoToolHandler(t *testing.T) {
 	}
 }
 
-func TestToolRegistryExecute_LoadSkillExposesFilesystemSkillDir(t *testing.T) {
-	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "builtin-skill")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir skill dir: %v", err)
-	}
-	skillPath := filepath.Join(skillDir, "SKILL.md")
-	loader := sessions.NewSkillLoader()
-	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: skillPath},
-	})
-	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: root})
-
-	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.ActiveSkillDir != filepath.Clean(skillDir) {
-		t.Fatalf("expected active skill dir %q, got %#v", skillDir, result)
-	}
-}
-
-func TestToolRegistryExecute_BashUsesActiveSkillDirWhenAvailable(t *testing.T) {
+func TestToolRegistryExecute_BashUsesWorkspaceRootEvenWhenSkillDirWasPreviouslyLoaded(t *testing.T) {
 	original := agenttools.Handlers["bash"]
 	defer func() { agenttools.Handlers["bash"] = original }()
 	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
@@ -845,22 +820,18 @@ func TestToolRegistryExecute_BashUsesActiveSkillDirWhenAvailable(t *testing.T) {
 	}
 
 	workspace := t.TempDir()
-	skillDir := filepath.Join(workspace, "skills", "demo-skill")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir skill dir: %v", err)
-	}
 	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
 
-	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: skillDir}, "bash", `{"command":"pwd"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Output != filepath.Clean(skillDir) {
-		t.Fatalf("expected active skill dir in runtime env, got %#v", result)
+	if result.Output != filepath.Clean(workspace) {
+		t.Fatalf("expected workspace root in runtime env, got %#v", result)
 	}
 }
 
-func TestToolRegistryExecute_ActiveSkillDirPreservesConfiguredWorkspacePaths(t *testing.T) {
+func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *testing.T) {
 	original := agenttools.Handlers["bash"]
 	defer func() { agenttools.Handlers["bash"] = original }()
 	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
@@ -872,10 +843,6 @@ func TestToolRegistryExecute_ActiveSkillDirPreservesConfiguredWorkspacePaths(t *
 	}
 
 	workspace := t.TempDir()
-	skillDir := filepath.Join(workspace, "skills", "demo-skill")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir skill dir: %v", err)
-	}
 	cfg := config.AppConfig{
 		WorkspaceRoot:    workspace,
 		CommandBinDir:    filepath.Join(workspace, "bin"),
@@ -884,81 +851,16 @@ func TestToolRegistryExecute_ActiveSkillDirPreservesConfiguredWorkspacePaths(t *
 	}
 	registry := NewToolRegistry(cfg)
 
-	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: skillDir}, "bash", `{"command":"pwd"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Clean(workspace) + "|" + filepath.Join(workspace, "bin") + "|" + filepath.Join(workspace, "cmd") + "|" + filepath.Clean(skillDir)
+	expected := filepath.Clean(workspace) + "|" + filepath.Join(workspace, "bin") + "|" + filepath.Join(workspace, "cmd") + "|" + filepath.Clean(workspace)
 	if result.Output != expected {
-		t.Fatalf("expected workspace-derived paths to remain stable when skill cwd is active, got %q", result.Output)
+		t.Fatalf("expected workspace-derived paths to remain stable, got %q", result.Output)
 	}
 }
-
-func TestToolRegistryExecute_LoadSkillLeavesActiveSkillDirEmptyForDBSkill(t *testing.T) {
-	loader := sessions.NewSkillLoader()
-	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"db-skill": {Meta: map[string]string{"description": "DB description"}, Body: "db body", Path: "db://skills/skill_1"},
-	})
-	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/repo/app/workspace"})
-
-	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"db-skill"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.ActiveSkillDir != "" {
-		t.Fatalf("expected db skill to expose no active skill dir, got %#v", result)
-	}
-}
-
-func TestToolRegistryExecute_BashFallsBackToWorkspaceWhenSkillDirOutsideWorkspace(t *testing.T) {
-	original := agenttools.Handlers["bash"]
-	defer func() { agenttools.Handlers["bash"] = original }()
-	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
-		env, ok := agenttools.RuntimeEnvFromContext(ctx)
-		if !ok {
-			return "", nil
-		}
-		return env.CurrentWorkingDir, nil
-	}
-
-	workspace := t.TempDir()
-	outside := t.TempDir()
-	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
-
-	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: outside}, "bash", `{"command":"pwd"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Output != filepath.Clean(workspace) {
-		t.Fatalf("expected workspace fallback in runtime env, got %#v", result)
-	}
-}
-
-func TestToolRegistryExecute_BashFallsBackToWorkspaceWhenSkillDirMissing(t *testing.T) {
-	original := agenttools.Handlers["bash"]
-	defer func() { agenttools.Handlers["bash"] = original }()
-	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
-		env, ok := agenttools.RuntimeEnvFromContext(ctx)
-		if !ok {
-			return "", nil
-		}
-		return env.CurrentWorkingDir, nil
-	}
-
-	workspace := t.TempDir()
-	missing := filepath.Join(workspace, "skills", "missing-skill")
-	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
-
-	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: missing}, "bash", `{"command":"pwd"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Output != filepath.Clean(workspace) {
-		t.Fatalf("expected workspace fallback for missing skill dir, got %#v", result)
-	}
-}
-
-func TestExecuteToolCall_AuditUsesActiveSkillDirAsResolvedCWD(t *testing.T) {
+func TestExecuteToolCall_AuditUsesWorkspaceRootAsResolvedCWD(t *testing.T) {
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, "skills", "demo-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -971,13 +873,13 @@ func TestExecuteToolCall_AuditUsesActiveSkillDirAsResolvedCWD(t *testing.T) {
 
 	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{ActiveSkillDir: skillDir}, "bash", `{"command":"`+command+`"}`)
+	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Status != "success" {
 		t.Fatalf("expected success, got %#v", outcome)
 	}
-	if filepath.Clean(outcome.Audit.ResolvedCWD) != filepath.Clean(skillDir) {
-		t.Fatalf("expected audit cwd %q, got %#v", skillDir, outcome.Audit)
+	if filepath.Clean(outcome.Audit.ResolvedCWD) != filepath.Clean(workspace) {
+		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
 	}
 }
 

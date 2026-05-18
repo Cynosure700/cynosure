@@ -53,8 +53,6 @@ type toolExecutionOutcome struct {
 	Status string             `json:"status"`
 	Result string             `json:"result"`
 	Audit  toolExecutionAudit `json:"-"`
-	ActiveSkillDir     string `json:"-"`
-	SkillContextUpdated bool   `json:"-"`
 }
 
 type toolExecutionAudit struct {
@@ -91,7 +89,6 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0
-	activeSkillDir := ""
 
 	for {
 		round++
@@ -119,10 +116,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, ActiveSkillDir: activeSkillDir}, tc.Function.Name, tc.Function.Arguments)
-			if outcome.SkillContextUpdated {
-				activeSkillDir = strings.TrimSpace(outcome.ActiveSkillDir)
-			}
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
 			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
@@ -149,7 +143,7 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
-	runtimeEnv := s.Tools.runtimeEnv(toolCtx)
+	runtimeEnv := s.Tools.runtimeEnv()
 	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, runtimeEnv.CommandBinDir, runtimeEnv.CommandScriptDir)
 	audit := toolExecutionAudit{
 		ResolvedCWD:           strings.TrimSpace(runtimeEnv.CurrentWorkingDir),
@@ -163,7 +157,7 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
 	audit.OutcomeSummary = truncate(execResult.Output, 500)
-	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, ActiveSkillDir: execResult.ActiveSkillDir, SkillContextUpdated: name == "load_skill"}
+	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit}
 }
 
 func (o toolExecutionOutcome) MessageContent() string {

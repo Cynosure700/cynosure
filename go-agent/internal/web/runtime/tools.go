@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -21,12 +19,10 @@ type ToolContext struct {
 	User         storage.User
 	Conversation storage.Conversation
 	Loader       *sessions.SkillLoader // 用来加载技能信息的
-	ActiveSkillDir string
 }
 
 type ToolExecutionResult struct {
-	Output         string
-	ActiveSkillDir string
+	Output string
 }
 
 type ToolRegistry struct {
@@ -64,7 +60,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		skillName, _ := args["name"].(string)
 		return r.loadSkillContent(toolCtx.Loader, skillName)
 	}
-	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv(toolCtx))
+	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s has no handler", name)
@@ -78,78 +74,27 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 
 // load_Skill执行函数
 func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName string) (ToolExecutionResult, error) {
-	entry, err := loader.GetEntry(skillName)
+	content, err := loader.GetContent(skillName)
 	if err != nil {
 		return ToolExecutionResult{}, err
 	}
-	content := fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", skillName, entry.Body)
-	activeSkillDir := resolveSkillWorkingDir(entry.Path)
-	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{ActiveSkillDir: activeSkillDir}))
+	envNote := formatRuntimeEnvNote(r.runtimeEnv())
 	if envNote == "" {
-		return ToolExecutionResult{Output: content, ActiveSkillDir: activeSkillDir}, nil
+		return ToolExecutionResult{Output: content}, nil
 	}
-	return ToolExecutionResult{Output: content + "\n\n" + envNote, ActiveSkillDir: activeSkillDir}, nil
+	return ToolExecutionResult{Output: content + "\n\n" + envNote}, nil
 }
 
-func resolveSkillWorkingDir(skillPath string) string {
-	skillPath = strings.TrimSpace(skillPath)
-	if skillPath == "" || strings.Contains(skillPath, "://") {
-		return ""
-	}
-	if filepath.Base(skillPath) != "SKILL.md" {
-		return ""
-	}
-	resolved, err := filepath.Abs(skillPath)
-	if err != nil {
-		return filepath.Clean(filepath.Dir(skillPath))
-	}
-	return filepath.Clean(filepath.Dir(resolved))
-}
-
-func (r *ToolRegistry) runtimeEnv(toolCtx ...ToolContext) agenttools.RuntimeEnv {
+func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 	env := r.baseEnv
 	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
-	currentWorkingDir := workspaceRoot
-	if len(toolCtx) > 0 {
-		// 默认切换到技能目录，只加载一个skill目录
-		candidate := normalizeActiveSkillDir(workspaceRoot, toolCtx[0].ActiveSkillDir)
-		if candidate != "" {
-			currentWorkingDir = candidate
-		}
-	}
 	return agenttools.RuntimeEnv{
 		AppHome:          env.AppHome,
 		CommandBinDir:    strings.TrimSpace(env.CommandBinDir),
 		CommandScriptDir: strings.TrimSpace(env.CommandScriptDir),
 		WorkspaceRoot:    workspaceRoot,
-		CurrentWorkingDir: currentWorkingDir,
+		CurrentWorkingDir: workspaceRoot, // 做扩展用
 	}
-}
-
-func normalizeActiveSkillDir(workspaceRoot, activeSkillDir string) string {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
-	activeSkillDir = strings.TrimSpace(activeSkillDir)
-	if workspaceRoot == "" || activeSkillDir == "" {
-		return ""
-	}
-	resolvedWorkspace, err := filepath.Abs(workspaceRoot)
-	if err != nil {
-		return ""
-	}
-	resolvedSkillDir, err := filepath.Abs(activeSkillDir)
-	if err != nil {
-		return ""
-	}
-	resolvedWorkspace = filepath.Clean(resolvedWorkspace)
-	resolvedSkillDir = filepath.Clean(resolvedSkillDir)
-	if resolvedSkillDir != resolvedWorkspace && !strings.HasPrefix(resolvedSkillDir, resolvedWorkspace+string(filepath.Separator)) {
-		return ""
-	}
-	info, err := os.Stat(resolvedSkillDir)
-	if err != nil || !info.IsDir() {
-		return ""
-	}
-	return resolvedSkillDir
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
