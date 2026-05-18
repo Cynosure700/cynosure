@@ -163,6 +163,30 @@ func TestHandleEdit_UsesCurrentWorkingDirForRelativePath(t *testing.T) {
 	}
 }
 
+func TestHandleBash_RejectsSkillDirOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CurrentWorkingDir: outside}), map[string]any{"command": "pwd"})
+	if err == nil {
+		t.Fatalf("expected outside skill dir to be rejected")
+	}
+	if !strings.Contains(err.Error(), "current working directory escapes workspace") {
+		t.Fatalf("expected skill-dir escape error, got %v", err)
+	}
+}
+
+func TestHandleRead_RejectsSkillDirOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	outside := t.TempDir()
+	_, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CurrentWorkingDir: outside}), map[string]any{"path": "note.txt"})
+	if err == nil {
+		t.Fatalf("expected outside skill dir to be rejected")
+	}
+	if !strings.Contains(err.Error(), "current working directory escapes workspace") {
+		t.Fatalf("expected skill-dir escape error, got %v", err)
+	}
+}
+
 func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
 	root := t.TempDir()
 	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "cat /tmp/outside.txt"})
