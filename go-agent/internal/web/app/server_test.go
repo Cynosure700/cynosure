@@ -17,12 +17,14 @@ import (
 )
 
 type fakeServerStore struct {
-	skillToReturn storage.Skill
-	skills        []storage.Skill
-	createCalled  bool
-	updateCalled  bool
-	deleteCalled  bool
-	getCalled     bool
+	skillToReturn        storage.Skill
+	conversationToReturn storage.Conversation
+	skills               []storage.Skill
+	createCalled         bool
+	updateCalled         bool
+	deleteCalled         bool
+	deleteConversation   bool
+	getCalled            bool
 }
 
 func (f *fakeServerStore) HealthCheck(ctx context.Context) error { return nil }
@@ -65,7 +67,15 @@ func (f *fakeServerStore) CreateConversation(ctx context.Context, conversation s
 }
 
 func (f *fakeServerStore) GetConversationByID(ctx context.Context, conversationID string) (storage.Conversation, error) {
-	return storage.Conversation{}, sql.ErrNoRows
+	if f.conversationToReturn.ID == "" {
+		return storage.Conversation{}, sql.ErrNoRows
+	}
+	return f.conversationToReturn, nil
+}
+
+func (f *fakeServerStore) DeleteConversation(ctx context.Context, conversationID string) error {
+	f.deleteConversation = true
+	return nil
 }
 
 func (f *fakeServerStore) ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error) {

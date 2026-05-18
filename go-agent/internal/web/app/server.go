@@ -30,6 +30,7 @@ type serverStore interface {
 	ListConversationsByUser(ctx context.Context, userID string) ([]storage.Conversation, error)
 	CreateConversation(ctx context.Context, conversation storage.Conversation) error
 	GetConversationByID(ctx context.Context, conversationID string) (storage.Conversation, error)
+	DeleteConversation(ctx context.Context, conversationID string) error
 	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
 }
 
@@ -336,6 +337,15 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": messages})
+		return
+	}
+
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if err := s.store.DeleteConversation(r.Context(), conversation.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 
