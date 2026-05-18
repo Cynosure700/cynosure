@@ -19,10 +19,12 @@ import (
 type fakeServerStore struct {
 	skillToReturn        storage.Skill
 	conversationToReturn storage.Conversation
+	createdConversation  storage.Conversation
 	skills               []storage.Skill
 	createCalled         bool
 	updateCalled         bool
 	deleteCalled         bool
+	createConversation   bool
 	deleteConversation   bool
 	updateConversation   bool
 	getCalled            bool
@@ -64,6 +66,8 @@ func (f *fakeServerStore) ListConversationsByUser(ctx context.Context, userID st
 }
 
 func (f *fakeServerStore) CreateConversation(ctx context.Context, conversation storage.Conversation) error {
+	f.createConversation = true
+	f.createdConversation = conversation
 	return nil
 }
 
@@ -404,5 +408,50 @@ func TestHandleConversationByID_RejectsRenamingOtherUsersConversation(t *testing
 	}
 	if store.updateConversation {
 		t.Fatalf("expected rename not to reach store")
+	}
+}
+
+func TestHandleConversations_CreatesConversationWithCustomTitle(t *testing.T) {
+	store := &fakeServerStore{}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/conversations", strings.NewReader(`{"title":"项目排期"}`))
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversations(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, resp.Code)
+	}
+	if !store.createConversation {
+		t.Fatalf("expected create conversation to be called")
+	}
+	if store.createdConversation.UserID != "usr_1" || store.createdConversation.Title != "项目排期" {
+		t.Fatalf("unexpected stored conversation: %#v", store.createdConversation)
+	}
+	if !strings.HasPrefix(store.createdConversation.ID, "conv_") {
+		t.Fatalf("expected generated conversation id, got %#v", store.createdConversation)
+	}
+}
+
+func TestHandleConversations_UsesDefaultTitleWhenEmpty(t *testing.T) {
+	store := &fakeServerStore{}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/conversations", strings.NewReader(`{"title":"   "}`))
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversations(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, resp.Code)
+	}
+	if !store.createConversation {
+		t.Fatalf("expected create conversation to be called")
+	}
+	if store.createdConversation.Title != "新对话" {
+		t.Fatalf("expected default title, got %#v", store.createdConversation)
 	}
 }
