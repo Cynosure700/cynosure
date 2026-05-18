@@ -91,6 +91,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0
+	activeSkillDir := ""
 
 	for {
 		round++
@@ -118,7 +119,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader, ActiveSkillDir: activeSkillDir}, tc.Function.Name, tc.Function.Arguments)
+			if outcome.SkillContextUpdated {
+				activeSkillDir = strings.TrimSpace(outcome.ActiveSkillDir)
+			}
 			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})

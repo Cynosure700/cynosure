@@ -1,7 +1,7 @@
 ## 1. Runtime skill context
 
 - [x] 1.1 Extend skill loading/output handling so a successfully loaded filesystem-backed skill exposes its source directory as active runtime context.
-- [ ] 1.2 Update the web runtime tool-call loop to carry the active skill directory across subsequent tool invocations within the same response turn.
+- [x] 1.2 Update the web runtime tool-call loop to carry the active skill directory across subsequent tool invocations within the same response turn.
 
 ## 2. Tool working directory resolution
 
