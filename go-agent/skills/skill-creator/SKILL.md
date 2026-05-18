@@ -14,7 +14,7 @@ At a high level, the process of creating a skill goes like this:
 - Create a few test prompts and run claude-with-access-to-the-skill on them
 - Help the user evaluate the results both qualitatively and quantitatively
   - While the runs happen in the background, draft some quantitative evals if there aren't any (if there are some, you can either use as is or modify if you feel something needs to change about them). Then explain them to the user (or if they already existed, explain the ones that already exist)
-  - Use the `eval-viewer/generate_review.py` script to show the user the results for them to look at, and also let them look at the quantitative metrics
+  - Use the `skills/skill-creator/eval-viewer/generate_review.py` script to show the user the results for them to look at, and also let them look at the quantitative metrics
 - Rewrite the skill based on feedback from the user's evaluation of the results (and also if there are any glaring flaws that become apparent from the quantitative benchmarks)
 - Repeat until you're satisfied
 - Expand the test set and try again at larger scale
@@ -158,13 +158,13 @@ Save test cases to `evals/evals.json`. Don't write assertions yet — just the p
 }
 ```
 
-See `references/schemas.md` for the full schema (including the `assertions` field, which you'll add later).
+See `skills/skill-creator/references/schemas.md` for the full schema (including the `assertions` field, which you'll add later).
 
 ## Running and evaluating test cases
 
 This section is one continuous sequence — don't stop partway through. Do NOT use `/skill-test` or any other testing skill.
 
-Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Within the workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-0/`, `eval-1/`, etc.). Don't create all of this upfront — just create directories as you go.
+Put results in a workspace-root directory named `<skill-name>-workspace/` rather than under `skills/`. Within that workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-0/`, `eval-1/`, etc.). Don't create all of this upfront — just create directories as you go.
 
 **Go agent runtime:** Bash commands run from the configured workspace root, not from this skill directory. Reference bundled files as `skills/skill-creator/...`, run Python modules with `PYTHONPATH=skills/skill-creator`, keep temporary/output files inside the workspace, avoid `/tmp` and `> /dev/null`, and write background process IDs to files because shell variables do not persist across tool calls.
 
@@ -224,7 +224,7 @@ This is the only opportunity to capture this data — it comes through the task 
 
 Once all runs are done:
 
-1. **Grade each run** — spawn a grader subagent (or grade inline) that reads `agents/grader.md` and evaluates each assertion against the outputs. Save results to `grading.json` in each run directory. The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
+1. **Grade each run** — spawn a grader subagent (or grade inline) that reads `skills/skill-creator/agents/grader.md` and evaluates each assertion against the outputs. Save results to `grading.json` in each run directory. The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
 
 2. **Aggregate into benchmark** — run the aggregation script from the skill-creator directory:
    ```bash
@@ -232,10 +232,10 @@ Once all runs are done:
      <workspace>/iteration-N \
      --skill-name <name>
    ```
-   This produces `benchmark.json` and `benchmark.md` with pass_rate, time, and tokens for each configuration, with mean ± stddev and the delta. If generating benchmark.json manually, see `references/schemas.md` for the exact schema the viewer expects.
+   This produces `benchmark.json` and `benchmark.md` with pass_rate, time, and tokens for each configuration, with mean ± stddev and the delta. If generating benchmark.json manually, see `skills/skill-creator/references/schemas.md` for the exact schema the viewer expects.
 Put each with_skill version before its baseline counterpart.
 
-3. **Do an analyst pass** — read the benchmark data and surface patterns the aggregate stats might hide. See `agents/analyzer.md` (the "Analyzing Benchmark Results" section) for what to look for — things like assertions that always pass regardless of skill (non-discriminating), high-variance evals (possibly flaky), and time/token tradeoffs.
+3. **Do an analyst pass** — read the benchmark data and surface patterns the aggregate stats might hide. See `skills/skill-creator/agents/analyzer.md` (the "Analyzing Benchmark Results" section) for what to look for — things like assertions that always pass regardless of skill (non-discriminating), high-variance evals (possibly flaky), and time/token tradeoffs.
 
 4. **Generate the review viewer** with both qualitative outputs and quantitative data:
    ```bash
@@ -250,7 +250,7 @@ Put each with_skill version before its baseline counterpart.
 
    **Cowork / headless environments:** If `webbrowser.open()` is not available or the environment has no display, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Feedback will be downloaded as a `feedback.json` file when the user clicks "Submit All Reviews". After download, copy `feedback.json` into the workspace directory for the next iteration to pick up.
 
-Note: please use generate_review.py to create the viewer; there's no need to write custom HTML.
+Note: please use `skills/skill-creator/eval-viewer/generate_review.py` to create the viewer; there's no need to write custom HTML.
 
 5. **Tell the user** something like: "I've generated the review page at `<workspace>/iteration-N/review.html`. There are two tabs — 'Outputs' lets you click through each test case and leave feedback, 'Benchmark' shows the quantitative comparison. When you're done, come back here and let me know."
 
@@ -330,7 +330,7 @@ Keep going until:
 
 ## Advanced: Blind comparison
 
-For situations where you want a more rigorous comparison between two versions of a skill (e.g., the user asks "is the new version actually better?"), there's a blind comparison system. Read `agents/comparator.md` and `agents/analyzer.md` for the details. The basic idea is: give two outputs to an independent agent without telling it which is which, and let it judge quality. Then analyze why the winner won.
+For situations where you want a more rigorous comparison between two versions of a skill (e.g., the user asks "is the new version actually better?"), there's a blind comparison system. Read `skills/skill-creator/agents/comparator.md` and `skills/skill-creator/agents/analyzer.md` for the details. The basic idea is: give two outputs to an independent agent without telling it which is which, and let it judge quality. Then analyze why the winner won.
 
 This is optional, requires subagents, and most users won't need it. The human review loop is usually sufficient.
 
@@ -367,7 +367,7 @@ The key thing to avoid: don't make should-not-trigger queries obviously irreleva
 
 Present the eval set to the user for review using the HTML template:
 
-1. Read the template from `assets/eval_review.html`
+1. Read the template from `skills/skill-creator/assets/eval_review.html`
 2. Replace the placeholders:
    - `__EVAL_DATA_PLACEHOLDER__` → the JSON array of eval items (no quotes around it — it's a JS variable assignment)
    - `__SKILL_NAME_PLACEHOLDER__` → the skill's name
@@ -441,7 +441,7 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 
 **Blind comparison**: Requires subagents. Skip it.
 
-**Packaging**: The `package_skill.py` script works anywhere with Python and a filesystem. On Claude.ai, you can run it and the user can download the resulting `.skill` file.
+**Packaging**: The packaging helper at `skills/skill-creator/scripts/package_skill.py` works anywhere with Python and a filesystem. On Claude.ai, you can run it and the user can download the resulting `.skill` file.
 
 **Updating an existing skill**: The user might be asking you to update an existing skill, not create a new one. In this case:
 - **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, output `research-helper.skill` (not `research-helper-v2`).
@@ -456,24 +456,24 @@ If you're in Cowork, the main things to know are:
 
 - You have subagents, so the main workflow (spawn test cases in parallel, run baselines, grade, etc.) all works. (However, if you run into severe problems with timeouts, it's OK to run the test prompts in series rather than parallel.)
 - You don't have a browser or display, so when generating the eval viewer, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Then proffer a link that the user can click to open the HTML in their browser.
-- For whatever reason, the Cowork setup seems to disincline Claude from generating the eval viewer after running the tests, so just to reiterate: whether you're in Cowork or in Claude Code, after running tests, you should always generate the eval viewer for the human to look at examples before revising the skill yourself and trying to make corrections, using `generate_review.py` (not writing your own boutique html code). Sorry in advance but I'm gonna go all caps here: GENERATE THE EVAL VIEWER *BEFORE* evaluating inputs yourself. You want to get them in front of the human ASAP!
+- For whatever reason, the Cowork setup seems to disincline Claude from generating the eval viewer after running the tests, so just to reiterate: whether you're in Cowork or in Claude Code, after running tests, you should always generate the eval viewer for the human to look at examples before revising the skill yourself and trying to make corrections, using `skills/skill-creator/eval-viewer/generate_review.py` (not writing your own boutique html code). Sorry in advance but I'm gonna go all caps here: GENERATE THE EVAL VIEWER *BEFORE* evaluating inputs yourself. You want to get them in front of the human ASAP!
 - Feedback works differently: since there's no running server, the viewer's "Submit All Reviews" button will download `feedback.json` as a file. You can then read it from there (you may have to request access first).
-- Packaging works — `package_skill.py` just needs Python and a filesystem.
-- Description optimization (`run_loop.py` / `run_eval.py`) should work in Cowork just fine since it uses `claude -p` via subprocess, not a browser, but please save it until you've fully finished making the skill and the user agrees it's in good shape.
+- Packaging works — `skills/skill-creator/scripts/package_skill.py` just needs Python and a filesystem.
+- Description optimization (`skills/skill-creator/scripts/run_loop.py` / `skills/skill-creator/scripts/run_eval.py`) should work in Cowork just fine since it uses `claude -p` via subprocess, not a browser, but please save it until you've fully finished making the skill and the user agrees it's in good shape.
 - **Updating an existing skill**: The user might be asking you to update an existing skill, not create a new one. Follow the update guidance in the claude.ai section above.
 
 ---
 
 ## Reference files
 
-The agents/ directory contains instructions for specialized subagents. Read them when you need to spawn the relevant subagent.
+The `skills/skill-creator/agents/` directory contains instructions for specialized subagents. Read them when you need to spawn the relevant subagent.
 
-- `agents/grader.md` — How to evaluate assertions against outputs
-- `agents/comparator.md` — How to do blind A/B comparison between two outputs
-- `agents/analyzer.md` — How to analyze why one version beat another
+- `skills/skill-creator/agents/grader.md` — How to evaluate assertions against outputs
+- `skills/skill-creator/agents/comparator.md` — How to do blind A/B comparison between two outputs
+- `skills/skill-creator/agents/analyzer.md` — How to analyze why one version beat another
 
-The references/ directory has additional documentation:
-- `references/schemas.md` — JSON structures for evals.json, grading.json, etc.
+The `skills/skill-creator/references/` directory has additional documentation:
+- `skills/skill-creator/references/schemas.md` — JSON structures for evals.json, grading.json, etc.
 
 ---
 
@@ -483,11 +483,11 @@ Repeating one more time the core loop here for emphasis:
 - Draft or edit the skill
 - Run claude-with-access-to-the-skill on test prompts
 - With the user, evaluate the outputs:
-  - Create benchmark.json and run `eval-viewer/generate_review.py` to help the user review them
+  - Create benchmark.json and run `skills/skill-creator/eval-viewer/generate_review.py` to help the user review them
   - Run quantitative evals
 - Repeat until you and the user are satisfied
 - Package the final skill and return it to the user.
 
-Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in Cowork, please specifically put "Create evals JSON and run `eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
+Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in Cowork, please specifically put "Create evals JSON and run `skills/skill-creator/eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
 
 Good luck!
