@@ -194,6 +194,15 @@ func (sl *SkillLoader) GetDescriptions() string {
 }
 
 func (sl *SkillLoader) GetContent(name string) (string, error) {
+	entry, err := sl.GetEntry(name)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", name, entry.Body), nil
+}
+
+func (sl *SkillLoader) GetEntry(name string) (*SkillEntry, error) {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 
@@ -204,8 +213,8 @@ func (sl *SkillLoader) GetContent(name string) (string, error) {
 			available = append(available, n)
 		}
 		sort.Strings(available)
-		return "", fmt.Errorf("unknown skill %q. Available: %s", name, strings.Join(available, ", "))
+		return nil, fmt.Errorf("unknown skill %q. Available: %s", name, strings.Join(available, ", "))
 	}
 
-	return fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", name, skill.Body), nil
+	return cloneSkillEntry(skill), nil
 }

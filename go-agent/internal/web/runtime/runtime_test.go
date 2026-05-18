@@ -531,10 +531,11 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 		CommandScriptDir: "/deploy/app/output/workspace/cmd",
 	})
 
-	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	content := result.Output
 	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
@@ -547,6 +548,9 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
 	}
+	if result.ActiveSkillDir != "" {
+		t.Fatalf("expected non-filesystem skill path to expose no active skill dir, got %q", result.ActiveSkillDir)
+	}
 }
 
 func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.T) {
@@ -556,10 +560,11 @@ func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.
 	})
 	registry := NewToolRegistry(config.AppConfig{AppHome: "/repo/app", WorkspaceRoot: "/repo/app/workspace"})
 
-	content, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	content := result.Output
 	if !contains(content, "COMMAND_BIN_DIR=/repo/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/repo/app/workspace/cmd") {
 		t.Fatalf("expected loaded skill content to derive command paths from local workspace, got %q", content)
 	}
@@ -588,12 +593,12 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 		WebAllowedTools:  []string{"bash"},
 	})
 
-	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
-		t.Fatalf("expected runtime env in handler context, got %q", result)
+	if execResult.Output != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
+		t.Fatalf("expected runtime env in handler context, got %q", execResult.Output)
 	}
 }
 
@@ -610,12 +615,12 @@ func TestToolRegistryExecute_UsesWorkspaceDerivedCommandDirsWhenUnset(t *testing
 	}
 
 	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/deploy/app/workspace", WebAllowedTools: []string{"bash"}})
-	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "/deploy/app/workspace|/deploy/app/workspace/bin|/deploy/app/workspace/cmd" {
-		t.Fatalf("expected workspace-derived runtime env, got %q", result)
+	if execResult.Output != "/deploy/app/workspace|/deploy/app/workspace/bin|/deploy/app/workspace/cmd" {
+		t.Fatalf("expected workspace-derived runtime env, got %q", execResult.Output)
 	}
 }
 
@@ -632,12 +637,34 @@ func TestToolRegistryExecute_InjectsWorkspaceIntoToolHandler(t *testing.T) {
 	}
 
 	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/workspaces/usr_1", WebAllowedTools: []string{"bash"}})
-	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "/workspaces/usr_1" {
-		t.Fatalf("expected workspace root in handler context, got %q", result)
+	if execResult.Output != "/workspaces/usr_1" {
+		t.Fatalf("expected workspace root in handler context, got %q", execResult.Output)
+	}
+}
+
+func TestToolRegistryExecute_LoadSkillExposesFilesystemSkillDir(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "builtin-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	loader := sessions.NewSkillLoader()
+	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: skillPath},
+	})
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: root})
+
+	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ActiveSkillDir != filepath.Clean(skillDir) {
+		t.Fatalf("expected active skill dir %q, got %#v", skillDir, result)
 	}
 }
 

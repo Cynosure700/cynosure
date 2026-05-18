@@ -20,6 +20,12 @@ type ToolContext struct {
 	User         storage.User
 	Conversation storage.Conversation
 	Loader       *sessions.SkillLoader // 用来加载技能信息的
+	ActiveSkillDir string
+}
+
+type ToolExecutionResult struct {
+	Output         string
+	ActiveSkillDir string
 }
 
 type ToolRegistry struct {
@@ -41,18 +47,18 @@ func (r *ToolRegistry) Definitions() []openai.Tool {
 	return append([]openai.Tool(nil), r.definitions...)
 }
 
-func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) (string, error) {
+func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) (ToolExecutionResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
-		return "", fmt.Errorf("invalid tool arguments: %w", err)
+		return ToolExecutionResult{}, fmt.Errorf("invalid tool arguments: %w", err)
 	}
 	if !r.isAllowed(name) {
-		return "", fmt.Errorf("tool %s is not registered for web runtime", name)
+		return ToolExecutionResult{}, fmt.Errorf("tool %s is not registered for web runtime", name)
 	}
 	// 走特殊处理，加载技能内容
 	if name == "load_skill" {
 		if toolCtx.Loader == nil {
-			return "", fmt.Errorf("no capabilities are available in this conversation")
+			return ToolExecutionResult{}, fmt.Errorf("no capabilities are available in this conversation")
 		}
 		skillName, _ := args["name"].(string)
 		return r.loadSkillContent(toolCtx.Loader, skillName)
@@ -60,21 +66,42 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
-		return "", fmt.Errorf("tool %s has no handler", name)
+		return ToolExecutionResult{}, fmt.Errorf("tool %s has no handler", name)
 	}
-	return handler(ctx, args)
+	output, err := handler(ctx, args)
+	if err != nil {
+		return ToolExecutionResult{}, err
+	}
+	return ToolExecutionResult{Output: output}, nil
 }
 
-func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName string) (string, error) {
-	content, err := loader.GetContent(skillName)
+// load_Skill执行函数
+func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName string) (ToolExecutionResult, error) {
+	entry, err := loader.GetEntry(skillName)
 	if err != nil {
-		return "", err
+		return ToolExecutionResult{}, err
 	}
+	content := fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", skillName, entry.Body)
 	envNote := formatRuntimeEnvNote(r.runtimeEnv())
 	if envNote == "" {
-		return content, nil
+		return ToolExecutionResult{Output: content, ActiveSkillDir: resolveSkillWorkingDir(entry.Path)}, nil
 	}
-	return content + "\n\n" + envNote, nil
+	return ToolExecutionResult{Output: content + "\n\n" + envNote, ActiveSkillDir: resolveSkillWorkingDir(entry.Path)}, nil
+}
+
+func resolveSkillWorkingDir(skillPath string) string {
+	skillPath = strings.TrimSpace(skillPath)
+	if skillPath == "" || strings.Contains(skillPath, "://") {
+		return ""
+	}
+	if filepath.Base(skillPath) != "SKILL.md" {
+		return ""
+	}
+	resolved, err := filepath.Abs(skillPath)
+	if err != nil {
+		return filepath.Clean(filepath.Dir(skillPath))
+	}
+	return filepath.Clean(filepath.Dir(resolved))
 }
 
 func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {

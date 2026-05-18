@@ -53,6 +53,8 @@ type toolExecutionOutcome struct {
 	Status string             `json:"status"`
 	Result string             `json:"result"`
 	Audit  toolExecutionAudit `json:"-"`
+	ActiveSkillDir     string `json:"-"`
+	SkillContextUpdated bool   `json:"-"`
 }
 
 type toolExecutionAudit struct {
@@ -151,13 +153,13 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		CommandArtifactPath:   commandArtifactPath,
 		CommandArtifactSource: classifyCommandArtifactSource(runtimeEnv.WorkspaceRoot, commandArtifactPath),
 	}
-	result, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
+	execResult, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
 		audit.DenialReason = err.Error()
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
-	audit.OutcomeSummary = truncate(result, 500)
-	return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
+	audit.OutcomeSummary = truncate(execResult.Output, 500)
+	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, ActiveSkillDir: execResult.ActiveSkillDir, SkillContextUpdated: name == "load_skill"}
 }
 
 func (o toolExecutionOutcome) MessageContent() string {
