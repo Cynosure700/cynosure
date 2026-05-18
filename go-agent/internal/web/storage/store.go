@@ -243,6 +243,17 @@ func (s *Store) TouchConversation(ctx context.Context, conversationID, title str
 	return err
 }
 
+func (s *Store) DeleteConversation(ctx context.Context, conversationID string) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM conversations WHERE id = ?`, conversationID)
+	if err != nil {
+		return fmt.Errorf("delete conversation: %w", err)
+	}
+	if err := s.Redis.Del(ctx, conversationCacheKey(conversationID)).Err(); err != nil {
+		return fmt.Errorf("clear conversation cache: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) CreateMessage(ctx context.Context, message Message) error {
 	_, err := s.DB.ExecContext(ctx, `
 		INSERT INTO messages (id, conversation_id, user_id, role, content, created_at)
