@@ -24,7 +24,7 @@ type fakeServerStore struct {
 	updateCalled         bool
 	deleteCalled         bool
 	deleteConversation   bool
-	touchConversation    bool
+	updateConversation   bool
 	getCalled            bool
 }
 
@@ -74,8 +74,8 @@ func (f *fakeServerStore) GetConversationByID(ctx context.Context, conversationI
 	return f.conversationToReturn, nil
 }
 
-func (f *fakeServerStore) TouchConversation(ctx context.Context, conversationID, title string) error {
-	f.touchConversation = true
+func (f *fakeServerStore) UpdateConversationTitle(ctx context.Context, conversationID, title string) error {
+	f.updateConversation = true
 	if f.conversationToReturn.ID == conversationID {
 		f.conversationToReturn.Title = title
 	}
@@ -357,8 +357,8 @@ func TestHandleConversationByID_RenamesOwnedConversation(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
 	}
-	if !store.touchConversation {
-		t.Fatalf("expected touch conversation to be called")
+	if !store.updateConversation {
+		t.Fatalf("expected update conversation title to be called")
 	}
 	var body struct {
 		Conversation storage.Conversation `json:"conversation"`
@@ -384,7 +384,7 @@ func TestHandleConversationByID_RejectsEmptyRename(t *testing.T) {
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
 	}
-	if store.touchConversation {
+	if store.updateConversation {
 		t.Fatalf("expected rename not to reach store")
 	}
 }
@@ -402,7 +402,7 @@ func TestHandleConversationByID_RejectsRenamingOtherUsersConversation(t *testing
 	if resp.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.Code)
 	}
-	if store.touchConversation {
+	if store.updateConversation {
 		t.Fatalf("expected rename not to reach store")
 	}
 }

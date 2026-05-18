@@ -85,7 +85,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "conversation title is required", http.StatusBadRequest)
 			return
 		}
-		if err := s.store.TouchConversation(r.Context(), conversation.ID, title); err != nil {
+		if err := s.store.UpdateConversationTitle(r.Context(), conversation.ID, title); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
