@@ -47,6 +47,13 @@ type AppConfig struct {
 	SessionTTLMinutes int
 }
 
+type runtimePaths struct {
+	workspaceRoot    string
+	builtinSkillsDir string
+	commandBinDir    string
+	commandScriptDir string
+}
+
 type LLMClient interface {
 	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
 }
@@ -91,21 +98,9 @@ func LoadWebConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 
-	workspaceRoot, err := resolveWorkspaceRoot(appHome, getenv("WORKSPACE_ROOT", strings.TrimSpace(fileCfg.WorkspaceRoot)))
+	runtimeDirs, err := resolveRuntimePaths(appHome, fileCfg)
 	if err != nil {
-		return AppConfig{}, fmt.Errorf("resolve workspace root: %w", err)
-	}
-	builtinSkillsDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("BUILTIN_SKILLS_DIR", strings.TrimSpace(fileCfg.BuiltinSkillsDir)), "skills")
-	if err != nil {
-		return AppConfig{}, fmt.Errorf("resolve builtin skills dir: %w", err)
-	}
-	commandBinDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_BIN_DIR", strings.TrimSpace(fileCfg.CommandBinDir)), "bin")
-	if err != nil {
-		return AppConfig{}, fmt.Errorf("resolve command bin dir: %w", err)
-	}
-	commandScriptDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_SCRIPT_DIR", strings.TrimSpace(fileCfg.CommandScriptDir)), "cmd")
-	if err != nil {
-		return AppConfig{}, fmt.Errorf("resolve command script dir: %w", err)
+		return AppConfig{}, err
 	}
 	dbURL := getenv("DATABASE_URL", buildDefaultMySQLDSN())
 	redisDB, err := getenvInt("REDIS_DB", 0)
@@ -123,10 +118,10 @@ func LoadWebConfig() (AppConfig, error) {
 		RedisDB:           redisDB,
 		JWTSecret:         getenv("JWT_SECRET", "nano-cc-local-secret"),
 		AppHome:           appHome,
-		BuiltinSkillsDir:  builtinSkillsDir,
-		CommandBinDir:     commandBinDir,
-		CommandScriptDir:  commandScriptDir,
-		WorkspaceRoot:     workspaceRoot,
+		BuiltinSkillsDir:  runtimeDirs.builtinSkillsDir,
+		CommandBinDir:     runtimeDirs.commandBinDir,
+		CommandScriptDir:  runtimeDirs.commandScriptDir,
+		WorkspaceRoot:     runtimeDirs.workspaceRoot,
 		WebAllowedTools:   parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file"))),
 		CookieName:        getenv("SESSION_COOKIE_NAME", "nano_cc_session"),
 		SessionTTLMinutes: getenvIntOrDefault("SESSION_TTL_MINUTES", 60*24*7),
@@ -334,6 +329,31 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 	}
 
 	return resolvePath(appHome, "workspace")
+}
+
+func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, error) {
+	workspaceRoot, err := resolveWorkspaceRoot(appHome, getenv("WORKSPACE_ROOT", strings.TrimSpace(fileCfg.WorkspaceRoot)))
+	if err != nil {
+		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
+	}
+	builtinSkillsDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("BUILTIN_SKILLS_DIR", strings.TrimSpace(fileCfg.BuiltinSkillsDir)), "skills")
+	if err != nil {
+		return runtimePaths{}, fmt.Errorf("resolve builtin skills dir: %w", err)
+	}
+	commandBinDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_BIN_DIR", strings.TrimSpace(fileCfg.CommandBinDir)), "bin")
+	if err != nil {
+		return runtimePaths{}, fmt.Errorf("resolve command bin dir: %w", err)
+	}
+	commandScriptDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_SCRIPT_DIR", strings.TrimSpace(fileCfg.CommandScriptDir)), "cmd")
+	if err != nil {
+		return runtimePaths{}, fmt.Errorf("resolve command script dir: %w", err)
+	}
+	return runtimePaths{
+		workspaceRoot:    workspaceRoot,
+		builtinSkillsDir: builtinSkillsDir,
+		commandBinDir:    commandBinDir,
+		commandScriptDir: commandScriptDir,
+	}, nil
 }
 
 func resolveRuntimeAssetDir(appHome, workspaceRoot, configured, subdir string) (string, error) {
