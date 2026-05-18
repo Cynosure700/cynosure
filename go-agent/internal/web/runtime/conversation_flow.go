@@ -21,8 +21,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 	history = append(history, storage.Message{ConversationID: conversation.ID, UserID: user.ID, Role: "user", Content: userMessage})
-	if err := s.Store.TouchConversation(ctx, conversation.ID, inferConversationTitle(conversation.Title, userMessage)); err != nil {
-		return storage.Message{}, err
+	if shouldInferConversationTitle(conversation.Title) {
+		if err := s.Store.UpdateConversationTitle(ctx, conversation.ID, inferConversationTitle(userMessage)); err != nil {
+			return storage.Message{}, err
+		}
+	} else {
+		if err := s.Store.TouchConversationActivity(ctx, conversation.ID); err != nil {
+			return storage.Message{}, err
+		}
 	}
 
 	if _, err := s.resolveUserWorkspace(user.ID); err != nil {

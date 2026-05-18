@@ -22,7 +22,9 @@ type fakeStore struct {
 	toolCalls     []storage.ToolCall
 	cached        []storage.Message
 	enabledSkills []storage.Skill
-	conversation  storage.Conversation
+	updatedTitle  string
+	updatedID     string
+	touchedID     string
 }
 
 func (f *fakeStore) CreateMessage(ctx context.Context, message storage.Message) error {
@@ -30,9 +32,14 @@ func (f *fakeStore) CreateMessage(ctx context.Context, message storage.Message) 
 	return nil
 }
 
-func (f *fakeStore) TouchConversation(ctx context.Context, conversationID, title string) error {
-	f.conversation.ID = conversationID
-	f.conversation.Title = title
+func (f *fakeStore) UpdateConversationTitle(ctx context.Context, conversationID, title string) error {
+	f.updatedID = conversationID
+	f.updatedTitle = title
+	return nil
+}
+
+func (f *fakeStore) TouchConversationActivity(ctx context.Context, conversationID string) error {
+	f.touchedID = conversationID
 	return nil
 }
 
@@ -127,6 +134,12 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	}
 	if len(store.cached) != 2 {
 		t.Fatalf("expected cached conversation with 2 messages, got %d", len(store.cached))
+	}
+	if store.updatedID != "conv_1" || store.updatedTitle != "帮我做一个今天的学习计划" {
+		t.Fatalf("expected default-title conversation to infer title, got id=%q title=%q", store.updatedID, store.updatedTitle)
+	}
+	if store.touchedID != "" {
+		t.Fatalf("expected no activity-only touch when inferring title, got %q", store.touchedID)
 	}
 }
 
@@ -237,6 +250,36 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 	}
 	if !contains(systemPrompt, "- user-skill: User description") {
 		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
+	}
+}
+
+func TestRespondToConversation_PreservesExplicitConversationTitle(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
+		Choices: []openai.ChatCompletionChoice{{
+			FinishReason: openai.FinishReasonStop,
+			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "好的，我继续回答。"},
+		}},
+	}}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	conversation := storage.Conversation{ID: "conv_custom", Title: "周报整理"}
+	user := storage.User{ID: "usr_custom", Username: "grace"}
+
+	_, err := service.RespondToConversation(context.Background(), conversation, user, "请继续补充今天的结论", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.updatedID != "" || store.updatedTitle != "" {
+		t.Fatalf("expected explicit title to avoid title rewrite, got id=%q title=%q", store.updatedID, store.updatedTitle)
+	}
+	if store.touchedID != "conv_custom" {
+		t.Fatalf("expected explicit-title conversation to touch activity only, got %q", store.touchedID)
 	}
 }
 

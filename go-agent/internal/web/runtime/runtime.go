@@ -14,7 +14,8 @@ type EventWriter interface {
 
 type conversationStore interface {
 	CreateMessage(ctx context.Context, message storage.Message) error
-	TouchConversation(ctx context.Context, conversationID, title string) error
+	UpdateConversationTitle(ctx context.Context, conversationID, title string) error
+	TouchConversationActivity(ctx context.Context, conversationID string) error
 	ListEnabledSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error)
 	SetConversationCache(ctx context.Context, conversationID string, messages []storage.Message) error
 	GetConversationCache(ctx context.Context, conversationID string) ([]storage.Message, bool, error)

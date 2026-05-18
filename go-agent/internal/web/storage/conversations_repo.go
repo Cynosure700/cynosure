@@ -59,6 +59,13 @@ func (s *Store) UpdateConversationTitle(ctx context.Context, conversationID, tit
 	return err
 }
 
+func (s *Store) TouchConversationActivity(ctx context.Context, conversationID string) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE conversations SET updated_at = NOW() WHERE id = ?
+	`, conversationID)
+	return err
+}
+
 func (s *Store) DeleteConversation(ctx context.Context, conversationID string) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM conversations WHERE id = ?`, conversationID)
 	if err != nil {

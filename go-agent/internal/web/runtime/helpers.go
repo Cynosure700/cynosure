@@ -14,10 +14,12 @@ func fallbackAssistantContent(content string) string {
 	return content
 }
 
-func inferConversationTitle(currentTitle, userMessage string) string {
-	if strings.TrimSpace(currentTitle) != "" && currentTitle != "新对话" {
-		return currentTitle
-	}
+func shouldInferConversationTitle(currentTitle string) bool {
+	trimmed := strings.TrimSpace(currentTitle)
+	return trimmed == "" || trimmed == "新对话"
+}
+
+func inferConversationTitle(userMessage string) string {
 	trimmed := strings.TrimSpace(userMessage)
 	if len([]rune(trimmed)) > 30 {
 		return string([]rune(trimmed)[:30])
