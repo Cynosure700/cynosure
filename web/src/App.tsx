@@ -17,6 +17,8 @@ export function App() {
     const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
+    const [creatingConversation, setCreatingConversation] = useState(false);
+    const [newConversationTitle, setNewConversationTitle] = useState("");
     const [deletingConversationId, setDeletingConversationId] = useState("");
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
@@ -90,10 +92,21 @@ export function App() {
     }
 
     async function handleCreateConversation() {
-        const result = await api.createConversation("新对话");
-        setConversations((prev) => [result.conversation, ...prev]);
-        setActiveConversationId(result.conversation.id);
-        setMessages([]);
+        setCreatingConversation(true);
+        setError("");
+        try {
+            const result = await api.createConversation(newConversationTitle);
+            setConversations((prev) => [result.conversation, ...prev]);
+            setActiveConversationId(result.conversation.id);
+            setMessages([]);
+            setToolEvents([]);
+            setChatInput("");
+            setNewConversationTitle("");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "创建会话失败");
+        } finally {
+            setCreatingConversation(false);
+        }
     }
 
     async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
@@ -172,8 +185,11 @@ export function App() {
         return (
             <div className="auth-shell">
                 <div className="auth-card">
-                    <h1>nano_cc Chat</h1>
-                    <p>登录后即可像使用聊天机器人一样继续提问、分析和协作。</p>
+                    <div className="auth-copy">
+                        <span className="eyebrow">nano_cc assistant</span>
+                        <h1>欢迎回来</h1>
+                        <p>登录后即可继续对话、分析问题、整理思路，体验更聚焦的深色聊天界面。</p>
+                    </div>
                     <div className="auth-tabs">
                         <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>继续对话</button>
                         <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>创建账号</button>
@@ -200,19 +216,42 @@ export function App() {
     return (
         <div className="app-shell">
             <aside className="sidebar">
-                <div className="sidebar-header">
-                    <div>
-                        <strong>{user.username}</strong>
-                        <div className="muted">{user.email}</div>
+                <div className="sidebar-top">
+                    <div className="sidebar-brand">
+                        <span className="eyebrow">nano_cc</span>
+                        <strong>Chat Workspace</strong>
                     </div>
-                    <button onClick={() => void handleLogout()}>退出</button>
+                    <div className="sidebar-header">
+                        <div>
+                            <strong>{user.username}</strong>
+                            <div className="muted">{user.email}</div>
+                        </div>
+                        <button onClick={() => void handleLogout()}>退出</button>
+                    </div>
                 </div>
 
-                <section>
+                <section className="sidebar-section conversation-section">
                     <div className="section-title">
-                        <h2>会话</h2>
-                        <button onClick={() => void handleCreateConversation()}>新对话</button>
+                        <div>
+                            <h2>会话</h2>
+                            <div className="section-subtitle">最近的聊天会出现在这里</div>
+                        </div>
                     </div>
+                    <form
+                        className="stack"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleCreateConversation();
+                        }}
+                    >
+                        <input
+                            placeholder="新会话名称（可选）"
+                            value={newConversationTitle}
+                            onChange={(event) => setNewConversationTitle(event.target.value)}
+                            disabled={creatingConversation}
+                        />
+                        <button type="submit" disabled={creatingConversation}>{creatingConversation ? "创建中..." : "新对话"}</button>
+                    </form>
                     <div className="list">
                         {conversations.map((conversation) => (
                             <div key={conversation.id} className="list-row">
@@ -234,20 +273,25 @@ export function App() {
                     </div>
                 </section>
 
-                <section className="secondary-actions">
-                    <div className="section-title"><h2>辅助面板</h2></div>
+                <section className="sidebar-section secondary-actions">
+                    <div className="section-title">
+                        <div>
+                            <h2>辅助面板</h2>
+                            <div className="section-subtitle">默认收起，需要时再展开</div>
+                        </div>
+                    </div>
                     <div className="secondary-buttons">
                         <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
                         <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
                     </div>
-                    <p className="muted">这些内容默认收起，只在你需要时再展开查看。</p>
                 </section>
             </aside>
 
             <main className={sidePanel ? "main-content with-side-panel" : "main-content"}>
                 <section className="chat-panel">
                     <div className="panel-header">
-                        <div>
+                        <div className="panel-header-copy">
+                            <span className="eyebrow">assistant-first chat</span>
                             <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
                             <p className="muted">像与通用聊天助手对话一样提问，我会优先直接回答。</p>
                         </div>
@@ -270,6 +314,10 @@ export function App() {
                         ))}
                     </div>
                     <form onSubmit={handleSendMessage} className="composer">
+                        <div className="composer-head">
+                            <span className="eyebrow">message</span>
+                            <span className="muted">聚焦输入，不展示多余操作</span>
+                        </div>
                         <textarea
                             placeholder="给我发消息，告诉我你现在想解决什么问题。"
                             value={chatInput}
@@ -288,7 +336,10 @@ export function App() {
                         {sidePanel === "details" ? (
                             <div className="panel-box">
                                 <div className="section-title">
-                                    <h3>工具调用</h3>
+                                    <div>
+                                        <h3>工具调用</h3>
+                                        <div className="section-subtitle">仅在需要排查时查看</div>
+                                    </div>
                                     <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                 </div>
                                 <div className="tool-events">
@@ -305,7 +356,10 @@ export function App() {
                             <>
                                 <div className="panel-box">
                                     <div className="section-title">
-                                        <h3>我的能力</h3>
+                                        <div>
+                                            <h3>我的能力</h3>
+                                            <div className="section-subtitle">常用能力集中管理</div>
+                                        </div>
                                         <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                     </div>
                                     <div className="skill-list">
@@ -327,7 +381,10 @@ export function App() {
                                 </div>
 
                                 <div className="panel-box">
-                                    <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
+                                    <div className="panel-box-header">
+                                        <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
+                                        <div className="section-subtitle">能力配置保持在侧边，不打断主聊天流</div>
+                                    </div>
                                     <form onSubmit={handleSkillSubmit} className="stack">
                                         <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
                                         <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
