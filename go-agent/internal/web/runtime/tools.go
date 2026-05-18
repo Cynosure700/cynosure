@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -63,7 +64,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		skillName, _ := args["name"].(string)
 		return r.loadSkillContent(toolCtx.Loader, skillName)
 	}
-	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
+	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv(toolCtx))
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s has no handler", name)
@@ -82,11 +83,12 @@ func (r *ToolRegistry) loadSkillContent(loader *sessions.SkillLoader, skillName 
 		return ToolExecutionResult{}, err
 	}
 	content := fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", skillName, entry.Body)
-	envNote := formatRuntimeEnvNote(r.runtimeEnv())
+	activeSkillDir := resolveSkillWorkingDir(entry.Path)
+	envNote := formatRuntimeEnvNote(r.runtimeEnv(ToolContext{ActiveSkillDir: activeSkillDir}))
 	if envNote == "" {
-		return ToolExecutionResult{Output: content, ActiveSkillDir: resolveSkillWorkingDir(entry.Path)}, nil
+		return ToolExecutionResult{Output: content, ActiveSkillDir: activeSkillDir}, nil
 	}
-	return ToolExecutionResult{Output: content + "\n\n" + envNote, ActiveSkillDir: resolveSkillWorkingDir(entry.Path)}, nil
+	return ToolExecutionResult{Output: content + "\n\n" + envNote, ActiveSkillDir: activeSkillDir}, nil
 }
 
 func resolveSkillWorkingDir(skillPath string) string {
@@ -104,9 +106,16 @@ func resolveSkillWorkingDir(skillPath string) string {
 	return filepath.Clean(filepath.Dir(resolved))
 }
 
-func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
+func (r *ToolRegistry) runtimeEnv(toolCtx ...ToolContext) agenttools.RuntimeEnv {
 	env := r.baseEnv
 	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
+	currentWorkingDir := workspaceRoot
+	if len(toolCtx) > 0 {
+		candidate := normalizeActiveSkillDir(workspaceRoot, toolCtx[0].ActiveSkillDir)
+		if candidate != "" {
+			currentWorkingDir = candidate
+		}
+	}
 	commandBinDir := strings.TrimSpace(env.CommandBinDir)
 	if commandBinDir == "" && workspaceRoot != "" {
 		commandBinDir = filepath.Join(workspaceRoot, "bin")
@@ -120,7 +129,34 @@ func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 		CommandBinDir:    commandBinDir,
 		CommandScriptDir: commandScriptDir,
 		WorkspaceRoot:    workspaceRoot,
+		CurrentWorkingDir: currentWorkingDir,
 	}
+}
+
+func normalizeActiveSkillDir(workspaceRoot, activeSkillDir string) string {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	activeSkillDir = strings.TrimSpace(activeSkillDir)
+	if workspaceRoot == "" || activeSkillDir == "" {
+		return ""
+	}
+	resolvedWorkspace, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return ""
+	}
+	resolvedSkillDir, err := filepath.Abs(activeSkillDir)
+	if err != nil {
+		return ""
+	}
+	resolvedWorkspace = filepath.Clean(resolvedWorkspace)
+	resolvedSkillDir = filepath.Clean(resolvedSkillDir)
+	if resolvedSkillDir != resolvedWorkspace && !strings.HasPrefix(resolvedSkillDir, resolvedWorkspace+string(filepath.Separator)) {
+		return ""
+	}
+	info, err := os.Stat(resolvedSkillDir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return resolvedSkillDir
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
@@ -202,6 +238,9 @@ func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
 	}
 	if env.WorkspaceRoot != "" {
 		lines = append(lines, "WORKSPACE_ROOT="+env.WorkspaceRoot)
+	}
+	if env.CurrentWorkingDir != "" {
+		lines = append(lines, "CURRENT_WORKING_DIR="+env.CurrentWorkingDir)
 	}
 	if len(lines) == 0 {
 		return ""

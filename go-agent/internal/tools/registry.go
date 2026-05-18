@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
+
+	"nano_cc/internal/safety"
 )
 
 type ToolHandler func(ctx context.Context, args map[string]any) (string, error)
@@ -18,6 +20,7 @@ type RuntimeEnv struct {
 	CommandBinDir    string
 	CommandScriptDir string
 	WorkspaceRoot    string
+	CurrentWorkingDir string
 }
 
 type contextKey string
@@ -49,6 +52,17 @@ func workspaceRootFromContext(ctx context.Context) string {
 	return env.WorkspaceRoot
 }
 
+func currentWorkingDirFromContext(ctx context.Context) string {
+	env, ok := RuntimeEnvFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	if strings.TrimSpace(env.CurrentWorkingDir) != "" {
+		return env.CurrentWorkingDir
+	}
+	return env.WorkspaceRoot
+}
+
 func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {
 	root := strings.TrimSpace(workspaceRootFromContext(ctx))
 	if root == "" {
@@ -68,6 +82,53 @@ func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
+func validatedCurrentWorkingDirFromContext(ctx context.Context) (string, error) {
+	workspaceRoot, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	workingDir := strings.TrimSpace(currentWorkingDirFromContext(ctx))
+	if workingDir == "" {
+		return workspaceRoot, nil
+	}
+	resolved, err := filepath.Abs(workingDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve current working directory: %w", err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("current working directory is unavailable: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("current working directory is not a directory")
+	}
+	resolved = filepath.Clean(resolved)
+	if resolved != workspaceRoot && !strings.HasPrefix(resolved, workspaceRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("current working directory escapes workspace: %s", workingDir)
+	}
+	return resolved, nil
+}
+
+func resolvePathFromContext(ctx context.Context, path string) (string, string, error) {
+	workspaceRoot, err := validatedWorkspaceRootFromContext(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	workingDir, err := validatedCurrentWorkingDirFromContext(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	resolvedPath := path
+	if !filepath.IsAbs(resolvedPath) {
+		resolvedPath = filepath.Join(workingDir, resolvedPath)
+	}
+	resolvedPath, err = safety.SafePathFromRoot(workspaceRoot, resolvedPath)
+	if err != nil {
+		return "", "", err
+	}
+	return workspaceRoot, resolvedPath, nil
+}
+
 func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	cmd, _ := args["command"].(string)
 	if cmd == "" {
@@ -77,10 +138,14 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	workingDir, err := validatedCurrentWorkingDirFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
 	if err := validateBashCommandPaths(root, cmd); err != nil {
 		return "", err
 	}
-	return RunBashInDir(cmd, root)
+	return RunBashInDir(cmd, workingDir)
 }
 
 func validateBashCommandPaths(root, command string) error {
@@ -111,11 +176,11 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	root, err := validatedWorkspaceRootFromContext(ctx)
+	root, resolvedPath, err := resolvePathFromContext(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	return RunReadFromRoot(root, path, limit)
+	return RunReadFromRoot(root, resolvedPath, limit)
 }
 
 func handleWrite(ctx context.Context, args map[string]any) (string, error) {
@@ -124,11 +189,11 @@ func handleWrite(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	root, err := validatedWorkspaceRootFromContext(ctx)
+	root, resolvedPath, err := resolvePathFromContext(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	return RunWriteFromRoot(root, path, content)
+	return RunWriteFromRoot(root, resolvedPath, content)
 }
 
 func handleEdit(ctx context.Context, args map[string]any) (string, error) {
@@ -138,11 +203,11 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	root, err := validatedWorkspaceRootFromContext(ctx)
+	root, resolvedPath, err := resolvePathFromContext(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	return RunEditFromRoot(root, path, oldText, newText)
+	return RunEditFromRoot(root, resolvedPath, oldText, newText)
 }
 
 func mustMarshal(v any) json.RawMessage {

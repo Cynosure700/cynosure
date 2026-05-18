@@ -668,6 +668,33 @@ func TestToolRegistryExecute_LoadSkillExposesFilesystemSkillDir(t *testing.T) {
 	}
 }
 
+func TestToolRegistryExecute_BashUsesActiveSkillDirWhenAvailable(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.CurrentWorkingDir, nil
+	}
+
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, "skills", "demo-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}})
+
+	result, err := registry.Execute(context.Background(), ToolContext{ActiveSkillDir: skillDir}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != filepath.Clean(skillDir) {
+		t.Fatalf("expected active skill dir in runtime env, got %#v", result)
+	}
+}
+
 func TestRegisteredTools_UsesCurrentWebAllowList(t *testing.T) {
 	tools := RegisteredTools(config.AppConfig{})
 	if len(tools) != 1 || tools[0] != "load_skill" {
