@@ -5,6 +5,143 @@ type AuthMode = "login" | "register";
 type ToolEvent = { name: string; status: string; result: string };
 type SidePanel = "capabilities" | "details" | null;
 
+type ContentBlock =
+    | { type: "paragraph"; lines: string[] }
+    | { type: "list"; ordered: boolean; items: string[] }
+    | { type: "code"; language: string; content: string };
+
+function renderInlineContent(text: string) {
+    const segments = text.split(/(`[^`]+`)/g);
+    return segments.map((segment, index) => {
+        if (segment.startsWith("`") && segment.endsWith("`") && segment.length >= 2) {
+            return <code key={`inline-${index}`}>{segment.slice(1, -1)}</code>;
+        }
+        return segment;
+    });
+}
+
+function parseMessageContent(content: string): ContentBlock[] {
+    const normalized = content.replace(/\r\n/g, "\n");
+    const lines = normalized.split("\n");
+    const blocks: ContentBlock[] = [];
+    let paragraphLines: string[] = [];
+    let listItems: string[] = [];
+    let listOrdered = false;
+    let inCodeBlock = false;
+    let codeLanguage = "";
+    let codeLines: string[] = [];
+
+    const flushParagraph = () => {
+        if (paragraphLines.length > 0) {
+            blocks.push({ type: "paragraph", lines: [...paragraphLines] });
+            paragraphLines = [];
+        }
+    };
+
+    const flushList = () => {
+        if (listItems.length > 0) {
+            blocks.push({ type: "list", ordered: listOrdered, items: [...listItems] });
+            listItems = [];
+        }
+    };
+
+    const flushCodeBlock = () => {
+        blocks.push({ type: "code", language: codeLanguage, content: codeLines.join("\n") });
+        codeLines = [];
+        codeLanguage = "";
+    };
+
+    for (const line of lines) {
+        const codeFence = line.match(/^```\s*(.*)$/);
+        if (codeFence) {
+            flushParagraph();
+            flushList();
+            if (inCodeBlock) {
+                flushCodeBlock();
+                inCodeBlock = false;
+            } else {
+                inCodeBlock = true;
+                codeLanguage = codeFence[1]?.trim() ?? "";
+            }
+            continue;
+        }
+
+        if (inCodeBlock) {
+            codeLines.push(line);
+            continue;
+        }
+
+        const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+        const unorderedMatch = line.match(/^\s*[-*+]\s+(.*)$/);
+
+        if (orderedMatch || unorderedMatch) {
+            flushParagraph();
+            const ordered = Boolean(orderedMatch);
+            if (listItems.length > 0 && listOrdered !== ordered) {
+                flushList();
+            }
+            listOrdered = ordered;
+            listItems.push((orderedMatch ?? unorderedMatch)?.[1]?.trim() ?? "");
+            continue;
+        }
+
+        if (line.trim() === "") {
+            flushParagraph();
+            flushList();
+            continue;
+        }
+
+        if (listItems.length > 0) {
+            flushList();
+        }
+        paragraphLines.push(line);
+    }
+
+    if (inCodeBlock) {
+        flushCodeBlock();
+    }
+    flushParagraph();
+    flushList();
+    return blocks;
+}
+
+function renderAssistantContent(content: string) {
+    return parseMessageContent(content).map((block, index) => {
+        if (block.type === "code") {
+            return (
+                <div key={`code-${index}`} className="message-code-block">
+                    {block.language ? <span className="message-code-language">{block.language}</span> : null}
+                    <pre>
+                        <code>{block.content}</code>
+                    </pre>
+                </div>
+            );
+        }
+
+        if (block.type === "list") {
+            const ListTag = block.ordered ? "ol" : "ul";
+            return (
+                <ListTag key={`list-${index}`} className="message-list">
+                    {block.items.map((item, itemIndex) => (
+                        <li key={`item-${index}-${itemIndex}`}>{renderInlineContent(item)}</li>
+                    ))}
+                </ListTag>
+            );
+        }
+
+        return (
+            <p key={`paragraph-${index}`} className="message-paragraph">
+                {block.lines.map((line, lineIndex) => (
+                    <span key={`line-${index}-${lineIndex}`}>
+                        {lineIndex > 0 ? <br /> : null}
+                        {renderInlineContent(line)}
+                    </span>
+                ))}
+            </p>
+        );
+    });
+}
+
 export function App() {
     const [authMode, setAuthMode] = useState<AuthMode>("login");
     const [user, setUser] = useState<User | null>(null);
@@ -363,7 +500,9 @@ export function App() {
                         ) : messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
                                 <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
-                                <div className="message-content">{message.content}</div>
+                                <div className="message-content">
+                                    {message.role === "assistant" ? renderAssistantContent(message.content) : message.content}
+                                </div>
                             </div>
                         ))}
                     </div>
