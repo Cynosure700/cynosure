@@ -75,6 +75,9 @@ func (f *fakeServerStore) GetConversationByID(ctx context.Context, conversationI
 
 func (f *fakeServerStore) DeleteConversation(ctx context.Context, conversationID string) error {
 	f.deleteConversation = true
+	if f.conversationToReturn.ID == conversationID {
+		f.conversationToReturn = storage.Conversation{}
+	}
 	return nil
 }
 
@@ -261,5 +264,73 @@ func TestHandleSkillByID_RejectsBuiltinMutationRequests(t *testing.T) {
 				t.Fatalf("expected builtin mutation to avoid store calls, got %+v", store)
 			}
 		})
+	}
+}
+
+func TestHandleConversationByID_DeletesOwnedConversation(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "test"}}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/conversations/conv_1", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+	if !store.deleteConversation {
+		t.Fatalf("expected delete conversation to be called")
+	}
+	var body struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !body.OK {
+		t.Fatalf("expected ok response, got %#v", body)
+	}
+}
+
+func TestHandleConversationByID_RejectsDeletingOtherUsersConversation(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_other", Title: "test"}}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/conversations/conv_1", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.Code)
+	}
+	if store.deleteConversation {
+		t.Fatalf("expected delete conversation not to be called")
+	}
+}
+
+func TestHandleConversationByID_ReturnsNotFoundAfterDelete(t *testing.T) {
+	store := &fakeServerStore{conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "test"}}
+	server := &Server{store: store}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/conversations/conv_1", nil)
+	deleteReq = deleteReq.WithContext(context.WithValue(deleteReq.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	deleteResp := httptest.NewRecorder()
+	server.handleConversationByID(deleteResp, deleteReq)
+
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("expected delete status %d, got %d", http.StatusOK, deleteResp.Code)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/conversations/conv_1", nil)
+	getReq = getReq.WithContext(context.WithValue(getReq.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	getResp := httptest.NewRecorder()
+	server.handleConversationByID(getResp, getReq)
+
+	if getResp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d after delete, got %d", http.StatusNotFound, getResp.Code)
 	}
 }
