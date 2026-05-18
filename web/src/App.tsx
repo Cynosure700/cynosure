@@ -19,6 +19,9 @@ export function App() {
     const [sending, setSending] = useState(false);
     const [creatingConversation, setCreatingConversation] = useState(false);
     const [newConversationTitle, setNewConversationTitle] = useState("");
+    const [renamingConversationId, setRenamingConversationId] = useState("");
+    const [renameTitle, setRenameTitle] = useState("");
+    const [savingRename, setSavingRename] = useState(false);
     const [deletingConversationId, setDeletingConversationId] = useState("");
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
@@ -177,6 +180,32 @@ export function App() {
         }
     }
 
+    function startRenameConversation(conversation: Conversation) {
+        setError("");
+        setRenamingConversationId(conversation.id);
+        setRenameTitle(conversation.title);
+    }
+
+    function cancelRenameConversation() {
+        setRenamingConversationId("");
+        setRenameTitle("");
+        setSavingRename(false);
+    }
+
+    async function handleRenameConversation(event: FormEvent<HTMLFormElement>, conversationId: string) {
+        event.preventDefault();
+        setSavingRename(true);
+        setError("");
+        try {
+            const result = await api.renameConversation(conversationId, renameTitle);
+            setConversations((prev) => prev.map((item) => (item.id === conversationId ? result.conversation : item)));
+            cancelRenameConversation();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "重命名会话失败");
+            setSavingRename(false);
+        }
+    }
+
     if (loading) {
         return <div className="center">加载中...</div>;
     }
@@ -254,20 +283,45 @@ export function App() {
                     </form>
                     <div className="list">
                         {conversations.map((conversation) => (
-                            <div key={conversation.id} className="list-row">
-                                <button
-                                    className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
-                                    onClick={() => setActiveConversationId(conversation.id)}
-                                >
-                                    {conversation.title}
-                                </button>
-                                <button
-                                    className="list-delete-button"
-                                    onClick={() => void handleDeleteConversation(conversation.id)}
-                                    disabled={deletingConversationId === conversation.id}
-                                >
-                                    {deletingConversationId === conversation.id ? "删除中..." : "删除"}
-                                </button>
+                            <div key={conversation.id} className="list-entry">
+                                <div className="list-row">
+                                    <button
+                                        className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
+                                        onClick={() => setActiveConversationId(conversation.id)}
+                                    >
+                                        {conversation.title}
+                                    </button>
+                                    <div className="list-row-actions">
+                                        <button
+                                            className="secondary-toggle"
+                                            onClick={() => startRenameConversation(conversation)}
+                                            disabled={savingRename || deletingConversationId === conversation.id}
+                                        >
+                                            重命名
+                                        </button>
+                                        <button
+                                            className="list-delete-button"
+                                            onClick={() => void handleDeleteConversation(conversation.id)}
+                                            disabled={deletingConversationId === conversation.id || savingRename}
+                                        >
+                                            {deletingConversationId === conversation.id ? "删除中..." : "删除"}
+                                        </button>
+                                    </div>
+                                </div>
+                                {renamingConversationId === conversation.id && (
+                                    <form className="inline-rename-form" onSubmit={(event) => void handleRenameConversation(event, conversation.id)}>
+                                        <input
+                                            value={renameTitle}
+                                            onChange={(event) => setRenameTitle(event.target.value)}
+                                            placeholder="输入新的会话名称"
+                                            disabled={savingRename}
+                                        />
+                                        <div className="inline-rename-actions">
+                                            <button type="submit" disabled={savingRename}>{savingRename ? "保存中..." : "保存"}</button>
+                                            <button type="button" className="secondary-toggle" onClick={cancelRenameConversation} disabled={savingRename}>取消</button>
+                                        </div>
+                                    </form>
+                                )}
                             </div>
                         ))}
                     </div>
