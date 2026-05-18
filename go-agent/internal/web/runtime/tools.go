@@ -219,7 +219,7 @@ func RegisteredTools(cfg config.AppConfig) []string {
 }
 
 func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
-	lines := make([]string, 0, 4)
+	lines := make([]string, 0, 5)
 	if env.AppHome != "" {
 		lines = append(lines, "APP_HOME="+env.AppHome)
 	}
