@@ -80,6 +80,8 @@ export const api = {
     },
     createConversation: (title?: string) =>
         request<{ conversation: Conversation }>("/api/conversations", { method: "POST", body: JSON.stringify({ title }) }),
+    deleteConversation: (conversationId: string) =>
+        request<{ ok: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
     getConversation: async (conversationId: string) => {
         const result = await request<{ conversation: Conversation; messages: ChatMessage[] | null }>(`/api/conversations/${conversationId}`);
         return { ...result, messages: normalizeArray(result.messages) };
