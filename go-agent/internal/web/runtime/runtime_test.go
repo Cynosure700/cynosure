@@ -759,6 +759,29 @@ func TestToolRegistryExecute_BashFallsBackToWorkspaceWhenSkillDirMissing(t *test
 	}
 }
 
+func TestExecuteToolCall_AuditUsesActiveSkillDirAsResolvedCWD(t *testing.T) {
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, "skills", "demo-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	command := filepath.Join(skillDir, "pwd.sh")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\npwd\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
+	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	outcome := service.executeToolCall(context.Background(), ToolContext{ActiveSkillDir: skillDir}, "bash", `{"command":"`+command+`"}`)
+
+	if outcome.Status != "success" {
+		t.Fatalf("expected success, got %#v", outcome)
+	}
+	if filepath.Clean(outcome.Audit.ResolvedCWD) != filepath.Clean(skillDir) {
+		t.Fatalf("expected audit cwd %q, got %#v", skillDir, outcome.Audit)
+	}
+}
+
 func TestRegisteredTools_UsesCurrentWebAllowList(t *testing.T) {
 	tools := RegisteredTools(config.AppConfig{})
 	if len(tools) != 1 || tools[0] != "load_skill" {

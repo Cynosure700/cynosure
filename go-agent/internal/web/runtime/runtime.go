@@ -149,10 +149,10 @@ func (s *Service) resolveUserWorkspace(userID string) (string, error) {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) toolExecutionOutcome {
-	runtimeEnv := s.Tools.runtimeEnv()
+	runtimeEnv := s.Tools.runtimeEnv(toolCtx)
 	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(name, rawArgs, runtimeEnv.CommandBinDir, runtimeEnv.CommandScriptDir)
 	audit := toolExecutionAudit{
-		ResolvedCWD:           strings.TrimSpace(runtimeEnv.WorkspaceRoot),
+		ResolvedCWD:           strings.TrimSpace(runtimeEnv.CurrentWorkingDir),
 		ResolvedCommandPath:   resolvedCommandPath,
 		CommandArtifactPath:   commandArtifactPath,
 		CommandArtifactSource: classifyCommandArtifactSource(runtimeEnv.WorkspaceRoot, commandArtifactPath),
