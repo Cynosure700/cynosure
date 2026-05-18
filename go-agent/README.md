@@ -50,10 +50,10 @@
 - Redis 缓存活跃会话上下文
 - 多用户数据隔离
 - 浏览器端仅暴露显式允许的已注册工具
-- `WORKSPACE_ROOT` 未显式配置时，runtime 会优先使用 `APP_HOME/output/workspace`；若该目录不存在，则回退到 `APP_HOME/workspace`
+- 目录变量以 `APP_HOME` 和 `WORKSPACE_ROOT` 为主：`WORKSPACE_ROOT` 未显式配置时，runtime 会优先使用 `APP_HOME/output/workspace`；若该目录不存在，则回退到 `APP_HOME/workspace`
 - 默认 Web runtime 当前会暴露 `load_skill,bash,read_file,write_file,edit_file`；也可以通过 `WEB_ALLOWED_TOOLS` 显式覆盖
 - 工具默认运行在服务端解析后的统一 `WORKSPACE_ROOT` 下，并拒绝越权路径
-- 命令产物目录会从解析后的 runtime workspace 派生，即 `<resolved-workspace>/bin` 与 `<resolved-workspace>/cmd`
+- `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 默认都会从解析后的 `WORKSPACE_ROOT` 规范派生，即 `<resolved-workspace>/skills`、`<resolved-workspace>/bin`、`<resolved-workspace>/cmd`
 - 工具调用会记录审计摘要，包括 cwd、命令产物路径、命令产物来源（workspace/custom）、结果摘要或拒绝原因
 - 浏览器端不会访问**用户本地机器**的 shell、目录或文件；如果启用工具，访问的也是服务端隔离 workspace
 
@@ -112,7 +112,14 @@ go-agent/
 
 ## 配置说明
 
-后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时把 `APP_HOME`、builtin skills 目录、命令产物目录和 workspace 根目录解析为绝对路径；日志文件会写入 `APP_HOME/logs/`。无论是执行部署构建命令还是直接启动 Web 服务，程序都会自动创建这套目录结构。
+后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时先解析 `APP_HOME` 与 `WORKSPACE_ROOT`，再基于 `WORKSPACE_ROOT` 统一派生 builtin skills 目录、命令产物目录，并把这些路径都转换为绝对路径。无论是执行部署构建命令还是直接启动 Web 服务，程序都会自动创建这套目录结构。
+
+可以把目录配置理解为两层：
+
+- **主变量**：`APP_HOME`、`WORKSPACE_ROOT`
+- **派生目录**：`BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR`
+
+一般情况下只需要关心前两项；后三项通常不需要单独配置。
 
 运行时 workspace 的默认解析顺序：
 
@@ -120,7 +127,7 @@ go-agent/
 2. 否则如果 `APP_HOME/output/workspace` 存在，优先使用它
 3. 否则回退到 `APP_HOME/workspace`
 
-`BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 在未显式配置时，都会从上面解析出的 runtime workspace 自动派生。
+`BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 在未显式配置时，都会从上面解析出的 `WORKSPACE_ROOT` 自动派生；如果显式配置，也必须分别指向 `WORKSPACE_ROOT/skills`、`WORKSPACE_ROOT/bin`、`WORKSPACE_ROOT/cmd` 这三个规范目录。
 
 ### `config.json` 示例
 
@@ -133,7 +140,15 @@ go-agent/
 }
 ```
 
-如果你希望覆盖默认路径解析，也可以额外显式配置：
+如果你希望覆盖默认路径解析，通常只需要显式设置 `workspace_root`：
+
+```json
+{
+  "workspace_root": "custom/runtime-workspace"
+}
+```
+
+只有在你希望把派生目录也完整声明出来时，才需要额外写出下面这组等价配置：
 
 ```json
 {
@@ -155,10 +170,10 @@ SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
 
+WORKSPACE_ROOT=
 BUILTIN_SKILLS_DIR=
 COMMAND_BIN_DIR=
 COMMAND_SCRIPT_DIR=
-WORKSPACE_ROOT=
 WEB_ALLOWED_TOOLS=load_skill,bash,read_file,write_file,edit_file
 
 MYSQL_HOST=127.0.0.1
@@ -178,12 +193,11 @@ SESSION_TTL_MINUTES=10080
 
 说明：
 
-- `APP_HOME` 默认是当前工作目录，其他路径配置会相对它解析
+- `APP_HOME` 默认是当前工作目录，其他相对路径配置都会基于它解析
 - `WORKSPACE_ROOT` 如果未显式设置：优先解析 `APP_HOME/output/workspace`，不存在时回退到 `APP_HOME/workspace`
-- `BUILTIN_SKILLS_DIR` 默认从解析后的 `WORKSPACE_ROOT/skills` 派生
-- `COMMAND_BIN_DIR` 默认从解析后的 `WORKSPACE_ROOT/bin` 派生
-- `COMMAND_SCRIPT_DIR` 默认从解析后的 `WORKSPACE_ROOT/cmd` 派生
-- 日志默认写入 `APP_HOME/logs/session_<timestamp>.log`
+- `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 默认分别从 `WORKSPACE_ROOT/skills`、`WORKSPACE_ROOT/bin`、`WORKSPACE_ROOT/cmd` 派生
+- 如果显式设置上述三个派生目录，它们也必须分别指向这三个规范路径，而不是任意 workspace 子目录
+- 日志默认写入 `WORKSPACE_ROOT/logs/session_<timestamp>.log`
 - `WEB_ALLOWED_TOOLS` 默认是 `load_skill,bash,read_file,write_file,edit_file`；只有显式允许且已注册的工具才会暴露给模型
 - 即使启用 `bash` / `read_file` / `write_file` / `edit_file`，它们访问的也是服务端 workspace，而不是用户本地电脑
 - 如果未提供 MySQL / Redis 环境变量，程序会使用代码中的默认值构造连接
@@ -225,8 +239,8 @@ go run .
 
 - Web 服务监听 `http://localhost:8080`
 - `APP_HOME` 默认为当前目录
-- runtime workspace 默认解析到 `APP_HOME/workspace`
-- 如果你之前执行过 `./build.sh` 且当前目录下存在 `output/workspace`，则会优先使用该部署态 runtime workspace
+- runtime 会先解析 `WORKSPACE_ROOT`；默认情况下它会落到 `APP_HOME/workspace`
+- 如果你之前执行过 `./build.sh` 且当前目录下存在 `output/workspace`，则会优先使用该部署态 runtime workspace 作为 `WORKSPACE_ROOT`
 
 如果你只想在源码目录补齐 Web agent 所需命令产物，而不打完整发布包，可执行：
 
