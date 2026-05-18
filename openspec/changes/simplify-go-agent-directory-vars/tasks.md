@@ -10,5 +10,5 @@
 
 ## 3. 回归验证与文档同步
 
-- [ ] 3.1 更新或补充 `go-agent/internal/config/config_test.go`、`go-agent/internal/web/runtime/*_test.go` 中与目录变量相关的回归测试，覆盖默认解析、显式配置与兼容行为。
+- [x] 3.1 更新或补充 `go-agent/internal/config/config_test.go`、`go-agent/internal/web/runtime/*_test.go` 中与目录变量相关的回归测试，覆盖默认解析、显式配置与兼容行为。
 - [ ] 3.2 更新 `go-agent/README.md`，用更简洁的方式说明目录变量关系、默认推导顺序和推荐配置方式。

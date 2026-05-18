@@ -301,6 +301,34 @@ func TestLoadWebConfig_ExplicitWorkspaceOverrideDrivesDefaultAssetDirs(t *testin
 	}
 }
 
+func TestResolveRuntimePaths_ReturnsCanonicalWorkspaceDerivedDirs(t *testing.T) {
+	root := t.TempDir()
+
+	paths, err := resolveRuntimePaths(root, fileConfig{
+		WorkspaceRoot:    "custom/runtime-workspace",
+		BuiltinSkillsDir: filepath.Join("custom", "runtime-workspace", "skills"),
+		CommandBinDir:    filepath.Join("custom", "runtime-workspace", "bin"),
+		CommandScriptDir: filepath.Join("custom", "runtime-workspace", "cmd"),
+	})
+	if err != nil {
+		t.Fatalf("resolve runtime paths: %v", err)
+	}
+
+	expectedWorkspace := filepath.Join(root, "custom", "runtime-workspace")
+	if paths.workspaceRoot != expectedWorkspace {
+		t.Fatalf("expected workspace root %q, got %q", expectedWorkspace, paths.workspaceRoot)
+	}
+	if paths.builtinSkillsDir != filepath.Join(expectedWorkspace, "skills") {
+		t.Fatalf("expected builtin skills dir under workspace root, got %q", paths.builtinSkillsDir)
+	}
+	if paths.commandBinDir != filepath.Join(expectedWorkspace, "bin") {
+		t.Fatalf("expected command bin dir under workspace root, got %q", paths.commandBinDir)
+	}
+	if paths.commandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
+		t.Fatalf("expected command script dir under workspace root, got %q", paths.commandScriptDir)
+	}
+}
+
 func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
