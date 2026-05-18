@@ -708,12 +708,17 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	}
 }
 
-func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.T) {
+func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testing.T) {
 	loader := sessions.NewSkillLoader()
 	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	registry := NewToolRegistry(config.AppConfig{AppHome: "/repo/app", WorkspaceRoot: "/repo/app/workspace"})
+	registry := NewToolRegistry(config.AppConfig{
+		AppHome:          "/repo/app",
+		WorkspaceRoot:    "/repo/app/workspace",
+		CommandBinDir:    "/repo/app/workspace/bin",
+		CommandScriptDir: "/repo/app/workspace/cmd",
+	})
 
 	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
@@ -721,7 +726,7 @@ func TestToolRegistryExecute_LoadSkillFallsBackToLocalWorkspacePaths(t *testing.
 	}
 	content := result.Output
 	if !contains(content, "COMMAND_BIN_DIR=/repo/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/repo/app/workspace/cmd") {
-		t.Fatalf("expected loaded skill content to derive command paths from local workspace, got %q", content)
+		t.Fatalf("expected loaded skill content to include configured local workspace paths, got %q", content)
 	}
 	if !contains(content, "WORKSPACE_ROOT=/repo/app/workspace") {
 		t.Fatalf("expected loaded skill content to include local workspace root, got %q", content)
@@ -757,7 +762,7 @@ func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
 	}
 }
 
-func TestToolRegistryExecute_UsesWorkspaceDerivedCommandDirsWhenUnset(t *testing.T) {
+func TestToolRegistryExecute_UsesConfiguredCommandDirs(t *testing.T) {
 	original := agenttools.Handlers["bash"]
 	defer func() { agenttools.Handlers["bash"] = original }()
 
@@ -769,13 +774,18 @@ func TestToolRegistryExecute_UsesWorkspaceDerivedCommandDirsWhenUnset(t *testing
 		return env.WorkspaceRoot + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
 	}
 
-	registry := NewToolRegistry(config.AppConfig{WorkspaceRoot: "/deploy/app/workspace", WebAllowedTools: []string{"bash"}})
+	registry := NewToolRegistry(config.AppConfig{
+		WorkspaceRoot:    "/deploy/app/workspace",
+		CommandBinDir:    "/deploy/app/workspace/bin",
+		CommandScriptDir: "/deploy/app/workspace/cmd",
+		WebAllowedTools:  []string{"bash"},
+	})
 	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if execResult.Output != "/deploy/app/workspace|/deploy/app/workspace/bin|/deploy/app/workspace/cmd" {
-		t.Fatalf("expected workspace-derived runtime env, got %q", execResult.Output)
+		t.Fatalf("expected configured runtime env, got %q", execResult.Output)
 	}
 }
 

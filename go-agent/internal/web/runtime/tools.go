@@ -111,23 +111,16 @@ func (r *ToolRegistry) runtimeEnv(toolCtx ...ToolContext) agenttools.RuntimeEnv 
 	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
 	currentWorkingDir := workspaceRoot
 	if len(toolCtx) > 0 {
+		// 默认切换到技能目录，只加载一个skill目录
 		candidate := normalizeActiveSkillDir(workspaceRoot, toolCtx[0].ActiveSkillDir)
 		if candidate != "" {
 			currentWorkingDir = candidate
 		}
 	}
-	commandBinDir := strings.TrimSpace(env.CommandBinDir)
-	if commandBinDir == "" && workspaceRoot != "" {
-		commandBinDir = filepath.Join(workspaceRoot, "bin")
-	}
-	commandScriptDir := strings.TrimSpace(env.CommandScriptDir)
-	if commandScriptDir == "" && workspaceRoot != "" {
-		commandScriptDir = filepath.Join(workspaceRoot, "cmd")
-	}
 	return agenttools.RuntimeEnv{
 		AppHome:          env.AppHome,
-		CommandBinDir:    commandBinDir,
-		CommandScriptDir: commandScriptDir,
+		CommandBinDir:    strings.TrimSpace(env.CommandBinDir),
+		CommandScriptDir: strings.TrimSpace(env.CommandScriptDir),
 		WorkspaceRoot:    workspaceRoot,
 		CurrentWorkingDir: currentWorkingDir,
 	}
