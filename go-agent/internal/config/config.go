@@ -54,6 +54,13 @@ type runtimePaths struct {
 	commandScriptDir string
 }
 
+type runtimeAssetSpec struct {
+	label     string
+	envKey    string
+	fileValue string
+	subdir    string
+}
+
 type LLMClient interface {
 	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
 }
@@ -336,24 +343,35 @@ func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, erro
 	if err != nil {
 		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	builtinSkillsDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("BUILTIN_SKILLS_DIR", strings.TrimSpace(fileCfg.BuiltinSkillsDir)), "skills")
-	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve builtin skills dir: %w", err)
+	paths := runtimePaths{workspaceRoot: workspaceRoot}
+	for _, spec := range []runtimeAssetSpec{
+		{label: "builtin skills dir", envKey: "BUILTIN_SKILLS_DIR", fileValue: fileCfg.BuiltinSkillsDir, subdir: "skills"},
+		{label: "command bin dir", envKey: "COMMAND_BIN_DIR", fileValue: fileCfg.CommandBinDir, subdir: "bin"},
+		{label: "command script dir", envKey: "COMMAND_SCRIPT_DIR", fileValue: fileCfg.CommandScriptDir, subdir: "cmd"},
+	} {
+		resolved, err := resolveRuntimeAssetFromSpec(appHome, workspaceRoot, spec)
+		if err != nil {
+			return runtimePaths{}, err
+		}
+		switch spec.subdir {
+		case "skills":
+			paths.builtinSkillsDir = resolved
+		case "bin":
+			paths.commandBinDir = resolved
+		case "cmd":
+			paths.commandScriptDir = resolved
+		}
 	}
-	commandBinDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_BIN_DIR", strings.TrimSpace(fileCfg.CommandBinDir)), "bin")
+	return paths, nil
+}
+
+func resolveRuntimeAssetFromSpec(appHome, workspaceRoot string, spec runtimeAssetSpec) (string, error) {
+	configured := getenv(spec.envKey, strings.TrimSpace(spec.fileValue))
+	resolved, err := resolveRuntimeAssetDir(appHome, workspaceRoot, configured, spec.subdir)
 	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve command bin dir: %w", err)
+		return "", fmt.Errorf("resolve %s: %w", spec.label, err)
 	}
-	commandScriptDir, err := resolveRuntimeAssetDir(appHome, workspaceRoot, getenv("COMMAND_SCRIPT_DIR", strings.TrimSpace(fileCfg.CommandScriptDir)), "cmd")
-	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve command script dir: %w", err)
-	}
-	return runtimePaths{
-		workspaceRoot:    workspaceRoot,
-		builtinSkillsDir: builtinSkillsDir,
-		commandBinDir:    commandBinDir,
-		commandScriptDir: commandScriptDir,
-	}, nil
+	return resolved, nil
 }
 
 func resolveRuntimeAssetDir(appHome, workspaceRoot, configured, subdir string) (string, error) {

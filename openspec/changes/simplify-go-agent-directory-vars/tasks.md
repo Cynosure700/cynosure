@@ -1,7 +1,7 @@
 ## 1. 目录解析模型收敛
 
 - [x] 1.1 收敛 `go-agent/internal/config/config.go` 中目录变量解析逻辑，确保 `WORKSPACE_ROOT` 成为运行时资产目录的单一规范来源。
-- [ ] 1.2 保留 `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 的显式配置兼容性，并继续校验它们只能指向 `WORKSPACE_ROOT` 下的规范派生目录。
+- [x] 1.2 保留 `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 的显式配置兼容性，并继续校验它们只能指向 `WORKSPACE_ROOT` 下的规范派生目录。
 
 ## 2. Runtime 目录使用简化
 
