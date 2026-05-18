@@ -423,6 +423,161 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_CarriesFilesystemSkillDirAcrossMultiToolTurn(t *testing.T) {
+	originalClient := config.Client
+	originalBash := agenttools.Handlers["bash"]
+	defer func() {
+		config.Client = originalClient
+		agenttools.Handlers["bash"] = originalBash
+	}()
+
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.CurrentWorkingDir, nil
+	}
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{
+					{ID: "tool_load", Type: "function", Function: openai.FunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}},
+					{ID: "tool_bash", Type: "function", Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}},
+				}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	config.Client = llm
+
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, "skills", "builtin-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: filepath.Join(skillDir, "SKILL.md")},
+	})
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WorkspaceRoot = workspace
+	cfg.WebAllowedTools = []string{"load_skill", "bash"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_skill", Title: "新对话"}, storage.User{ID: "usr_skill", Username: "skill-user"}, "请加载技能后执行 bash", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+	if len(store.toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(store.toolCalls))
+	}
+	var audit toolExecutionAudit
+	if err := json.Unmarshal([]byte(store.toolCalls[1].Summary), &audit); err != nil {
+		t.Fatalf("parse second tool audit: %v", err)
+	}
+	if filepath.Clean(audit.ResolvedCWD) != filepath.Clean(skillDir) {
+		t.Fatalf("expected bash audit cwd %q, got %#v", skillDir, audit)
+	}
+	toolMessage := findToolMessageByID(t, llm.reqs[1].Messages, "tool_bash")
+	var outcome toolExecutionOutcome
+	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
+		t.Fatalf("parse bash tool outcome: %v", err)
+	}
+	if filepath.Clean(outcome.Result) != filepath.Clean(skillDir) {
+		t.Fatalf("expected bash tool result %q, got %q", skillDir, outcome.Result)
+	}
+}
+
+func TestRespondToConversation_DBSkillFallsBackToWorkspaceWithinMultiToolTurn(t *testing.T) {
+	originalClient := config.Client
+	originalBash := agenttools.Handlers["bash"]
+	defer func() {
+		config.Client = originalClient
+		agenttools.Handlers["bash"] = originalBash
+	}()
+
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return env.CurrentWorkingDir, nil
+	}
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{
+					{ID: "tool_load", Type: "function", Function: openai.FunctionCall{Name: "load_skill", Arguments: `{"name":"db-skill"}`}},
+					{ID: "tool_bash", Type: "function", Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}},
+				}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	config.Client = llm
+
+	workspace := t.TempDir()
+	store := &fakeStore{enabledSkills: []storage.Skill{{
+		ID:          "skill_1",
+		UserID:      "usr_db",
+		Name:        "DB Skill",
+		Slug:        "db-skill",
+		Description: "db description",
+		Content:     "db body",
+		Status:      "enabled",
+	}}}
+	cfg := testAppConfig(t)
+	cfg.WorkspaceRoot = workspace
+	cfg.WebAllowedTools = []string{"load_skill", "bash"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_db", Title: "新对话"}, storage.User{ID: "usr_db", Username: "db-user"}, "请加载 db skill 后执行 bash", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+	if len(store.toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(store.toolCalls))
+	}
+	var audit toolExecutionAudit
+	if err := json.Unmarshal([]byte(store.toolCalls[1].Summary), &audit); err != nil {
+		t.Fatalf("parse second tool audit: %v", err)
+	}
+	if filepath.Clean(audit.ResolvedCWD) != filepath.Clean(workspace) {
+		t.Fatalf("expected workspace fallback cwd %q, got %#v", workspace, audit)
+	}
+	toolMessage := findToolMessageByID(t, llm.reqs[1].Messages, "tool_bash")
+	var outcome toolExecutionOutcome
+	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
+		t.Fatalf("parse bash tool outcome: %v", err)
+	}
+	if filepath.Clean(outcome.Result) != filepath.Clean(workspace) {
+		t.Fatalf("expected bash tool result %q, got %q", workspace, outcome.Result)
+	}
+}
+
 func TestResolveUserWorkspace_UsesSharedWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
@@ -944,6 +1099,17 @@ func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) open
 		}
 	}
 	t.Fatalf("expected tool message in runtime loop")
+	return openai.ChatCompletionMessage{}
+}
+
+func findToolMessageByID(t *testing.T, messages []openai.ChatCompletionMessage, toolCallID string) openai.ChatCompletionMessage {
+	t.Helper()
+	for _, message := range messages {
+		if message.Role == "tool" && message.ToolCallID == toolCallID {
+			return message
+		}
+	}
+	t.Fatalf("expected tool message for toolCallID %q", toolCallID)
 	return openai.ChatCompletionMessage{}
 }
 

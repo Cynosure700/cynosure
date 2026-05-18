@@ -11,5 +11,5 @@
 
 ## 3. Regression coverage
 
-- [ ] 3.1 Add runtime tests covering filesystem-backed skill activation, multi-tool turn behavior, and DB-skill fallback to workspace root.
+- [x] 3.1 Add runtime tests covering filesystem-backed skill activation, multi-tool turn behavior, and DB-skill fallback to workspace root.
 - [ ] 3.2 Add tool execution tests covering skill-directory cwd selection, workspace escape rejection, and audit visibility for skill-driven executions.
