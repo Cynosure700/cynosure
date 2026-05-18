@@ -109,6 +109,12 @@ select {
     gap: 10px;
 }
 
+.list-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
 .list-item,
 .skill-card,
 .panel-box,
@@ -119,8 +125,19 @@ select {
     padding: 12px;
 }
 
+.list-row .list-item {
+    flex: 1;
+    text-align: left;
+}
+
 .list-item.active {
     border-color: #38bdf8;
+}
+
+.list-delete-button {
+    background: transparent;
+    border: 1px solid #334155;
+    color: #fca5a5;
 }
 
 .main-content {

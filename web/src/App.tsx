@@ -143,6 +143,15 @@ export function App() {
         setSkills((prev) => prev.filter((item) => item.id !== skillId));
     }
 
+    async function handleDeleteConversation(conversationId: string) {
+        await api.deleteConversation(conversationId);
+        const nextConversations = conversations.filter((item) => item.id !== conversationId);
+        setConversations(nextConversations);
+        if (conversationId === activeConversationId) {
+            setActiveConversationId(nextConversations[0]?.id ?? "");
+        }
+    }
+
     if (loading) {
         return <div className="center">加载中...</div>;
     }
@@ -194,13 +203,20 @@ export function App() {
                     </div>
                     <div className="list">
                         {conversations.map((conversation) => (
-                            <button
-                                key={conversation.id}
-                                className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
-                                onClick={() => setActiveConversationId(conversation.id)}
-                            >
-                                {conversation.title}
-                            </button>
+                            <div key={conversation.id} className="list-row">
+                                <button
+                                    className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
+                                    onClick={() => setActiveConversationId(conversation.id)}
+                                >
+                                    {conversation.title}
+                                </button>
+                                <button
+                                    className="list-delete-button"
+                                    onClick={() => void handleDeleteConversation(conversation.id)}
+                                >
+                                    删除
+                                </button>
+                            </div>
                         ))}
                     </div>
                 </section>
