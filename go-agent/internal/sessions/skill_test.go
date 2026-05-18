@@ -88,7 +88,7 @@ Do workspace thing.`
 func TestLoadBuiltinSkillsFromDir_LoadsResolvedBuiltinSkillDirectory(t *testing.T) {
 	testCases := []struct {
 		name        string
-		skillsDir    string
+		skillsDir   string
 		description string
 	}{
 		{name: "deployment", skillsDir: filepath.Join(t.TempDir(), "output", "workspace", "skills"), description: "Loaded from deployment skills dir"},

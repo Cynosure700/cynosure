@@ -8,7 +8,7 @@
 
 - [x] 2.1 拆分 `go-agent/internal/config/config.go`，按 LLM 配置、Web 配置、runtime 路径、layout 校验和环境变量辅助整理文件结构。
 - [x] 2.2 拆分 `go-agent/internal/web/storage/store.go`，按 store 初始化、migrations、users/sessions/skills/conversations/messages/toolcalls/cache 组织仓储代码。
-- [ ] 2.3 拆分 `go-agent/internal/sessions/skill.go`，分离 Skill loader、frontmatter 解析、merge 与渲染逻辑，保持现有调用方式兼容。
+- [x] 2.3 拆分 `go-agent/internal/sessions/skill.go`，分离 Skill loader、frontmatter 解析、merge 与渲染逻辑，保持现有调用方式兼容。
 
 ## 3. 回归验证与文档同步
 
