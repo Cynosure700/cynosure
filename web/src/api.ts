@@ -28,6 +28,11 @@ export type ChatMessage = {
     content: string;
 };
 
+function conversationTitlePayload(title?: string): { title?: string } {
+    const trimmed = title?.trim();
+    return trimmed ? { title: trimmed } : {};
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8080";
 
 function normalizeArray<T>(value: T[] | null | undefined): T[] {
@@ -79,7 +84,12 @@ export const api = {
         return { ...result, conversations: normalizeArray(result.conversations) };
     },
     createConversation: (title?: string) =>
-        request<{ conversation: Conversation }>("/api/conversations", { method: "POST", body: JSON.stringify({ title }) }),
+        request<{ conversation: Conversation }>("/api/conversations", { method: "POST", body: JSON.stringify(conversationTitlePayload(title)) }),
+    renameConversation: (conversationId: string, title: string) =>
+        request<{ conversation: Conversation }>(`/api/conversations/${conversationId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ title: title.trim() }),
+        }),
     deleteConversation: (conversationId: string) =>
         request<{ ok: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
     getConversation: async (conversationId: string) => {
