@@ -89,10 +89,10 @@ func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 	env := r.baseEnv
 	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
 	return agenttools.RuntimeEnv{
-		AppHome:          env.AppHome,
-		CommandBinDir:    strings.TrimSpace(env.CommandBinDir),
-		CommandScriptDir: strings.TrimSpace(env.CommandScriptDir),
-		WorkspaceRoot:    workspaceRoot,
+		AppHome:           env.AppHome,
+		CommandBinDir:     strings.TrimSpace(env.CommandBinDir),
+		CommandScriptDir:  strings.TrimSpace(env.CommandScriptDir),
+		WorkspaceRoot:     workspaceRoot,
 		CurrentWorkingDir: workspaceRoot, // 做扩展用
 	}
 }
