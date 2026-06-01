@@ -414,6 +414,9 @@ func TestHandleConversations_CreatesConversationWithCustomTitle(t *testing.T) {
 	if !strings.HasPrefix(store.createdConversation.ID, "conv_") {
 		t.Fatalf("expected generated conversation id, got %#v", store.createdConversation)
 	}
+	if !strings.HasPrefix(store.createdConversation.RootMessageID, "msg_") {
+		t.Fatalf("expected generated root message id, got %#v", store.createdConversation)
+	}
 }
 
 func TestHandleConversations_UsesDefaultTitleWhenEmpty(t *testing.T) {

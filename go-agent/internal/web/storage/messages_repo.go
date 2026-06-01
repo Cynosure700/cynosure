@@ -17,6 +17,17 @@ func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID s
 	if limit <= 0 {
 		limit = 100
 	}
+	conversation, err := s.GetConversationByID(ctx, conversationID)
+	if err == nil {
+		messages, err := DecodeConversationHistory(conversation.HistoryJSON)
+		if err != nil {
+			return nil, err
+		}
+		if len(messages) > limit {
+			return messages[:limit], nil
+		}
+		return messages, nil
+	}
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT id, conversation_id, user_id, role, content, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?

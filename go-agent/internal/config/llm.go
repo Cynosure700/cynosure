@@ -48,7 +48,7 @@ func loadLLMConfig() (Config, error) {
 	}
 
 	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.ModelID == "" {
-		return Config{}, fmt.Errorf("missing LLM config; set OPENAI_BASE_URL, OPENAI_API_KEY, MODEL_ID or provide config.json")
+		return Config{}, fmt.Errorf("missing LLM config; set OPENAI_BASE_URL, OPENAI_API_KEY, MODEL_ID or provide WORKSPACE_ROOT/config.json")
 	}
 
 	return cfg, nil

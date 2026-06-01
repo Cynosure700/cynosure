@@ -17,10 +17,8 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err != nil {
 		return storage.Message{}, err
 	}
-	if err := s.Store.CreateMessage(ctx, storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "user", Content: userMessage}); err != nil {
-		return storage.Message{}, err
-	}
-	history = append(history, storage.Message{ConversationID: conversation.ID, UserID: user.ID, Role: "user", Content: userMessage})
+	userEntry := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "user", Content: userMessage}
+	history = append(history, userEntry)
 	if shouldInferConversationTitle(conversation.Title) {
 		if err := s.Store.UpdateConversationTitle(ctx, conversation.ID, inferConversationTitle(userMessage)); err != nil {
 			return storage.Message{}, err
@@ -31,15 +29,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 	}
 
-	if _, err := s.resolveUserWorkspace(user.ID); err != nil {
-		return storage.Message{}, err
-	}
-
-	loader, err := s.buildSkillSnapshot(ctx, user.ID)
+	snapshot, err := s.buildSkillSnapshot(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
 	}
-	systemPrompt := s.buildSystemPrompt(user, loader)
+	systemPrompt := s.buildSystemPrompt(user, snapshot)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0
 
@@ -69,7 +63,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Loader: loader}, tc.Function.Name, tc.Function.Arguments)
+			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot}, tc.Function.Name, tc.Function.Arguments)
 			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
 			if writer != nil {
 				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
@@ -81,12 +75,9 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {
 	assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: userID, Role: "assistant", Content: content}
-	if err := s.Store.CreateMessage(ctx, assistant); err != nil {
-		return storage.Message{}, err
-	}
 	updatedHistory := append(history, assistant)
-	if err := s.Store.SetConversationCache(ctx, conversation.ID, updatedHistory); err != nil {
-		_ = err
+	if err := s.Store.SetConversationHistory(ctx, conversation.ID, updatedHistory); err != nil {
+		return storage.Message{}, err
 	}
 	if writer != nil {
 		_ = writer.Event("assistant", map[string]any{"content": assistant.Content})

@@ -19,6 +19,7 @@ import (
 
 type fakeStore struct {
 	messages         []storage.Message
+	historyUpdates   [][]storage.Message
 	toolCalls        []storage.ToolCall
 	cached           []storage.Message
 	enabledSkills    []storage.Skill
@@ -31,6 +32,12 @@ type fakeStore struct {
 
 func (f *fakeStore) CreateMessage(ctx context.Context, message storage.Message) error {
 	f.messages = append(f.messages, message)
+	return nil
+}
+
+func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
+	f.historyUpdates = append(f.historyUpdates, append([]storage.Message(nil), messages...))
+	f.cached = append([]storage.Message(nil), messages...)
 	return nil
 }
 
@@ -139,8 +146,14 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	if len(store.toolCalls) != 0 {
 		t.Fatalf("expected no tool calls to be stored, got %d", len(store.toolCalls))
 	}
-	if len(store.messages) != 2 {
-		t.Fatalf("expected user and assistant messages to be persisted, got %d", len(store.messages))
+	if len(store.messages) != 0 {
+		t.Fatalf("expected no legacy message row writes, got %d", len(store.messages))
+	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
+	}
+	if got := store.historyUpdates[0]; len(got) != 2 || got[0].Role != "user" || got[1].Role != "assistant" {
+		t.Fatalf("expected full user+assistant history update, got %#v", got)
 	}
 	if len(store.cached) != 2 {
 		t.Fatalf("expected cached conversation with 2 messages, got %d", len(store.cached))
@@ -198,8 +211,11 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 	if !contains(systemPrompt, "Runtime tools available in this conversation: bash.") {
 		t.Fatalf("expected system prompt to include available tools, got %q", systemPrompt)
 	}
-	if len(store.messages) != 2 {
-		t.Fatalf("expected user and assistant messages to be persisted, got %d", len(store.messages))
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
+	}
+	if got := store.historyUpdates[0]; len(got) != 2 || got[0].Content != "请帮我执行 shell 命令 ls 查看本地目录" || got[1].Content != "我会在 workspace 中执行命令。" {
+		t.Fatalf("expected full shell conversation history, got %#v", got)
 	}
 }
 
@@ -301,7 +317,7 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
 
-	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, loader)
+	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, NewSkillSnapshot(nil, loader))
 	if !contains(prompt, "Current workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
@@ -339,14 +355,43 @@ func TestBuildSkillSnapshotRefreshesUserSkillsFromStoreEachCall(t *testing.T) {
 	if store.listEnabledCalls != 2 {
 		t.Fatalf("expected store to be queried for each snapshot, got %d calls", store.listEnabledCalls)
 	}
-	if got := first.Skills["user-skill"].Body; got != "old body" {
+	if got := first.Merged.Skills["user-skill"].Body; got != "old body" {
 		t.Fatalf("expected first snapshot to use old DB content, got %q", got)
 	}
-	if got := second.Skills["user-skill"].Body; got != "new body" {
+	if got := second.Merged.Skills["user-skill"].Body; got != "new body" {
 		t.Fatalf("expected second snapshot to refresh DB content, got %q", got)
 	}
-	if _, ok := second.Skills["builtin-skill"]; !ok {
+	if _, ok := second.Merged.Skills["builtin-skill"]; !ok {
 		t.Fatalf("expected refreshed snapshot to keep builtin skills")
+	}
+}
+
+func TestSkillSnapshotLoadSkillPrefersUserSkillThenFallsBackToLocal(t *testing.T) {
+	userSkills := sessions.NewSkillLoader()
+	userSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"shared-skill": {Meta: map[string]string{"description": "DB description", "tags": "db"}, Body: "db body", Path: "db://skills/skill_1"},
+	})
+	localSkills := sessions.NewSkillLoader()
+	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"shared-skill":  {Meta: map[string]string{"description": "Local description"}, Body: "local body", Path: "/skills/shared/SKILL.md"},
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "/skills/builtin/SKILL.md"},
+	})
+	snapshot := NewSkillSnapshot(userSkills, localSkills)
+
+	loaded, err := snapshot.LoadSkill("shared-skill")
+	if err != nil {
+		t.Fatalf("load shared skill: %v", err)
+	}
+	if loaded.Source != "db" || loaded.Entry.Body != "db body" {
+		t.Fatalf("expected db skill to win, got source=%q body=%q", loaded.Source, loaded.Entry.Body)
+	}
+
+	loaded, err = snapshot.LoadSkill("builtin-skill")
+	if err != nil {
+		t.Fatalf("load builtin skill: %v", err)
+	}
+	if loaded.Source != "local" || loaded.Entry.Body != "builtin body" {
+		t.Fatalf("expected local fallback, got source=%q body=%q", loaded.Source, loaded.Entry.Body)
 	}
 }
 
@@ -411,7 +456,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	if audit.ResolvedCWD == "" || !strings.HasPrefix(audit.ResolvedCWD, cfg.WorkspaceRoot) {
 		t.Fatalf("expected audit resolved cwd under workspace root %q, got %q", cfg.WorkspaceRoot, audit.ResolvedCWD)
 	}
-	if audit.OutcomeSummary == "" || !contains(audit.OutcomeSummary, "<skill name=\"builtin-skill\">") {
+	if audit.OutcomeSummary == "" || !contains(audit.OutcomeSummary, "<skill source=\"local\" name=\"builtin-skill\">") {
 		t.Fatalf("expected audit outcome summary to include tool result, got %#v", audit)
 	}
 	if audit.DenialReason != "" {
@@ -425,7 +470,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	if outcome.Status != "success" {
 		t.Fatalf("expected tool loop status success, got %q", outcome.Status)
 	}
-	if !contains(outcome.Result, "<skill name=\"builtin-skill\">") {
+	if !contains(outcome.Result, "<skill source=\"local\" name=\"builtin-skill\">") {
 		t.Fatalf("expected tool result to include skill content, got %q", outcome.Result)
 	}
 }
@@ -665,69 +710,6 @@ func TestRespondToConversation_DBSkillFallsBackToWorkspaceWithinMultiToolTurn(t 
 	}
 }
 
-func TestResolveUserWorkspace_UsesSharedWorkspaceRoot(t *testing.T) {
-	root := t.TempDir()
-	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
-
-	workspace, err := service.resolveUserWorkspace("usr_123")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	expected := root
-	if workspace != expected {
-		t.Fatalf("expected workspace %q, got %q", expected, workspace)
-	}
-	info, err := os.Stat(workspace)
-	if err != nil {
-		t.Fatalf("expected workspace to exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Fatalf("expected workspace path to be directory")
-	}
-}
-
-func TestResolveUserWorkspace_SharesSameDirectoryAcrossUsers(t *testing.T) {
-	root := t.TempDir()
-	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root}}
-
-	first, err := service.resolveUserWorkspace("usr_a")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	second, err := service.resolveUserWorkspace("usr_b")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if first != second {
-		t.Fatalf("expected shared workspace, got %q and %q", first, second)
-	}
-}
-
-func TestResolveUserWorkspace_AllowsWorkspaceWithEmbeddedDeploymentResources(t *testing.T) {
-	root := t.TempDir()
-	builtinSkillsDir := filepath.Join(root, "skills")
-	commandBinDir := filepath.Join(root, "bin")
-	commandScriptDir := filepath.Join(root, "cmd")
-	if err := os.MkdirAll(builtinSkillsDir, 0o755); err != nil {
-		t.Fatalf("mkdir builtin skills dir: %v", err)
-	}
-	if err := os.MkdirAll(commandBinDir, 0o755); err != nil {
-		t.Fatalf("mkdir command bin dir: %v", err)
-	}
-	if err := os.MkdirAll(commandScriptDir, 0o755); err != nil {
-		t.Fatalf("mkdir command script dir: %v", err)
-	}
-	service := &Service{Cfg: config.AppConfig{WorkspaceRoot: root, BuiltinSkillsDir: builtinSkillsDir, CommandBinDir: commandBinDir, CommandScriptDir: commandScriptDir}}
-
-	workspace, err := service.resolveUserWorkspace("usr_overlap")
-	if err != nil {
-		t.Fatalf("expected workspace root with embedded deployment resources to be allowed, got %v", err)
-	}
-	if workspace != root {
-		t.Fatalf("expected workspace %q, got %q", root, workspace)
-	}
-}
-
 func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
 	registry := NewToolRegistry(config.AppConfig{})
 
@@ -761,11 +743,12 @@ func TestToolRegistryDefinitions_AreLoadedAtRegistryCreation(t *testing.T) {
 	}
 }
 
-func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
-	loader := sessions.NewSkillLoader()
-	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+func TestToolRegistryExecute_LoadSkillReturnsFullSkillInfo(t *testing.T) {
+	localSkills := sessions.NewSkillLoader()
+	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description", "tags": "go,agent"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
+	snapshot := NewSkillSnapshot(nil, localSkills)
 	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/deploy/app",
 		WorkspaceRoot:    "/deploy/app/workspace",
@@ -773,13 +756,16 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 		CommandScriptDir: "/deploy/app/workspace/cmd",
 	})
 
-	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{Skills: snapshot}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	content := result.Output
-	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
+	if !contains(content, "<skill source=\"local\" name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
+	}
+	if !contains(content, "<metadata>") || !contains(content, "description: Builtin description") || !contains(content, "tags: go,agent") || !contains(content, "path: builtin://builtin-skill") {
+		t.Fatalf("expected loaded skill to include full metadata, got %q", content)
 	}
 	if !contains(content, "<runtime-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/workspace/cmd") {
 		t.Fatalf("expected loaded skill content to include runtime paths, got %q", content)
@@ -793,10 +779,11 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 }
 
 func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testing.T) {
-	loader := sessions.NewSkillLoader()
-	loader.LoadFromEntries(map[string]*sessions.SkillEntry{
+	localSkills := sessions.NewSkillLoader()
+	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
+	snapshot := NewSkillSnapshot(nil, localSkills)
 	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/repo/app",
 		WorkspaceRoot:    "/repo/app/workspace",
@@ -804,7 +791,7 @@ func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testi
 		CommandScriptDir: "/repo/app/workspace/cmd",
 	})
 
-	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
+	result, err := registry.Execute(context.Background(), ToolContext{Skills: snapshot}, "load_skill", `{"name":"builtin-skill"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

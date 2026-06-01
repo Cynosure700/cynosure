@@ -11,28 +11,32 @@ echo "打包 go-agent..."
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/bin"
 mkdir -p "${OUTPUT_DIR}/workspace/skills"
+mkdir -p "${OUTPUT_DIR}/workspace/cmd"
+mkdir -p "${OUTPUT_DIR}/workspace/logs"
 
 (
   cd "${ROOTDIR}"
   "${GO_BINARY}" build -o "${OUTPUT_DIR}/bin/${APP_BINARY_NAME}" .
 )
 
-(
-  cd "${ROOTDIR}"
-  "${GO_BINARY}" run ./cmd/build-artifacts \
-    --app-home "${ROOTDIR}" \
-    --command-source "${ROOTDIR}/cmd" \
-    --command-bin-dir "${OUTPUT_DIR}/workspace/bin" \
-    --command-script-dir "${OUTPUT_DIR}/workspace/cmd" \
-    --go-binary "${GO_BINARY}"
-)
+if [ -d "${ROOTDIR}/cmd" ]; then
+  for command_dir in "${ROOTDIR}"/cmd/*; do
+    [ -d "${command_dir}" ] || continue
+    command_name=$(basename "${command_dir}")
+    [ -f "${command_dir}/main.go" ] || continue
+    (
+      cd "${ROOTDIR}"
+      "${GO_BINARY}" build -o "${OUTPUT_DIR}/workspace/cmd/${command_name}" "./cmd/${command_name}"
+    )
+  done
+fi
 
 if [ -f "${ROOTDIR}/config.json" ]; then
-  cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/config.json"
+  cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/workspace/config.json"
 fi
 
 if [ -f "${ROOTDIR}/system_prompt.md" ]; then
-  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/system_prompt.md"
+  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/workspace/system_prompt.md"
 fi
 
 if [ -d "${ROOTDIR}/skills" ]; then

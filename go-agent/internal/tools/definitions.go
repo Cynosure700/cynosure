@@ -72,7 +72,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
-	toolDef("load_skill", "Load a skill by name to access specialized knowledge", map[string]any{
+	toolDef("load_skill", "Load the full information of a skill by name. It first looks up the current user's enabled database skills, then falls back to local builtin skills.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"name": strParam("Name of the skill to load", true),

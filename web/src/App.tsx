@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
 import { api, type ChatMessage, type Conversation, type Skill, type User } from "./api";
 
 type AuthMode = "login" | "register";
@@ -159,6 +159,7 @@ export function App() {
     const [renamingConversationId, setRenamingConversationId] = useState("");
     const [renameTitle, setRenameTitle] = useState("");
     const [savingRename, setSavingRename] = useState(false);
+    const [openConversationMenu, setOpenConversationMenu] = useState<{ conversationId: string; left: number; top: number } | null>(null);
     const [deletingConversationId, setDeletingConversationId] = useState("");
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
@@ -167,6 +168,11 @@ export function App() {
     const activeConversation = useMemo(
         () => (Array.isArray(conversations) ? conversations : []).find((item) => item.id === activeConversationId) ?? null,
         [conversations, activeConversationId],
+    );
+
+    const enabledSkillCount = useMemo(
+        () => skills.filter((skill) => skill.status === "enabled").length,
+        [skills],
     );
 
     useEffect(() => {
@@ -193,8 +199,22 @@ export function App() {
 
     useEffect(() => {
         const title = activeConversation?.title?.trim();
-        document.title = title ? `${title} · nano_cc Chat` : user ? `nano_cc Chat · ${user.username}` : "nano_cc Chat";
+        document.title = title ? `${title} · Link Agent` : user ? `Link Agent · ${user.username}` : "Link Agent";
     }, [activeConversation, user]);
+
+    useEffect(() => {
+        if (!openConversationMenu) return;
+
+        const closeMenu = () => setOpenConversationMenu(null);
+        window.addEventListener("click", closeMenu);
+        window.addEventListener("resize", closeMenu);
+        window.addEventListener("scroll", closeMenu, true);
+        return () => {
+            window.removeEventListener("click", closeMenu);
+            window.removeEventListener("resize", closeMenu);
+            window.removeEventListener("scroll", closeMenu, true);
+        };
+    }, [openConversationMenu]);
 
     async function refreshAll() {
         const [conversationResult, skillResult] = await Promise.all([api.listConversations(), api.listSkills()]);
@@ -298,6 +318,7 @@ export function App() {
     }
 
     async function handleDeleteConversation(conversationId: string) {
+        setOpenConversationMenu(null);
         setDeletingConversationId(conversationId);
         setError("");
         try {
@@ -319,8 +340,23 @@ export function App() {
 
     function startRenameConversation(conversation: Conversation) {
         setError("");
+        setOpenConversationMenu(null);
         setRenamingConversationId(conversation.id);
         setRenameTitle(conversation.title);
+    }
+
+    function toggleConversationMenu(event: MouseEvent<HTMLButtonElement>, conversationId: string) {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        setOpenConversationMenu((current) =>
+            current?.conversationId === conversationId
+                ? null
+                : {
+                    conversationId,
+                    left: rect.right + 8,
+                    top: rect.top,
+                },
+        );
     }
 
     function cancelRenameConversation() {
@@ -353,17 +389,17 @@ export function App() {
                 <div className="auth-visual" aria-hidden="true">
                     <div className="auth-visual-card">
                         <div className="visual-glass-panel">
-                            <span className="eyebrow">agent workspace</span>
+                            <span className="eyebrow">Link Agent</span>
                             <strong>Reason · Act · Remember</strong>
-                            <p>把对话、Skill 与受控工具整合到同一个安全工作区。</p>
+                            <p>统一编排多轮对话、Skill 能力与受控工具调用，构建可审计、可扩展的智能协作入口。</p>
                         </div>
                     </div>
                 </div>
                 <div className="auth-card">
                     <div className="auth-copy">
-                        <span className="eyebrow">nano_cc assistant</span>
+                        <span className="eyebrow auth-product-name">Link Agent</span>
                         <h1>欢迎回来</h1>
-                        <p>登录后即可继续对话、分析问题、整理思路，体验更聚焦的深色聊天界面。</p>
+                        <p>登录后即可继续对话、分析问题、沉淀上下文，并通过能力编排提升复杂任务处理效率。</p>
                     </div>
                     <div className="auth-tabs">
                         <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>继续对话</button>
@@ -394,10 +430,9 @@ export function App() {
                 <div className="sidebar-top">
                     <div className="sidebar-brand">
                         <div className="brand-row">
-                            <span className="brand-mark">n</span>
+                            <span className="brand-mark">L</span>
                             <div>
-                                <span className="eyebrow">nano_cc</span>
-                                <strong>Agent Workspace</strong>
+                                <strong className="brand-title">Link Agent</strong>
                             </div>
                         </div>
                     </div>
@@ -407,6 +442,21 @@ export function App() {
                             <div className="muted">{user.email}</div>
                         </div>
                         <button onClick={() => void handleLogout()}>退出</button>
+                    </div>
+                    <div className="sidebar-insights">
+                        <div>
+                            <strong>{conversations.length}</strong>
+                            <span>会话</span>
+                        </div>
+                        <div>
+                            <strong>{enabledSkillCount}</strong>
+                            <span>启用能力</span>
+                        </div>
+                    </div>
+                    <div className="current-session-card">
+                        <span className="eyebrow">current thread</span>
+                        <strong>{activeConversation?.title ?? "等待选择会话"}</strong>
+                        <p>{messages.length > 0 ? `${messages.length} 条上下文消息已载入` : "创建或选择会话后开始对话"}</p>
                     </div>
                 </div>
 
@@ -433,48 +483,77 @@ export function App() {
                         <button type="submit" disabled={creatingConversation}>{creatingConversation ? "创建中..." : "新对话"}</button>
                     </form>
                     <div className="list">
-                        {conversations.map((conversation) => (
-                            <div key={conversation.id} className="list-entry">
-                                <div className="list-row">
-                                    <button
-                                        className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
-                                        onClick={() => setActiveConversationId(conversation.id)}
-                                    >
-                                        {conversation.title}
-                                    </button>
-                                    <div className="list-row-actions">
-                                        <button
-                                            className="secondary-toggle"
-                                            onClick={() => startRenameConversation(conversation)}
-                                            disabled={savingRename || deletingConversationId === conversation.id}
-                                        >
-                                            重命名
-                                        </button>
-                                        <button
-                                            className="list-delete-button"
-                                            onClick={() => void handleDeleteConversation(conversation.id)}
-                                            disabled={deletingConversationId === conversation.id || savingRename}
-                                        >
-                                            {deletingConversationId === conversation.id ? "删除中..." : "删除"}
-                                        </button>
+                        {conversations.map((conversation) => {
+                            const isRenaming = renamingConversationId === conversation.id;
+
+                            return (
+                                <div key={conversation.id} className="list-entry">
+                                    <div className={isRenaming ? "list-row editing" : "list-row"}>
+                                        {isRenaming ? (
+                                            <form className="inline-rename-form" onSubmit={(event) => void handleRenameConversation(event, conversation.id)}>
+                                                <input
+                                                    value={renameTitle}
+                                                    onChange={(event) => setRenameTitle(event.target.value)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === "Escape") cancelRenameConversation();
+                                                    }}
+                                                    placeholder="输入新的会话名称"
+                                                    disabled={savingRename}
+                                                    autoFocus
+                                                />
+                                                <div className="inline-rename-actions">
+                                                    <button type="submit" disabled={savingRename}>{savingRename ? "保存中..." : "保存"}</button>
+                                                    <button type="button" className="secondary-toggle" onClick={cancelRenameConversation} disabled={savingRename}>取消</button>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    className={conversation.id === activeConversationId ? "list-item active" : "list-item"}
+                                                    onClick={() => setActiveConversationId(conversation.id)}
+                                                >
+                                                    <span className="conversation-copy">
+                                                        <strong>{conversation.title}</strong>
+                                                    </span>
+                                                </button>
+                                                <div className="conversation-menu">
+                                                    <button
+                                                        className="conversation-menu-trigger"
+                                                        type="button"
+                                                        aria-label={`打开 ${conversation.title} 的操作菜单`}
+                                                        onClick={(event) => toggleConversationMenu(event, conversation.id)}
+                                                    >
+                                                        •••
+                                                    </button>
+                                                    {openConversationMenu?.conversationId === conversation.id && (
+                                                        <div
+                                                            className="conversation-menu-panel"
+                                                            style={{ left: openConversationMenu.left, top: openConversationMenu.top }}
+                                                            onClick={(event) => event.stopPropagation()}
+                                                        >
+                                                            <button
+                                                                className="menu-action"
+                                                                onClick={() => startRenameConversation(conversation)}
+                                                                disabled={savingRename || deletingConversationId === conversation.id}
+                                                            >
+                                                                重命名会话
+                                                            </button>
+                                                            <button
+                                                                className="menu-action danger"
+                                                                onClick={() => void handleDeleteConversation(conversation.id)}
+                                                                disabled={deletingConversationId === conversation.id || savingRename}
+                                                            >
+                                                                {deletingConversationId === conversation.id ? "删除中..." : "删除会话"}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
-                                {renamingConversationId === conversation.id && (
-                                    <form className="inline-rename-form" onSubmit={(event) => void handleRenameConversation(event, conversation.id)}>
-                                        <input
-                                            value={renameTitle}
-                                            onChange={(event) => setRenameTitle(event.target.value)}
-                                            placeholder="输入新的会话名称"
-                                            disabled={savingRename}
-                                        />
-                                        <div className="inline-rename-actions">
-                                            <button type="submit" disabled={savingRename}>{savingRename ? "保存中..." : "保存"}</button>
-                                            <button type="button" className="secondary-toggle" onClick={cancelRenameConversation} disabled={savingRename}>取消</button>
-                                        </div>
-                                    </form>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </section>
 
@@ -527,8 +606,8 @@ export function App() {
                                 <div className="empty-visual" aria-hidden="true">
                                     <div className="neural-card">
                                         <span className="pulse-dot" />
-                                        <strong>nano agent</strong>
-                                        <small>workspace secured</small>
+                                        <strong>Link Agent</strong>
+                                        <small>ready to help</small>
                                     </div>
                                 </div>
                             </div>
@@ -553,7 +632,7 @@ export function App() {
                             disabled={!activeConversationId || sending}
                         />
                         <div className="composer-footer">
-                            <span className="muted">网页端不执行本地命令或目录操作。</span>
+                            <span className="muted">输入问题，按发送开始对话。</span>
                             <button type="submit" disabled={!activeConversationId || sending}>{sending ? "思考中..." : "发送消息"}</button>
                         </div>
                     </form>

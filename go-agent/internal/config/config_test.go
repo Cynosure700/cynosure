@@ -10,7 +10,10 @@ import (
 
 func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -67,7 +70,7 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	if cfg.WorkspaceRoot != filepath.Join(root, "shared-workspace") {
 		t.Fatalf("unexpected workspace root: %q", cfg.WorkspaceRoot)
 	}
-	if cfg.SystemPromptPath != filepath.Join(root, "system_prompt.md") {
+	if cfg.SystemPromptPath != filepath.Join(root, "shared-workspace", "system_prompt.md") {
 		t.Fatalf("unexpected system prompt path: %q", cfg.SystemPromptPath)
 	}
 	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "bash"}) {
@@ -80,7 +83,10 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 
 func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "env-workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -140,7 +146,10 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 
 func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -176,14 +185,17 @@ func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
 	}
-	if cfg.SystemPromptPath != filepath.Join(root, "env-prompt.md") {
+	if cfg.SystemPromptPath != filepath.Join(root, "workspace", "env-prompt.md") {
 		t.Fatalf("expected env system prompt path, got %q", cfg.SystemPromptPath)
 	}
 }
 
 func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -231,7 +243,10 @@ func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
 
 func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -288,7 +303,10 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 
 func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -348,7 +366,10 @@ func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t
 
 func TestLoadWebConfig_ExplicitWorkspaceOverrideDrivesDefaultAssetDirs(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "custom", "runtime-workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -428,7 +449,10 @@ func TestResolveRuntimePaths_ReturnsCanonicalWorkspaceDerivedDirs(t *testing.T) 
 
 func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "config.json")
+	configPath := filepath.Join(root, "custom", "runtime-workspace", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir workspace config dir: %v", err)
+	}
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",

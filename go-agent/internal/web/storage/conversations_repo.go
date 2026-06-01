@@ -6,16 +6,19 @@ import (
 )
 
 func (s *Store) CreateConversation(ctx context.Context, conversation Conversation) error {
+	if conversation.HistoryJSON == "" {
+		conversation.HistoryJSON = emptyConversationHistoryJSON
+	}
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO conversations (id, user_id, title, created_at, updated_at)
-		VALUES (?, ?, ?, NOW(), NOW())
-	`, conversation.ID, conversation.UserID, conversation.Title)
+		INSERT INTO conversations (id, user_id, root_message_id, title, history_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+	`, conversation.ID, conversation.UserID, conversation.RootMessageID, conversation.Title, conversation.HistoryJSON)
 	return err
 }
 
 func (s *Store) ListConversationsByUser(ctx context.Context, userID string) ([]Conversation, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT id, user_id, title, created_at, updated_at
+		SELECT id, user_id, root_message_id, title, history_json, created_at, updated_at
 		FROM conversations WHERE user_id = ? ORDER BY updated_at DESC
 	`, userID)
 	if err != nil {
@@ -25,7 +28,7 @@ func (s *Store) ListConversationsByUser(ctx context.Context, userID string) ([]C
 	var conversations []Conversation
 	for rows.Next() {
 		var c Conversation
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.RootMessageID, &c.Title, &c.HistoryJSON, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		conversations = append(conversations, c)
@@ -35,11 +38,11 @@ func (s *Store) ListConversationsByUser(ctx context.Context, userID string) ([]C
 
 func (s *Store) GetConversationByID(ctx context.Context, conversationID string) (Conversation, error) {
 	row := s.DB.QueryRowContext(ctx, `
-		SELECT id, user_id, title, created_at, updated_at
+		SELECT id, user_id, root_message_id, title, history_json, created_at, updated_at
 		FROM conversations WHERE id = ?
 	`, conversationID)
 	var c Conversation
-	if err := row.Scan(&c.ID, &c.UserID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.RootMessageID, &c.Title, &c.HistoryJSON, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return Conversation{}, err
 	}
 	return c, nil
@@ -64,6 +67,20 @@ func (s *Store) TouchConversationActivity(ctx context.Context, conversationID st
 		UPDATE conversations SET updated_at = NOW() WHERE id = ?
 	`, conversationID)
 	return err
+}
+
+func (s *Store) SetConversationHistory(ctx context.Context, conversationID string, messages []Message) error {
+	historyJSON, err := EncodeConversationHistory(messages)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.ExecContext(ctx, `
+		UPDATE conversations SET history_json = ?, updated_at = NOW() WHERE id = ?
+	`, historyJSON, conversationID)
+	if err != nil {
+		return err
+	}
+	return s.SetConversationCache(ctx, conversationID, messages)
 }
 
 func (s *Store) DeleteConversation(ctx context.Context, conversationID string) error {

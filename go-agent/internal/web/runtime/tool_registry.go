@@ -9,7 +9,6 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 
 	"nano_cc/internal/config"
-	"nano_cc/internal/sessions"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
@@ -17,7 +16,7 @@ import (
 type ToolContext struct {
 	User         storage.User
 	Conversation storage.Conversation
-	Loader       *sessions.SkillLoader
+	Skills       *SkillSnapshot
 }
 
 type ToolExecutionResult struct {
@@ -52,11 +51,8 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		return ToolExecutionResult{}, fmt.Errorf("tool %s is not registered for web runtime", name)
 	}
 	if name == "load_skill" {
-		if toolCtx.Loader == nil {
-			return ToolExecutionResult{}, fmt.Errorf("no capabilities are available in this conversation")
-		}
 		skillName, _ := args["name"].(string)
-		return r.loadSkillContent(toolCtx.Loader, skillName)
+		return r.loadSkillContent(toolCtx.Skills, skillName)
 	}
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	handler, ok := agenttools.Handlers[name]

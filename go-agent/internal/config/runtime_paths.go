@@ -52,12 +52,12 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 	return resolvePath(appHome, "workspace")
 }
 
-func resolveSystemPromptPath(appHome string, fileCfg fileConfig) (string, error) {
+func resolveSystemPromptPath(workspaceRoot string, fileCfg fileConfig) (string, error) {
 	configured := getenv("SYSTEM_PROMPT_PATH", strings.TrimSpace(fileCfg.SystemPromptPath))
 	if strings.TrimSpace(configured) == "" {
 		configured = "system_prompt.md"
 	}
-	return resolvePath(appHome, configured)
+	return resolvePath(workspaceRoot, configured)
 }
 
 func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, error) {
@@ -65,7 +65,7 @@ func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, erro
 	if err != nil {
 		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	systemPromptPath, err := resolveSystemPromptPath(appHome, fileCfg)
+	systemPromptPath, err := resolveSystemPromptPath(workspaceRoot, fileCfg)
 	if err != nil {
 		return runtimePaths{}, fmt.Errorf("resolve system prompt path: %w", err)
 	}

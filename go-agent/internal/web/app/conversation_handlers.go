@@ -25,7 +25,7 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body struct{ Title string }
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		conversation := storage.Conversation{ID: newID("conv"), UserID: user.ID, Title: defaultConversationTitle(body.Title)}
+		conversation := storage.Conversation{ID: newID("conv"), UserID: user.ID, RootMessageID: newID("msg"), Title: defaultConversationTitle(body.Title)}
 		if err := s.store.CreateConversation(r.Context(), conversation); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
