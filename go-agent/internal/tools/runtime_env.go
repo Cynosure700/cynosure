@@ -8,11 +8,13 @@ import (
 type ToolHandler func(ctx context.Context, args map[string]any) (string, error)
 
 type RuntimeEnv struct {
-	AppHome           string
-	CommandBinDir     string
-	CommandScriptDir  string
-	WorkspaceRoot     string
-	CurrentWorkingDir string
+	AppHome                string
+	CommandBinDir          string
+	CommandScriptDir       string
+	WorkspaceRoot          string
+	CurrentWorkingDir      string
+	AllowOutsideWorkspace  bool
+	AllowDangerousCommands bool
 }
 
 type contextKey string
@@ -45,4 +47,14 @@ func currentWorkingDirFromContext(ctx context.Context) string {
 		return env.CurrentWorkingDir
 	}
 	return env.WorkspaceRoot
+}
+
+func allowOutsideWorkspaceFromContext(ctx context.Context) bool {
+	env, ok := RuntimeEnvFromContext(ctx)
+	return ok && env.AllowOutsideWorkspace
+}
+
+func allowDangerousCommandsFromContext(ctx context.Context) bool {
+	env, ok := RuntimeEnvFromContext(ctx)
+	return ok && env.AllowDangerousCommands
 }

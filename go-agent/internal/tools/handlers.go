@@ -26,10 +26,10 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateBashCommandPaths(root, cmd); err != nil {
+	if err := validateBashCommandPaths(root, cmd, allowOutsideWorkspaceFromContext(ctx)); err != nil {
 		return "", err
 	}
-	return RunBashInDir(cmd, workingDir)
+	return RunBashInDirWithOptions(cmd, workingDir, allowDangerousCommandsFromContext(ctx))
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {

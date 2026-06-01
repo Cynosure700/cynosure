@@ -91,8 +91,8 @@ func TestLoadBuiltinSkillsFromDir_LoadsResolvedBuiltinSkillDirectory(t *testing.
 		skillsDir   string
 		description string
 	}{
-		{name: "deployment", skillsDir: filepath.Join(t.TempDir(), "output", "workspace", "skills"), description: "Loaded from deployment skills dir"},
-		{name: "local", skillsDir: filepath.Join(t.TempDir(), "workspace", "skills"), description: "Loaded from local skills dir"},
+		{name: "app-workspace", skillsDir: filepath.Join(t.TempDir(), "workspace", "skills"), description: "Loaded from app workspace skills dir"},
+		{name: "custom", skillsDir: filepath.Join(t.TempDir(), "custom", "workspace", "skills"), description: "Loaded from custom skills dir"},
 	}
 
 	for _, tc := range testCases {

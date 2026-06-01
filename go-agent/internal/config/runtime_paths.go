@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -49,17 +48,6 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 	if configured != "" {
 		return resolvePath(appHome, configured)
 	}
-
-	for _, candidate := range []string{filepath.Join("output", "workspace"), "workspace"} {
-		resolved, err := resolvePath(appHome, candidate)
-		if err != nil {
-			return "", err
-		}
-		if workspaceExists(resolved) {
-			return resolved, nil
-		}
-	}
-
 	return resolvePath(appHome, "workspace")
 }
 
@@ -118,12 +106,4 @@ func resolveRuntimeAssetDir(appHome, workspaceRoot, configured, subdir string) (
 		return "", fmt.Errorf("runtime asset dir must stay under workspace root: expected %q", expected)
 	}
 	return resolved, nil
-}
-
-func workspaceExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }

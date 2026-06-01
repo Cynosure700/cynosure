@@ -18,13 +18,15 @@ import (
 )
 
 type fakeStore struct {
-	messages      []storage.Message
-	toolCalls     []storage.ToolCall
-	cached        []storage.Message
-	enabledSkills []storage.Skill
-	updatedTitle  string
-	updatedID     string
-	touchedID     string
+	messages         []storage.Message
+	toolCalls        []storage.ToolCall
+	cached           []storage.Message
+	enabledSkills    []storage.Skill
+	enabledSkillSets [][]storage.Skill
+	listEnabledCalls int
+	updatedTitle     string
+	updatedID        string
+	touchedID        string
 }
 
 func (f *fakeStore) CreateMessage(ctx context.Context, message storage.Message) error {
@@ -44,6 +46,14 @@ func (f *fakeStore) TouchConversationActivity(ctx context.Context, conversationI
 }
 
 func (f *fakeStore) ListEnabledSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error) {
+	f.listEnabledCalls++
+	if len(f.enabledSkillSets) > 0 {
+		index := f.listEnabledCalls - 1
+		if index >= len(f.enabledSkillSets) {
+			index = len(f.enabledSkillSets) - 1
+		}
+		return f.enabledSkillSets[index], nil
+	}
 	return f.enabledSkills, nil
 }
 
@@ -303,6 +313,40 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 	}
 	if !contains(prompt, "- builtin-skill: Builtin description") {
 		t.Fatalf("expected prompt to include skill descriptions, got %q", prompt)
+	}
+}
+
+func TestBuildSkillSnapshotRefreshesUserSkillsFromStoreEachCall(t *testing.T) {
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+	store := &fakeStore{enabledSkillSets: [][]storage.Skill{
+		{{ID: "skill_1", UserID: "usr_refresh", Name: "User Skill", Slug: "user-skill", Description: "old description", Content: "old body", Status: "enabled"}},
+		{{ID: "skill_1", UserID: "usr_refresh", Name: "User Skill", Slug: "user-skill", Description: "new description", Content: "new body", Status: "enabled"}},
+	}}
+	service := &Service{Store: store, Cfg: testAppConfig(t), BuiltinSkills: builtin}
+
+	first, err := service.buildSkillSnapshot(context.Background(), "usr_refresh")
+	if err != nil {
+		t.Fatalf("first snapshot: %v", err)
+	}
+	second, err := service.buildSkillSnapshot(context.Background(), "usr_refresh")
+	if err != nil {
+		t.Fatalf("second snapshot: %v", err)
+	}
+
+	if store.listEnabledCalls != 2 {
+		t.Fatalf("expected store to be queried for each snapshot, got %d calls", store.listEnabledCalls)
+	}
+	if got := first.Skills["user-skill"].Body; got != "old body" {
+		t.Fatalf("expected first snapshot to use old DB content, got %q", got)
+	}
+	if got := second.Skills["user-skill"].Body; got != "new body" {
+		t.Fatalf("expected second snapshot to refresh DB content, got %q", got)
+	}
+	if _, ok := second.Skills["builtin-skill"]; !ok {
+		t.Fatalf("expected refreshed snapshot to keep builtin skills")
 	}
 }
 
@@ -724,9 +768,9 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	})
 	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/deploy/app",
-		WorkspaceRoot:    "/deploy/app/output/workspace",
-		CommandBinDir:    "/deploy/app/output/workspace/bin",
-		CommandScriptDir: "/deploy/app/output/workspace/cmd",
+		WorkspaceRoot:    "/deploy/app/workspace",
+		CommandBinDir:    "/deploy/app/workspace/bin",
+		CommandScriptDir: "/deploy/app/workspace/cmd",
 	})
 
 	result, err := registry.Execute(context.Background(), ToolContext{Loader: loader}, "load_skill", `{"name":"builtin-skill"}`)
@@ -737,10 +781,10 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContent(t *testing.T) {
 	if !contains(content, "<skill name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
-	if !contains(content, "<runtime-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/output/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/output/workspace/cmd") {
+	if !contains(content, "<runtime-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/workspace/cmd") {
 		t.Fatalf("expected loaded skill content to include runtime paths, got %q", content)
 	}
-	if !contains(content, "WORKSPACE_ROOT=/deploy/app/output/workspace") {
+	if !contains(content, "WORKSPACE_ROOT=/deploy/app/workspace") {
 		t.Fatalf("expected loaded skill content to include workspace root, got %q", content)
 	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
@@ -903,6 +947,36 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 		t.Fatalf("expected workspace-derived paths to remain stable, got %q", result.Output)
 	}
 }
+
+func TestToolRegistryExecute_PropagatesBashSafetyFlags(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		env, ok := agenttools.RuntimeEnvFromContext(ctx)
+		if !ok {
+			return "", nil
+		}
+		return boolString(env.AllowOutsideWorkspace) + "|" + boolString(env.AllowDangerousCommands), nil
+	}
+
+	workspace := t.TempDir()
+	cfg := config.AppConfig{
+		WorkspaceRoot:              workspace,
+		WebAllowedTools:            []string{"bash"},
+		BashAllowOutsideWorkspace:  true,
+		BashAllowDangerousCommands: true,
+	}
+	registry := NewToolRegistry(cfg)
+
+	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != "true|true" {
+		t.Fatalf("expected safety flags in runtime env, got %q", result.Output)
+	}
+}
+
 func TestExecuteToolCall_AuditUsesWorkspaceRootAsResolvedCWD(t *testing.T) {
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, "skills", "demo-skill")
@@ -1002,14 +1076,14 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 
 func TestExecuteToolCall_AuditClassifiesWorkspaceCommandArtifactSource(t *testing.T) {
 	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "output", "workspace")
+	workspace := filepath.Join(appHome, "workspace")
 	binDir := filepath.Join(workspace, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("create deployment bin dir: %v", err)
+		t.Fatalf("create workspace bin dir: %v", err)
 	}
 	command := filepath.Join(binDir, "helper")
 	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatalf("write deployment helper: %v", err)
+		t.Fatalf("write workspace helper: %v", err)
 	}
 
 	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
@@ -1042,16 +1116,16 @@ func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T
 	}
 }
 
-func TestExecuteToolCall_AuditCapturesDeploymentWorkspaceResolution(t *testing.T) {
+func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
 	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "output", "workspace")
+	workspace := filepath.Join(appHome, "workspace")
 	binDir := filepath.Join(workspace, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("create deployment bin dir: %v", err)
+		t.Fatalf("create workspace bin dir: %v", err)
 	}
 	command := filepath.Join(binDir, "helper")
 	if err := os.WriteFile(command, []byte("#!/bin/sh\npwd\n"), 0o755); err != nil {
-		t.Fatalf("write deployment helper: %v", err)
+		t.Fatalf("write workspace helper: %v", err)
 	}
 
 	cfg := config.AppConfig{
@@ -1067,7 +1141,7 @@ func TestExecuteToolCall_AuditCapturesDeploymentWorkspaceResolution(t *testing.T
 		t.Fatalf("expected successful outcome, got %#v", outcome)
 	}
 	if filepath.Clean(outcome.Result) != filepath.Clean(workspace) {
-		t.Fatalf("expected command to run in deployment workspace %q, got %#v", workspace, outcome)
+		t.Fatalf("expected command to run in app workspace %q, got %#v", workspace, outcome)
 	}
 	if outcome.Audit.ResolvedCWD != workspace {
 		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
@@ -1113,4 +1187,11 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+func boolString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }

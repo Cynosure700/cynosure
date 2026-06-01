@@ -70,6 +70,9 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "bash"}) {
 		t.Fatalf("unexpected web allowed tools: %#v", cfg.WebAllowedTools)
 	}
+	if cfg.BashAllowOutsideWorkspace || cfg.BashAllowDangerousCommands {
+		t.Fatalf("expected bash safety flags to default false")
+	}
 }
 
 func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
@@ -132,6 +135,54 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	}
 }
 
+func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config.json")
+	configBody := `{
+		"base_url": "https://example.com",
+		"api_key": "test-key",
+		"model_id": "test-model",
+		"app_home": "` + root + `",
+		"bash_allow_outside_workspace": true,
+		"bash_allow_dangerous_commands": false
+	}`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir to temp root: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("MODEL_ID", "")
+	t.Setenv("APP_HOME", "")
+	t.Setenv("BUILTIN_SKILLS_DIR", "")
+	t.Setenv("COMMAND_BIN_DIR", "")
+	t.Setenv("COMMAND_SCRIPT_DIR", "")
+	t.Setenv("WORKSPACE_ROOT", "")
+	t.Setenv("WEB_ALLOWED_TOOLS", "")
+	t.Setenv("BASH_ALLOW_OUTSIDE_WORKSPACE", "false")
+	t.Setenv("BASH_ALLOW_DANGEROUS_COMMANDS", "true")
+
+	cfg, err := LoadWebConfig()
+	if err != nil {
+		t.Fatalf("load web config: %v", err)
+	}
+	if cfg.BashAllowOutsideWorkspace {
+		t.Fatalf("expected env to override outside-workspace allow flag to false")
+	}
+	if !cfg.BashAllowDangerousCommands {
+		t.Fatalf("expected env to override dangerous-command allow flag to true")
+	}
+}
+
 func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
@@ -189,7 +240,7 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	}
 }
 
-func TestLoadWebConfig_PrefersDeploymentWorkspaceWhenPresent(t *testing.T) {
+func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
@@ -234,18 +285,18 @@ func TestLoadWebConfig_PrefersDeploymentWorkspaceWhenPresent(t *testing.T) {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	expectedWorkspace := filepath.Join(root, "output", "workspace")
+	expectedWorkspace := filepath.Join(root, "workspace")
 	if cfg.WorkspaceRoot != expectedWorkspace {
-		t.Fatalf("expected deployment workspace root %q, got %q", expectedWorkspace, cfg.WorkspaceRoot)
+		t.Fatalf("expected app home workspace root %q, got %q", expectedWorkspace, cfg.WorkspaceRoot)
 	}
 	if cfg.BuiltinSkillsDir != filepath.Join(expectedWorkspace, "skills") {
-		t.Fatalf("expected deployment builtin skills dir, got %q", cfg.BuiltinSkillsDir)
+		t.Fatalf("expected default builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
 	if cfg.CommandBinDir != filepath.Join(expectedWorkspace, "bin") {
-		t.Fatalf("expected deployment command bin dir, got %q", cfg.CommandBinDir)
+		t.Fatalf("expected default command bin dir, got %q", cfg.CommandBinDir)
 	}
 	if cfg.CommandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
-		t.Fatalf("expected deployment command script dir, got %q", cfg.CommandScriptDir)
+		t.Fatalf("expected default command script dir, got %q", cfg.CommandScriptDir)
 	}
 }
 

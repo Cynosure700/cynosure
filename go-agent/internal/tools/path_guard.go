@@ -76,21 +76,104 @@ func resolvePathFromContext(ctx context.Context, path string) (string, string, e
 	return workspaceRoot, resolvedPath, nil
 }
 
-func validateBashCommandPaths(root, command string) error {
-	for _, token := range strings.Fields(command) {
-		candidate := strings.Trim(token, "\"'`;,()[]{}")
-		if candidate == "" || !filepath.IsAbs(candidate) {
+func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool) error {
+	cleanRoot := filepath.Clean(root)
+	for _, token := range splitShellFields(command) {
+		candidate := cleanShellPathToken(token)
+		if candidate == "" || !isShellPathArgument(candidate) {
 			continue
+		}
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(cleanRoot, candidate)
 		}
 		resolved, err := filepath.Abs(candidate)
 		if err != nil {
 			return fmt.Errorf("resolve command path: %w", err)
 		}
-		cleanRoot := filepath.Clean(root)
 		cleanResolved := filepath.Clean(resolved)
+		if allowOutsideWorkspace {
+			continue
+		}
 		if cleanResolved != cleanRoot && !strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
-			return fmt.Errorf("command path escapes workspace: %s", candidate)
+			return fmt.Errorf("command path escapes workspace: %s", token)
 		}
 	}
 	return nil
+}
+
+func splitShellFields(command string) []string {
+	fields := make([]string, 0)
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+	for _, r := range command {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		switch r {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+				continue
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+				continue
+			}
+		case ' ', '\t', '\n', '\r':
+			if !inSingle && !inDouble {
+				appendShellField(&fields, &current)
+				continue
+			}
+		case ';', '&', '|':
+			if !inSingle && !inDouble {
+				appendShellField(&fields, &current)
+				fields = append(fields, string(r))
+				continue
+			}
+		}
+		current.WriteRune(r)
+	}
+	appendShellField(&fields, &current)
+	return fields
+}
+
+func appendShellField(fields *[]string, current *strings.Builder) {
+	if current.Len() == 0 {
+		return
+	}
+	*fields = append(*fields, current.String())
+	current.Reset()
+}
+
+func cleanShellPathToken(token string) string {
+	trimmed := strings.Trim(token, "\"'`;,()[]{}")
+	if strings.Contains(trimmed, "://") {
+		return ""
+	}
+	if idx := strings.IndexAny(trimmed, "<>|"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	if strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "/") {
+		return ""
+	}
+	return strings.TrimSpace(trimmed)
+}
+
+func isShellPathArgument(token string) bool {
+	if token == "" || strings.HasPrefix(token, "-") || token == "." || token == ".." {
+		return false
+	}
+	if filepath.IsAbs(token) || strings.HasPrefix(token, "./") || strings.HasPrefix(token, "../") || strings.ContainsRune(token, os.PathSeparator) {
+		return true
+	}
+	return strings.ContainsRune(token, '.')
 }

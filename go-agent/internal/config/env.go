@@ -43,6 +43,18 @@ func getenvIntOrDefault(key string, fallback int) int {
 	return v
 }
 
+func getenvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
 func parseCSVList(value string) []string {
 	parts := strings.Split(value, ",")
 	items := make([]string, 0, len(parts))

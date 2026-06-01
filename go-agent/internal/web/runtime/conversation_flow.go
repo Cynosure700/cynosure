@@ -35,11 +35,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 
-	skills, err := s.Store.ListEnabledSkillsByUser(ctx, user.ID)
+	loader, err := s.buildSkillSnapshot(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
 	}
-	loader := s.buildConversationSkillLoader(skills)
 	systemPrompt := s.buildSystemPrompt(user, loader)
 	messages := buildOpenAIMessages(systemPrompt, history)
 	round := 0

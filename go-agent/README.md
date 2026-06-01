@@ -1,165 +1,60 @@
-# nano_cc (Go)
+# nano_cc
 
-`nano_cc` 现已收敛为一个**可部署的浏览器优先 Agent 后端**：
+`nano_cc` 是一个浏览器优先的 Go Agent 后端，提供登录、会话、流式聊天、Skill 管理与受控工具调用能力。
 
-- 默认入口是 Web 服务，而不是 CLI REPL
-- 默认角色是通用聊天助手，但运行时支持 Skill / Tool 调用
-- 支持登录、会话、流式聊天、内置/用户 Skill 管理
-- 支持在**服务端隔离 workspace** 中运行授权工具，而不是访问用户本地机器
-- 支持在部署阶段编译 `cmd/` 下的命令产物，并将脚本资源发布到固定目录
+## 核心能力
 
-它通过 OpenAI 兼容 API 驱动聊天运行时，合并加载仓库内置 Skill 与数据库中的用户 Skill，并在需要时把工具执行限制在服务端统一 workspace 与只读部署产物目录内，再通过 SSE 把响应流式返回给前端页面。
+- Web 聊天服务：注册、登录、多会话、SSE 流式响应
+- Skill：内置 Skill + 用户自定义 Skill
+- Tool：按白名单暴露 `load_skill`、`bash`、`read_file`、`write_file`、`edit_file`
+- Workspace：工具只访问服务端 `WORKSPACE_ROOT`，默认拒绝越权路径和危险命令
+- 存储：MySQL 持久化用户、会话、消息、Skill、工具调用记录；Redis 缓存会话上下文
 
----
+## Skill 加载规则
 
-## 当前定位
+- 内置 Skill：服务启动时从 `BUILTIN_SKILLS_DIR` 加载，默认是 `WORKSPACE_ROOT/skills`
+- 用户 Skill：每次用户发送消息前，从数据库读取当前用户 `enabled` 状态的 Skill
+- 每轮响应会生成一份 Skill snapshot：system prompt 和 `load_skill` 工具都使用同一份 snapshot，保证单轮内一致
+- API 返回内置 Skill 时会标记为只读，用户不能修改或删除
 
-这是一个面向浏览器聊天产品的 Go 后端，核心目标是提供类似 ChatGPT 的对话体验，同时把 Agent 所需的 Skill、Tool、部署产物、用户工作区统一收敛到服务端运行时中，而不是继续围绕本地 CLI 编码代理构建产品。
+相关代码：
 
-当前正式使用方式：
-
-1. **Go Web 服务**：提供鉴权、会话、聊天、能力管理 API
-2. **React 前端**：提供 conversation-first 的网页聊天界面
-
-历史 CLI / REPL 入口已经移除；当前保留的 `workspace/bin`、`workspace/cmd` 与 `workspace/skills` 是 Web agent 运行时资产，而不是 CLI 历史包袱。
-
----
-
-## 功能概览
-
-### 浏览器聊天能力
-
-- 用户注册 / 登录 / 登出
-- 基于 Cookie + JWT 的鉴权
-- 多会话聊天
-- SSE 流式返回 assistant 输出
-- conversation-first 的网页聊天体验
-- 通用问答、写作、规划、分析、代码协助等对话能力
-
-### Skill 管理
-
-- 创建、编辑、启用、禁用、删除个人 Skill
-- 启动时从**已解析的 runtime workspace** 下加载内置 Skill catalog：默认来自 `<resolved-workspace>/skills`
-- 运行时合并“共享内置 Skill + 当前用户已启用 Skill”
-- 内置 Skill 通过 API 以只读条目暴露，不能被用户修改或删除
-- 按用户隔离 Skill 数据
-
-### 平台能力与边界
-
-- 会话、消息、工具调用记录持久化
-- Redis 缓存活跃会话上下文
-- 多用户数据隔离
-- 浏览器端仅暴露显式允许的已注册工具
-- 目录变量以 `APP_HOME` 和 `WORKSPACE_ROOT` 为主：`WORKSPACE_ROOT` 未显式配置时，runtime 会优先使用 `APP_HOME/output/workspace`；若该目录不存在，则回退到 `APP_HOME/workspace`
-- 默认 Web runtime 当前会暴露 `load_skill,bash,read_file,write_file,edit_file`；也可以通过 `WEB_ALLOWED_TOOLS` 显式覆盖
-- 工具默认运行在服务端解析后的统一 `WORKSPACE_ROOT` 下，并拒绝越权路径
-- `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 默认都会从解析后的 `WORKSPACE_ROOT` 规范派生，即 `<resolved-workspace>/skills`、`<resolved-workspace>/bin`、`<resolved-workspace>/cmd`
-- 工具调用会记录审计摘要，包括 cwd、命令产物路径、命令产物来源（workspace/custom）、结果摘要或拒绝原因
-- 浏览器端不会访问**用户本地机器**的 shell、目录或文件；如果启用工具，访问的也是服务端隔离 workspace
-
----
+- Skill snapshot 构建：`internal/web/runtime/prompt_builder.go`
+- 会话编排：`internal/web/runtime/conversation_flow.go`
+- DB Skill 查询：`internal/web/storage/skills_repo.go`
 
 ## 目录结构
 
 ```text
 go-agent/
-├── main.go                     # 默认入口：启动 Web 服务
-├── cmd/
-│   └── build-artifacts/
-│       └── main.go             # 构建 runtime workspace 命令产物与脚本资源
-├── build.sh                    # 标准部署打包脚本
-├── config.json                 # LLM 配置文件（可选）
+├── main.go                  # Web 服务入口
+├── cmd/build-artifacts/     # 构建 runtime 命令与脚本资源
 ├── internal/
-│   ├── assistant/              # 通用 assistant system prompt 构造
-│   ├── config/                 # 配置装配：LLM、Web 配置、runtime 路径、layout 校验、env 辅助
-│   ├── deploy/                 # 部署产物构建逻辑
-│   ├── logger/                 # 日志
-│   ├── safety/                 # 路径与访问安全辅助
-│   ├── sessions/               # Skill loader：扫描、frontmatter 解析、merge、render
-│   ├── tools/                  # 共享工具层：runtime env、path guard、handlers、tool definitions
-│   └── web/
-│       ├── app/                # HTTP 入口层：server 装配、routes、auth/skill/conversation handlers
-│       ├── auth/               # 注册 / 登录 / Session / JWT
-│       ├── runtime/            # Web 聊天编排：conversation flow、tool registry、prompt、audit、SSE
-│       └── storage/            # 存储层：store、migrations、repos、cache、scan helpers
-├── skills/                     # 源码内置 Skill catalog（构建时复制到部署包）
-├── logs/                       # 服务日志目录
-├── workspace/                  # 本地调试时使用的 runtime workspace（源码侧回退目录）
-│   ├── bin/                    # 本地调试态命令产物
-│   ├── cmd/                    # 本地调试态脚本资源
-│   └── skills/                 # 本地调试态 builtin Skill catalog
-└── output/                     # build.sh 生成的部署输出目录（生成物，不纳入版本控制）
-    ├── bin/
-    └── workspace/              # 部署态 runtime workspace（优先使用）
-        ├── bin/
-        ├── cmd/
-        └── skills/
+│   ├── assistant/           # system prompt
+│   ├── config/              # 配置与 runtime 路径
+│   ├── sessions/            # Skill loader / merge / render
+│   ├── tools/               # 工具定义与执行
+│   └── web/                 # HTTP、鉴权、runtime、storage
+├── skills/                  # 源码内置 Skill
+├── workspace/               # 本地 runtime workspace
+└── output/                  # build.sh 生成的部署产物
 ```
 
-前端页面位于仓库根目录下的 `web/`。
-
----
+前端位于仓库根目录的 `web/`。
 
 ## 环境要求
 
 - Go 1.21+
-- Node.js / npm（用于前端开发与构建）
+- Node.js / npm
 - OpenAI 兼容模型服务
 - MySQL
 - Redis
 
----
+## 配置
 
-## 配置说明
+后端优先读取环境变量；LLM 配置缺失时可回退到 `config.json`。
 
-后端会优先读取环境变量；如果 LLM 相关环境变量未设置，则回退到 `config.json`。Web 配置会在启动时先解析 `APP_HOME` 与 `WORKSPACE_ROOT`，再基于 `WORKSPACE_ROOT` 统一派生 builtin skills 目录、命令产物目录，并把这些路径都转换为绝对路径。无论是执行部署构建命令还是直接启动 Web 服务，程序都会自动创建这套目录结构。
-
-可以把目录配置理解为两层：
-
-- **主变量**：`APP_HOME`、`WORKSPACE_ROOT`
-- **派生目录**：`BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR`
-
-一般情况下只需要关心前两项；后三项通常不需要单独配置。
-
-运行时 workspace 的默认解析顺序：
-
-1. 如果显式设置 `WORKSPACE_ROOT`，优先使用该值
-2. 否则如果 `APP_HOME/output/workspace` 存在，优先使用它
-3. 否则回退到 `APP_HOME/workspace`
-
-`BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 在未显式配置时，都会从上面解析出的 `WORKSPACE_ROOT` 自动派生；如果显式配置，也必须分别指向 `WORKSPACE_ROOT/skills`、`WORKSPACE_ROOT/bin`、`WORKSPACE_ROOT/cmd` 这三个规范目录。
-
-### `config.json` 示例
-
-```json
-{
-  "base_url": "https://api.deepseek.com",
-  "api_key": "your-api-key",
-  "model_id": "deepseek-chat",
-  "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file"
-}
-```
-
-如果你希望覆盖默认路径解析，通常只需要显式设置 `workspace_root`：
-
-```json
-{
-  "workspace_root": "custom/runtime-workspace"
-}
-```
-
-只有在你希望把派生目录也完整声明出来时，才需要额外写出下面这组等价配置：
-
-```json
-{
-  "workspace_root": "custom/runtime-workspace",
-  "builtin_skills_dir": "custom/runtime-workspace/skills",
-  "command_bin_dir": "custom/runtime-workspace/bin",
-  "command_script_dir": "custom/runtime-workspace/cmd"
-}
-```
-
-### 常用环境变量
+最常用配置：
 
 ```bash
 OPENAI_BASE_URL=https://api.deepseek.com
@@ -169,12 +64,11 @@ MODEL_ID=deepseek-chat
 SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
-
 WORKSPACE_ROOT=
-BUILTIN_SKILLS_DIR=
-COMMAND_BIN_DIR=
-COMMAND_SCRIPT_DIR=
+
 WEB_ALLOWED_TOOLS=load_skill,bash,read_file,write_file,edit_file
+BASH_ALLOW_OUTSIDE_WORKSPACE=false
+BASH_ALLOW_DANGEROUS_COMMANDS=false
 
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
@@ -191,30 +85,28 @@ SESSION_COOKIE_NAME=nano_cc_session
 SESSION_TTL_MINUTES=10080
 ```
 
-说明：
+路径规则：
 
-- `APP_HOME` 默认是当前工作目录，其他相对路径配置都会基于它解析
-- `WORKSPACE_ROOT` 如果未显式设置：优先解析 `APP_HOME/output/workspace`，不存在时回退到 `APP_HOME/workspace`
-- `BUILTIN_SKILLS_DIR`、`COMMAND_BIN_DIR`、`COMMAND_SCRIPT_DIR` 默认分别从 `WORKSPACE_ROOT/skills`、`WORKSPACE_ROOT/bin`、`WORKSPACE_ROOT/cmd` 派生
-- 如果显式设置上述三个派生目录，它们也必须分别指向这三个规范路径，而不是任意 workspace 子目录
-- 日志默认写入 `WORKSPACE_ROOT/logs/session_<timestamp>.log`
-- `WEB_ALLOWED_TOOLS` 默认是 `load_skill,bash,read_file,write_file,edit_file`；只有显式允许且已注册的工具才会暴露给模型
-- 即使启用 `bash` / `read_file` / `write_file` / `edit_file`，它们访问的也是服务端 workspace，而不是用户本地电脑
-- 如果未提供 MySQL / Redis 环境变量，程序会使用代码中的默认值构造连接
+- `APP_HOME` 默认是当前目录
+- `WORKSPACE_ROOT` 未设置时使用 `APP_HOME/workspace`
+- `BUILTIN_SKILLS_DIR` 默认是 `WORKSPACE_ROOT/skills`
+- `COMMAND_BIN_DIR` 默认是 `WORKSPACE_ROOT/bin`
+- `COMMAND_SCRIPT_DIR` 默认是 `WORKSPACE_ROOT/cmd`
 
----
+`config.json` 示例：
 
-## 启动方式
+```json
+{
+  "base_url": "https://api.deepseek.com",
+  "api_key": "your-api-key",
+  "model_id": "deepseek-chat",
+  "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file",
+  "bash_allow_outside_workspace": false,
+  "bash_allow_dangerous_commands": false
+}
+```
 
-### 1）本地最短启动路径
-
-先准备必须依赖：
-
-- MySQL
-- Redis
-- OpenAI 兼容模型服务
-
-然后在 `go-agent/` 下设置最小环境变量并启动：
+## 本地启动
 
 ```bash
 cd go-agent
@@ -235,170 +127,9 @@ export JWT_SECRET=replace-with-your-own-secret
 go run .
 ```
 
-默认情况下：
+默认后端地址：`http://localhost:8080`。
 
-- Web 服务监听 `http://localhost:8080`
-- `APP_HOME` 默认为当前目录
-- runtime 会先解析 `WORKSPACE_ROOT`；默认情况下它会落到 `APP_HOME/workspace`
-- 如果你之前执行过 `./build.sh` 且当前目录下存在 `output/workspace`，则会优先使用该部署态 runtime workspace 作为 `WORKSPACE_ROOT`
-
-如果你只想在源码目录补齐 Web agent 所需命令产物，而不打完整发布包，可执行：
-
-```bash
-cd go-agent
-go run ./cmd/build-artifacts --app-home .
-```
-
-这会把命令二进制和脚本资源补齐到当前 `workspace/bin` 与 `workspace/cmd`。
-
-### 2）标准部署打包脚本（推荐在发布阶段执行）
-
-```bash
-cd go-agent
-./build.sh
-```
-
-这一步会：
-
-- 清理并重新生成 `output/`
-- 编译主服务到 `output/bin/go-agent`
-- 调用统一的 `cmd/build-artifacts` 流程构建 `output/workspace/bin/` 中的命令产物
-- 复制 `.py` / `.sh` / `.rb` / `.pl` 等脚本资源到 `output/workspace/cmd/`
-- 复制内置 skills 到 `output/workspace/skills/`
-- 复制 `config.json` 到 `output/`（如果存在）
-
-### 3）云端部署推荐方式（生产环境）
-
-推荐把 `go-agent` 当作一个**长期运行的 Web 服务**部署，而不是在云端直接以源码目录 `go run .` 的方式启动。
-
-推荐流程：
-
-1. **在构建机或 CI 中执行打包**
-
-```bash
-cd go-agent
-./build.sh
-```
-
-2. **把整个 `output/` 目录发布到云端机器**。建议把 `output/` 的内容直接放到目标目录，例如：
-
-```text
-/srv/go-agent/
-├── bin/
-│   └── go-agent
-└── workspace/
-    ├── bin/
-    ├── cmd/
-    └── skills/
-```
-
-3. **在云端以部署产物目录作为 `APP_HOME` 启动服务**
-
-```bash
-export APP_HOME=/srv/go-agent
-export SERVER_ADDR=:8080
-export ALLOWED_ORIGIN=https://your-frontend.example.com
-
-export OPENAI_BASE_URL=https://api.deepseek.com
-export OPENAI_API_KEY=your-api-key
-export MODEL_ID=deepseek-chat
-
-export MYSQL_HOST=your-mysql-host
-export MYSQL_PORT=3306
-export MYSQL_USER=your-mysql-user
-export MYSQL_PASSWORD=your-mysql-password
-export MYSQL_DATABASE=vibe_coding
-
-export REDIS_ADDR=your-redis-host:6379
-export REDIS_PASSWORD=
-export REDIS_DB=0
-
-export JWT_SECRET=replace-with-production-secret
-
-"${APP_HOME}/bin/go-agent"
-```
-
-在这个部署模型下：
-
-- `APP_HOME` 应该指向**部署包根目录**，例如 `/srv/go-agent`
-- 云端运行时目录结构是：
-  - `APP_HOME/bin/go-agent`
-  - `APP_HOME/workspace/bin`
-  - `APP_HOME/workspace/cmd`
-  - `APP_HOME/workspace/skills`
-- 云端运行时真正使用的是部署包中的 `APP_HOME/workspace/`
-- 也就是说，部署后的 `APP_HOME` 应该指向发布包根目录，而不是源码仓库根目录
-
-可以简单理解为：
-
-- **本地源码运行**：`APP_HOME=go-agent/`，runtime 会使用 `go-agent/workspace`，若存在 `go-agent/output/workspace` 且未显式覆盖则优先使用它
-- **云端部署运行**：`APP_HOME=/srv/go-agent`，runtime 使用部署包中的 `APP_HOME/workspace`
-
-### 3.1）systemd 示例（推荐）
-
-如果你在 Linux 云主机上部署，推荐使用 `systemd` 托管服务：
-
-```ini
-[Unit]
-Description=go-agent web service
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/srv/go-agent
-Environment=APP_HOME=/srv/go-agent
-Environment=SERVER_ADDR=:8080
-Environment=ALLOWED_ORIGIN=https://your-frontend.example.com
-Environment=OPENAI_BASE_URL=https://api.deepseek.com
-Environment=OPENAI_API_KEY=your-api-key
-Environment=MODEL_ID=deepseek-chat
-Environment=MYSQL_HOST=your-mysql-host
-Environment=MYSQL_PORT=3306
-Environment=MYSQL_USER=your-mysql-user
-Environment=MYSQL_PASSWORD=your-mysql-password
-Environment=MYSQL_DATABASE=vibe_coding
-Environment=REDIS_ADDR=your-redis-host:6379
-Environment=REDIS_PASSWORD=
-Environment=REDIS_DB=0
-Environment=JWT_SECRET=replace-with-production-secret
-ExecStart=/srv/go-agent/bin/go-agent
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-部署后常用命令：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable go-agent
-sudo systemctl restart go-agent
-sudo systemctl status go-agent
-sudo journalctl -u go-agent -f
-```
-
-### 3.2）Nginx / 负载均衡建议
-
-如果前端与后端分域部署，建议在 Nginx 或网关层处理：
-
-- HTTPS 终止
-- `/api/*` 反向代理到 `go-agent`
-- SSE 长连接超时调优（`/api/conversations/:id/stream`）
-- 同域 Cookie / CORS 头配置
-
-至少需要注意：
-
-- 反向代理不要过早切断 SSE 连接
-- `ALLOWED_ORIGIN` 要与实际前端域名一致
-- 生产环境不要继续使用示例里的默认数据库密码、JWT secret
-
-默认后端地址：
-
-- `http://localhost:8080`
-
-### 3）启动前端
+启动前端：
 
 ```bash
 cd web
@@ -406,153 +137,85 @@ npm install
 npm run dev
 ```
 
-默认前端地址：
+默认前端地址：`http://localhost:5173`。
 
-- `http://localhost:5173`
+## 部署
 
----
+构建发布包：
 
-## Web API 简述
+```bash
+cd go-agent
+./build.sh
+```
 
-### 鉴权相关
+构建结果位于 `output/`：
+
+```text
+output/
+├── bin/go-agent
+└── workspace/
+    ├── bin/
+    ├── cmd/
+    └── skills/
+```
+
+云端启动示例：
+
+```bash
+export APP_HOME=/srv/go-agent
+export SERVER_ADDR=:8080
+export ALLOWED_ORIGIN=https://your-frontend.example.com
+export OPENAI_BASE_URL=https://api.deepseek.com
+export OPENAI_API_KEY=your-api-key
+export MODEL_ID=deepseek-chat
+export MYSQL_HOST=your-mysql-host
+export MYSQL_USER=your-mysql-user
+export MYSQL_PASSWORD=your-mysql-password
+export MYSQL_DATABASE=vibe_coding
+export REDIS_ADDR=your-redis-host:6379
+export JWT_SECRET=replace-with-production-secret
+
+${APP_HOME}/bin/go-agent
+```
+
+## API 简表
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/me`
-
-### Skill 管理
-
-- `GET /api/skills`  # 返回 builtin + custom skills；builtin 条目含 `source=builtin`、`readonly=true`
+- `GET /api/skills`
 - `POST /api/skills`
 - `GET /api/skills/:id`
 - `PUT /api/skills/:id`
 - `PATCH /api/skills/:id`
 - `DELETE /api/skills/:id`
-
-说明：
-
-- builtin skill 的 ID 形式为 `builtin:<skill-name>`
-- builtin skill 允许读取，但不允许通过用户 API 修改或删除
-
-### 会话与聊天
-
 - `GET /api/conversations`
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
 - `POST /api/conversations/:id/stream`
-
-### 健康检查
-
 - `GET /api/health`
 
----
-
-## 核心行为
-
-### 1. 默认入口是 Web 服务
-
-`go-agent/main.go` 现在默认启动 Web 服务，而不是进入本地 REPL。
-
-### 2. 默认角色是通用聊天助手
-
-系统提示词已统一为通用 assistant 基线：
-
-- 支持通用问答、分析、规划、写作、编码协助
-- 优先直接回答，而不是先假设要调用工具
-- 不默认假设用户本地 shell、本地目录、本地文件访问能力
-
-### 3. Skill 运行时合并加载
-
-每次用户在网页中发送消息时，runtime 会：
-
-1. 加载共享 builtin Skill catalog
-2. 从数据库读取该用户所有 `enabled` 状态的 Skill
-3. 合并成当前对话的运行时 Skill Loader
-4. 将合并后的能力描述注入 system prompt
-5. 在模型请求 `load_skill` 时返回对应能力正文，并附带当前 runtime 路径提示
-
-### 4. 多用户数据与 workspace 隔离
-
-- 用户只能访问自己的 Skill
-- 用户只能访问自己的 Conversation / Message
-- 工具调用记录按用户与会话隔离存储
-- 如果启用工具，所有用户都共享服务端解析后的统一 runtime workspace
-- 相对路径与默认 cwd 都会解析到该统一 workspace
-- 访问 workspace 外部路径会被拒绝；运行时命令与脚本解析固定指向当前 runtime workspace 下的 `bin/`、`cmd/`
-
-### 5. 工具暴露与审计
-
-当前 Web runtime：
-
-- 默认暴露 `load_skill,bash,read_file,write_file,edit_file`
-- 可以通过 `WEB_ALLOWED_TOOLS` 覆盖或收缩已注册工具集合
-- 每次工具执行都会记录状态与审计摘要
-- 对于 `bash` 等工具，会附带解析后的 cwd、命令产物路径、命令产物来源（workspace/custom）、成功摘要或拒绝原因
-
-需要注意的是：这里的工具执行发生在**服务端部署环境**中，而不是用户本地浏览器所在机器上。如果用户请求访问“本地 shell / 本地目录 / 本地文件”，系统仍会返回清晰边界说明，并继续提供替代帮助，例如：
-
-- 解释命令含义
-- 生成可手动执行的命令或脚本
-- 基于用户贴出的报错 / 文件内容继续分析
-
----
-
-## 开发与验证
-
-### Go 侧
+## 开发验证
 
 ```bash
 cd go-agent
-
-# 可选：先按模块做快速回归
-go test ./internal/config ./internal/sessions ./internal/tools ./internal/web/app ./internal/web/runtime
-
-# 再跑全量验证
-gofmt -w ./...
 go test ./...
 ./build.sh
 ```
 
-### 前端
+前端：
 
 ```bash
 cd web
-
-npm install
 npm run typecheck
 npm run build
 ```
 
----
-
-## 已验证内容
-
-当前重构已完成以下验证：
-
-- `go test ./...` 通过
-- `./build.sh` 可生成单一发布包目录 `output/`
-- 发布包包含 `output/bin/go-agent` 与 `output/workspace/{bin,cmd,skills}`
-- runtime workspace 解析已覆盖显式覆盖、deployment 优先、本地回退三种分支
-- builtin Skill 加载、builtin+user Skill 合并、工具白名单、workspace 隔离、命令产物构建、命令产物来源审计均已补充测试
-
----
-
 ## 注意事项
 
-1. 运行前请确保 MySQL、Redis、LLM 服务可用
-2. 如果前端跨域访问失败，请检查 `ALLOWED_ORIGIN`
-3. 如果登录后接口仍返回 401，请检查 Cookie 是否被浏览器拦截
-4. 浏览器聊天模式不是用户本地终端代理；即使启用工具，也是在服务端隔离 workspace 中运行
-5. 如果你要生成完整部署产物，建议优先执行 `./build.sh`；如果只需在当前 `APP_HOME` 下补齐运行时命令目录，可执行 `go run ./cmd/build-artifacts --app-home .`
-6. 默认日志文件位于 `APP_HOME/logs/`；源码目录运行时会优先使用 `APP_HOME/output/workspace/`（如果存在），否则回退到 `APP_HOME/workspace/`
-
----
-
-## 后续可继续增强的方向
-
-1. 增加密码重置与用户资料管理
-2. 增加 Skill 版本管理
-3. 增加会话分页与消息分页
-4. 增加更细粒度的能力面板与权限控制
-5. 增加部署脚本 / Docker Compose
+- 运行前确保 MySQL、Redis、LLM 服务可用
+- 前端跨域失败时检查 `ALLOWED_ORIGIN`
+- 登录后仍返回 401 时检查 Cookie 策略
+- 浏览器聊天不是用户本地终端代理；工具运行在服务端 workspace
+- 生产环境不建议开启 `BASH_ALLOW_OUTSIDE_WORKSPACE` 或 `BASH_ALLOW_DANGEROUS_COMMANDS`

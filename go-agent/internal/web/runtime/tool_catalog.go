@@ -33,10 +33,12 @@ func loadAllowedToolNames(cfg config.AppConfig) []string {
 
 func runtimeEnvFromConfig(cfg config.AppConfig) agenttools.RuntimeEnv {
 	return agenttools.RuntimeEnv{
-		AppHome:          strings.TrimSpace(cfg.AppHome),
-		CommandBinDir:    strings.TrimSpace(cfg.CommandBinDir),
-		CommandScriptDir: strings.TrimSpace(cfg.CommandScriptDir),
-		WorkspaceRoot:    strings.TrimSpace(cfg.WorkspaceRoot),
+		AppHome:                strings.TrimSpace(cfg.AppHome),
+		CommandBinDir:          strings.TrimSpace(cfg.CommandBinDir),
+		CommandScriptDir:       strings.TrimSpace(cfg.CommandScriptDir),
+		WorkspaceRoot:          strings.TrimSpace(cfg.WorkspaceRoot),
+		AllowOutsideWorkspace:  cfg.BashAllowOutsideWorkspace,
+		AllowDangerousCommands: cfg.BashAllowDangerousCommands,
 	}
 }
 

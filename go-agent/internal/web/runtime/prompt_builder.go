@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -33,6 +34,14 @@ func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoa
 
 func (s *Service) buildConversationSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 	return sessions.MergeSkillLoaders(s.BuiltinSkills, buildDBSkillLoader(skills))
+}
+
+func (s *Service) buildSkillSnapshot(ctx context.Context, userID string) (*sessions.SkillLoader, error) {
+	skills, err := s.Store.ListEnabledSkillsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildConversationSkillLoader(skills), nil
 }
 
 func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {

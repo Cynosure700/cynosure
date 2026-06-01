@@ -72,18 +72,18 @@ func TestHandleBash_UsesWorkspaceRootAsDefaultDir(t *testing.T) {
 	}
 }
 
-func TestHandleBash_UsesDeploymentWorkspaceAsDefaultDir(t *testing.T) {
+func TestHandleBash_UsesConfiguredAppWorkspaceAsDefaultDir(t *testing.T) {
 	appRoot := t.TempDir()
-	workspace := filepath.Join(appRoot, "output", "workspace")
+	workspace := filepath.Join(appRoot, "workspace")
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("mkdir deployment workspace: %v", err)
+		t.Fatalf("mkdir app workspace: %v", err)
 	}
 	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace}), map[string]any{"command": "pwd"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if filepath.Clean(result) != filepath.Clean(workspace) {
-		t.Fatalf("expected pwd to run in deployment workspace %q, got %q", workspace, result)
+		t.Fatalf("expected pwd to run in app workspace %q, got %q", workspace, result)
 	}
 }
 
@@ -195,6 +195,54 @@ func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "command path escapes workspace") {
 		t.Fatalf("expected workspace escape error, got %v", err)
+	}
+}
+
+func TestHandleBash_AllowsCommonCommandsWithoutPathArguments(t *testing.T) {
+	root := t.TempDir()
+	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "echo hello"})
+	if err != nil {
+		t.Fatalf("expected common command without path to be allowed: %v", err)
+	}
+	if result != "hello" {
+		t.Fatalf("expected echo output, got %q", result)
+	}
+}
+
+func TestHandleBash_AllowsOutsideWorkspacePathWhenConfigured(t *testing.T) {
+	root := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "outside.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside ok"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+
+	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root, AllowOutsideWorkspace: true}), map[string]any{"command": "cat " + outsideFile})
+	if err != nil {
+		t.Fatalf("expected configured outside path to be allowed: %v", err)
+	}
+	if result != "outside ok" {
+		t.Fatalf("expected outside file content, got %q", result)
+	}
+}
+
+func TestHandleBash_RejectsDangerousCommandByDefault(t *testing.T) {
+	root := t.TempDir()
+	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "rm temp.txt"})
+	if err == nil {
+		t.Fatalf("expected dangerous command to be rejected")
+	}
+	if !strings.Contains(err.Error(), "dangerous command blocked") {
+		t.Fatalf("expected dangerous command error, got %v", err)
+	}
+}
+
+func TestDangerousCommandPattern_IgnoresNonCommandArguments(t *testing.T) {
+	if pattern, ok := dangerousCommandPattern("echo rm"); ok {
+		t.Fatalf("expected non-command argument to be allowed, got dangerous pattern %q", pattern)
+	}
+	if pattern, ok := dangerousCommandPattern("echo ok; rm temp.txt"); !ok || pattern != "rm" {
+		t.Fatalf("expected command after separator to be dangerous, got pattern=%q ok=%v", pattern, ok)
 	}
 }
 
