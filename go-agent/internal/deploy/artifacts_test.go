@@ -66,6 +66,25 @@ func TestCopyScriptAssets(t *testing.T) {
 	}
 }
 
+func TestCopyFilePreservesSystemPromptContent(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "system_prompt.md")
+	destination := filepath.Join(t.TempDir(), "system_prompt.md")
+	if err := os.WriteFile(source, []byte("Base prompt.\n"), 0o644); err != nil {
+		t.Fatalf("write source prompt: %v", err)
+	}
+
+	if err := copyFile(source, destination); err != nil {
+		t.Fatalf("copy system prompt: %v", err)
+	}
+	copied, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatalf("read copied prompt: %v", err)
+	}
+	if string(copied) != "Base prompt.\n" {
+		t.Fatalf("unexpected copied prompt content: %q", string(copied))
+	}
+}
+
 func TestBuildCommandArtifacts_BuildsCommandsAndCopiesScripts(t *testing.T) {
 	appHome := t.TempDir()
 	commandSource := filepath.Join(appHome, "runtime-cmd")

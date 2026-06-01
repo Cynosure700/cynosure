@@ -350,6 +350,15 @@ export function App() {
     if (!user) {
         return (
             <div className="auth-shell">
+                <div className="auth-visual" aria-hidden="true">
+                    <div className="auth-visual-card">
+                        <div className="visual-glass-panel">
+                            <span className="eyebrow">agent workspace</span>
+                            <strong>Reason · Act · Remember</strong>
+                            <p>把对话、Skill 与受控工具整合到同一个安全工作区。</p>
+                        </div>
+                    </div>
+                </div>
                 <div className="auth-card">
                     <div className="auth-copy">
                         <span className="eyebrow">nano_cc assistant</span>
@@ -384,8 +393,13 @@ export function App() {
             <aside className="sidebar">
                 <div className="sidebar-top">
                     <div className="sidebar-brand">
-                        <span className="eyebrow">nano_cc</span>
-                        <strong>Chat Workspace</strong>
+                        <div className="brand-row">
+                            <span className="brand-mark">n</span>
+                            <div>
+                                <span className="eyebrow">nano_cc</span>
+                                <strong>Agent Workspace</strong>
+                            </div>
+                        </div>
                     </div>
                     <div className="sidebar-header">
                         <div>
@@ -486,6 +500,11 @@ export function App() {
                             <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
                             <p className="muted">像与通用聊天助手对话一样提问，我会优先直接回答。</p>
                         </div>
+                        <div className="agent-orbit" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                        </div>
                         <div className="panel-actions">
                             <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
                             <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
@@ -494,8 +513,24 @@ export function App() {
                     <div className="messages">
                         {messages.length === 0 ? (
                             <div className="empty-state">
-                                <h3>今天想聊点什么？</h3>
-                                <p>你可以直接提问、让我帮你分析问题、整理思路、起草内容，或者继续讨论代码与技术话题。</p>
+                                <div className="empty-copy">
+                                    <span className="eyebrow">ready when you are</span>
+                                    <h3>今天想聊点什么？</h3>
+                                    <p>你可以直接提问、让我帮你分析问题、整理思路、起草内容，或者继续讨论代码与技术话题。</p>
+                                    <div className="prompt-chips">
+                                        <span>分析需求</span>
+                                        <span>生成方案</span>
+                                        <span>整理文档</span>
+                                        <span>排查代码</span>
+                                    </div>
+                                </div>
+                                <div className="empty-visual" aria-hidden="true">
+                                    <div className="neural-card">
+                                        <span className="pulse-dot" />
+                                        <strong>nano agent</strong>
+                                        <small>workspace secured</small>
+                                    </div>
+                                </div>
                             </div>
                         ) : messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>

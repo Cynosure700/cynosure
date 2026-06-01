@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"nano_cc/internal/assistant"
 	"nano_cc/internal/config"
 	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
@@ -72,8 +73,13 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load builtin skills: %w", err)
 	}
+	basePrompt, err := assistant.LoadBaseSystemPrompt(cfg.SystemPromptPath)
+	if err != nil {
+		return nil, fmt.Errorf("load system prompt: %w", err)
+	}
 	runtimeService := runtime.NewService(store, cfg)
 	runtimeService.SetBuiltinSkills(builtinSkills)
+	runtimeService.SetBasePrompt(basePrompt)
 	server := &Server{
 		cfg:           cfg,
 		store:         store,

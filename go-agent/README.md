@@ -23,11 +23,45 @@
 - 会话编排：`internal/web/runtime/conversation_flow.go`
 - DB Skill 查询：`internal/web/storage/skills_repo.go`
 
+## 通用 system prompt
+
+通用 system prompt 基础文档位于 `system_prompt.md`。服务启动时读取该文件；开启 agent loop 时，再拼接当前用户、workspace、工具、Skill 等动态段，组成最终 system prompt。
+
+默认路径是 `APP_HOME/system_prompt.md`，也可以通过 `SYSTEM_PROMPT_PATH` 或 `config.json` 中的 `system_prompt_path` 覆盖。
+
+当前基础内容如下：
+
+```text
+You are nano_cc, a general-purpose agent rather than a chat-only assistant.
+
+Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.
+
+Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.
+
+Do not assume shell access, local workspace access, or local file operations unless the runtime explicitly supports them.
+
+You are responding inside {surface}.
+
+Current workspace root: {working_directory}.
+
+Treat that workspace root as your default working directory for runtime file and shell operations unless the runtime tells you otherwise.
+
+Runtime tools available in this conversation: {tool_names}.
+
+Available skills:
+{skill_descriptions}
+
+{memory_section}
+```
+
+其中 `{surface}`、`{working_directory}`、`{tool_names}`、`{skill_descriptions}`、`{memory_section}` 是运行时动态段；为空的动态段不会写入最终 prompt。通常只需要编辑 `system_prompt.md` 中的基础部分。
+
 ## 目录结构
 
 ```text
 go-agent/
 ├── main.go                  # Web 服务入口
+├── system_prompt.md         # 启动时读取的基础 system prompt
 ├── cmd/build-artifacts/     # 构建 runtime 命令与脚本资源
 ├── internal/
 │   ├── assistant/           # system prompt
@@ -65,6 +99,7 @@ SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
 WORKSPACE_ROOT=
+SYSTEM_PROMPT_PATH=
 
 WEB_ALLOWED_TOOLS=load_skill,bash,read_file,write_file,edit_file
 BASH_ALLOW_OUTSIDE_WORKSPACE=false
@@ -89,6 +124,7 @@ SESSION_TTL_MINUTES=10080
 
 - `APP_HOME` 默认是当前目录
 - `WORKSPACE_ROOT` 未设置时使用 `APP_HOME/workspace`
+- `SYSTEM_PROMPT_PATH` 未设置时使用 `APP_HOME/system_prompt.md`
 - `BUILTIN_SKILLS_DIR` 默认是 `WORKSPACE_ROOT/skills`
 - `COMMAND_BIN_DIR` 默认是 `WORKSPACE_ROOT/bin`
 - `COMMAND_SCRIPT_DIR` 默认是 `WORKSPACE_ROOT/cmd`

@@ -25,6 +25,7 @@ func (s *Service) buildSystemPrompt(user storage.User, loader *sessions.SkillLoa
 		}
 	}
 	return assistant.BuildSystemPrompt(assistant.PromptOptions{
+		BasePrompt:        s.BasePrompt,
 		Surface:           fmt.Sprintf("the browser chat experience for user %s", user.Username),
 		SkillDescriptions: loader.GetDescriptions(),
 		WorkingDirectory:  strings.TrimSpace(s.Cfg.WorkspaceRoot),

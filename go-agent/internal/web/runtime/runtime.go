@@ -28,6 +28,7 @@ type Service struct {
 	Cfg           config.AppConfig
 	Tools         *ToolRegistry
 	BuiltinSkills *sessions.SkillLoader
+	BasePrompt    string
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig) *Service {
@@ -36,4 +37,8 @@ func NewService(store *storage.Store, cfg config.AppConfig) *Service {
 
 func (s *Service) SetBuiltinSkills(loader *sessions.SkillLoader) {
 	s.BuiltinSkills = loader
+}
+
+func (s *Service) SetBasePrompt(prompt string) {
+	s.BasePrompt = prompt
 }

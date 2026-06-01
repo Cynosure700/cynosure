@@ -18,6 +18,7 @@ type fileConfig struct {
 	BuiltinSkillsDir           string `json:"builtin_skills_dir"`
 	CommandBinDir              string `json:"command_bin_dir"`
 	CommandScriptDir           string `json:"command_script_dir"`
+	SystemPromptPath           string `json:"system_prompt_path"`
 	WorkspaceRoot              string `json:"workspace_root"`
 	WebAllowedTools            string `json:"web_allowed_tools"`
 	BashAllowOutsideWorkspace  bool   `json:"bash_allow_outside_workspace"`
@@ -37,6 +38,7 @@ type AppConfig struct {
 	BuiltinSkillsDir           string
 	CommandBinDir              string
 	CommandScriptDir           string
+	SystemPromptPath           string
 	WorkspaceRoot              string
 	WebAllowedTools            []string
 	BashAllowOutsideWorkspace  bool

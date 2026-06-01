@@ -67,6 +67,9 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	if cfg.WorkspaceRoot != filepath.Join(root, "shared-workspace") {
 		t.Fatalf("unexpected workspace root: %q", cfg.WorkspaceRoot)
 	}
+	if cfg.SystemPromptPath != filepath.Join(root, "system_prompt.md") {
+		t.Fatalf("unexpected system prompt path: %q", cfg.SystemPromptPath)
+	}
 	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "bash"}) {
 		t.Fatalf("unexpected web allowed tools: %#v", cfg.WebAllowedTools)
 	}
@@ -132,6 +135,49 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "edit_file"}) {
 		t.Fatalf("expected env web tools, got %#v", cfg.WebAllowedTools)
+	}
+}
+
+func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config.json")
+	configBody := `{
+		"base_url": "https://example.com",
+		"api_key": "test-key",
+		"model_id": "test-model",
+		"app_home": "` + root + `",
+		"system_prompt_path": "config-prompt.md"
+	}`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir to temp root: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("MODEL_ID", "")
+	t.Setenv("APP_HOME", "")
+	t.Setenv("SYSTEM_PROMPT_PATH", "env-prompt.md")
+	t.Setenv("BUILTIN_SKILLS_DIR", "")
+	t.Setenv("COMMAND_BIN_DIR", "")
+	t.Setenv("COMMAND_SCRIPT_DIR", "")
+	t.Setenv("WORKSPACE_ROOT", "")
+	t.Setenv("WEB_ALLOWED_TOOLS", "")
+
+	cfg, err := LoadWebConfig()
+	if err != nil {
+		t.Fatalf("load web config: %v", err)
+	}
+	if cfg.SystemPromptPath != filepath.Join(root, "env-prompt.md") {
+		t.Fatalf("expected env system prompt path, got %q", cfg.SystemPromptPath)
 	}
 }
 

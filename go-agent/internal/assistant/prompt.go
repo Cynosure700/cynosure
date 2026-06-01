@@ -1,13 +1,30 @@
 package assistant
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
+
+const DefaultBaseSystemPrompt = "You are nano_cc, a general-purpose agent rather than a chat-only assistant.\n\n" +
+	"Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.\n\n" +
+	"Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.\n\n" +
+	"Do not assume shell access, local workspace access, or local file operations unless the runtime explicitly supports them."
 
 type PromptOptions struct {
+	BasePrompt        string
 	Surface           string
 	SkillDescriptions string
 	MemorySection     string
 	WorkingDirectory  string
 	ToolNames         []string
+}
+
+func LoadBaseSystemPrompt(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(content)), nil
 }
 
 func BuildSystemPrompt(opts PromptOptions) string {
@@ -16,11 +33,13 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		surface = "this conversation"
 	}
 
+	basePrompt := strings.TrimSpace(opts.BasePrompt)
+	if basePrompt == "" {
+		basePrompt = DefaultBaseSystemPrompt
+	}
+
 	sections := []string{
-		"You are nano_cc, a general-purpose agent rather than a chat-only assistant.",
-		"Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.",
-		"Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.",
-		"Do not assume shell access, local workspace access, or local file operations unless the runtime explicitly supports them.",
+		basePrompt,
 		"You are responding inside " + surface + ".",
 	}
 

@@ -11,6 +11,7 @@ type runtimePaths struct {
 	builtinSkillsDir string
 	commandBinDir    string
 	commandScriptDir string
+	systemPromptPath string
 }
 
 type runtimeAssetSpec struct {
@@ -51,12 +52,24 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 	return resolvePath(appHome, "workspace")
 }
 
+func resolveSystemPromptPath(appHome string, fileCfg fileConfig) (string, error) {
+	configured := getenv("SYSTEM_PROMPT_PATH", strings.TrimSpace(fileCfg.SystemPromptPath))
+	if strings.TrimSpace(configured) == "" {
+		configured = "system_prompt.md"
+	}
+	return resolvePath(appHome, configured)
+}
+
 func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, error) {
 	workspaceRoot, err := resolveWorkspaceRoot(appHome, getenv("WORKSPACE_ROOT", strings.TrimSpace(fileCfg.WorkspaceRoot)))
 	if err != nil {
 		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	paths := runtimePaths{workspaceRoot: workspaceRoot}
+	systemPromptPath, err := resolveSystemPromptPath(appHome, fileCfg)
+	if err != nil {
+		return runtimePaths{}, fmt.Errorf("resolve system prompt path: %w", err)
+	}
+	paths := runtimePaths{workspaceRoot: workspaceRoot, systemPromptPath: systemPromptPath}
 	for _, spec := range []runtimeAssetSpec{
 		{label: "builtin skills dir", envKey: "BUILTIN_SKILLS_DIR", fileValue: fileCfg.BuiltinSkillsDir, subdir: "skills"},
 		{label: "command bin dir", envKey: "COMMAND_BIN_DIR", fileValue: fileCfg.CommandBinDir, subdir: "bin"},

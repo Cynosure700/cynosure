@@ -31,6 +31,10 @@ if [ -f "${ROOTDIR}/config.json" ]; then
   cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/config.json"
 fi
 
+if [ -f "${ROOTDIR}/system_prompt.md" ]; then
+  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/system_prompt.md"
+fi
+
 if [ -d "${ROOTDIR}/skills" ]; then
   cp -R "${ROOTDIR}/skills/." "${OUTPUT_DIR}/workspace/skills/"
 fi
