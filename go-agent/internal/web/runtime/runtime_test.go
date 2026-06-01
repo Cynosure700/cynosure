@@ -317,7 +317,7 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
 
-	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, NewSkillSnapshot(nil, loader))
+	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader))
 	if !contains(prompt, "Current workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
@@ -376,7 +376,7 @@ func TestSkillSnapshotLoadSkillPrefersUserSkillThenFallsBackToLocal(t *testing.T
 		"shared-skill":  {Meta: map[string]string{"description": "Local description"}, Body: "local body", Path: "/skills/shared/SKILL.md"},
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "/skills/builtin/SKILL.md"},
 	})
-	snapshot := NewSkillSnapshot(userSkills, localSkills)
+	snapshot := agenttools.NewSkillSnapshot(userSkills, localSkills)
 
 	loaded, err := snapshot.LoadSkill("shared-skill")
 	if err != nil {
@@ -748,7 +748,7 @@ func TestToolRegistryExecute_LoadSkillReturnsFullSkillInfo(t *testing.T) {
 	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description", "tags": "go,agent"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	snapshot := NewSkillSnapshot(nil, localSkills)
+	snapshot := agenttools.NewSkillSnapshot(nil, localSkills)
 	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/deploy/app",
 		WorkspaceRoot:    "/deploy/app/workspace",
@@ -783,7 +783,7 @@ func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testi
 	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
-	snapshot := NewSkillSnapshot(nil, localSkills)
+	snapshot := agenttools.NewSkillSnapshot(nil, localSkills)
 	registry := NewToolRegistry(config.AppConfig{
 		AppHome:          "/repo/app",
 		WorkspaceRoot:    "/repo/app/workspace",

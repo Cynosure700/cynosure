@@ -9,10 +9,11 @@ import (
 
 	"nano_cc/internal/assistant"
 	"nano_cc/internal/sessions"
+	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
-func (s *Service) buildSystemPrompt(user storage.User, snapshot *SkillSnapshot) string {
+func (s *Service) buildSystemPrompt(user storage.User, snapshot *agenttools.SkillSnapshot) string {
 	toolNames := []string(nil)
 	if s.Tools != nil {
 		toolDefs := s.Tools.Definitions()
@@ -37,11 +38,11 @@ func (s *Service) buildSystemPrompt(user storage.User, snapshot *SkillSnapshot) 
 	})
 }
 
-func (s *Service) buildConversationSkillSnapshot(skills []storage.Skill) *SkillSnapshot {
-	return NewSkillSnapshot(buildDBSkillLoader(skills), s.BuiltinSkills)
+func (s *Service) buildConversationSkillSnapshot(skills []storage.Skill) *agenttools.SkillSnapshot {
+	return agenttools.NewSkillSnapshot(buildDBSkillLoader(skills), s.BuiltinSkills)
 }
 
-func (s *Service) buildSkillSnapshot(ctx context.Context, userID string) (*SkillSnapshot, error) {
+func (s *Service) buildSkillSnapshot(ctx context.Context, userID string) (*agenttools.SkillSnapshot, error) {
 	skills, err := s.Store.ListEnabledSkillsByUser(ctx, userID)
 	if err != nil {
 		return nil, err

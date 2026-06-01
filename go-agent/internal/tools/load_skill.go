@@ -1,13 +1,13 @@
-package runtime
+package tools
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"sort"
 	"strings"
 
 	"nano_cc/internal/sessions"
-	agenttools "nano_cc/internal/tools"
 )
 
 type SkillSnapshot struct {
@@ -22,12 +22,23 @@ type LoadedSkill struct {
 	Entry  *sessions.SkillEntry
 }
 
+const skillSnapshotContextKey contextKey = "skill_snapshot"
+
 func NewSkillSnapshot(userSkills, localSkills *sessions.SkillLoader) *SkillSnapshot {
 	return &SkillSnapshot{
 		UserSkills:  userSkills,
 		LocalSkills: localSkills,
 		Merged:      sessions.MergeSkillLoaders(localSkills, userSkills),
 	}
+}
+
+func WithSkillSnapshot(ctx context.Context, snapshot *SkillSnapshot) context.Context {
+	return context.WithValue(ctx, skillSnapshotContextKey, snapshot)
+}
+
+func SkillSnapshotFromContext(ctx context.Context) (*SkillSnapshot, bool) {
+	snapshot, ok := ctx.Value(skillSnapshotContextKey).(*SkillSnapshot)
+	return snapshot, ok
 }
 
 func (s *SkillSnapshot) LoadSkill(name string) (LoadedSkill, error) {
@@ -71,17 +82,19 @@ func (s *SkillSnapshot) availableSkillNames() []string {
 	return names
 }
 
-func (r *ToolRegistry) loadSkillContent(snapshot *SkillSnapshot, skillName string) (ToolExecutionResult, error) {
+func handleLoadSkill(ctx context.Context, args map[string]any) (string, error) {
+	skillName, _ := args["name"].(string)
+	snapshot, _ := SkillSnapshotFromContext(ctx)
 	loaded, err := snapshot.LoadSkill(skillName)
 	if err != nil {
-		return ToolExecutionResult{}, err
+		return "", err
 	}
 	content := renderLoadedSkill(loaded)
-	envNote := formatRuntimeEnvNote(r.runtimeEnv())
+	envNote := formatRuntimeEnvNoteFromContext(ctx)
 	if envNote == "" {
-		return ToolExecutionResult{Output: content}, nil
+		return content, nil
 	}
-	return ToolExecutionResult{Output: content + "\n\n" + envNote}, nil
+	return content + "\n\n" + envNote, nil
 }
 
 func renderLoadedSkill(loaded LoadedSkill) string {
@@ -113,7 +126,11 @@ func renderLoadedSkill(loaded LoadedSkill) string {
 	)
 }
 
-func formatRuntimeEnvNote(env agenttools.RuntimeEnv) string {
+func formatRuntimeEnvNoteFromContext(ctx context.Context) string {
+	env, ok := RuntimeEnvFromContext(ctx)
+	if !ok {
+		return ""
+	}
 	lines := make([]string, 0, 5)
 	if env.AppHome != "" {
 		lines = append(lines, "APP_HOME="+env.AppHome)

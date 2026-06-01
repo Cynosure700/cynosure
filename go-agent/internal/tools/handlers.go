@@ -10,7 +10,7 @@ var Handlers = map[string]ToolHandler{
 	"read_file":  handleRead,
 	"write_file": handleWrite,
 	"edit_file":  handleEdit,
-	"load_skill": nil, // handled by web runtime registry
+	"load_skill": handleLoadSkill,
 }
 
 func handleBash(ctx context.Context, args map[string]any) (string, error) {

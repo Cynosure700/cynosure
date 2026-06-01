@@ -16,7 +16,7 @@ import (
 type ToolContext struct {
 	User         storage.User
 	Conversation storage.Conversation
-	Skills       *SkillSnapshot
+	Skills       *agenttools.SkillSnapshot
 }
 
 type ToolExecutionResult struct {
@@ -50,11 +50,8 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	if !r.isAllowed(name) {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s is not registered for web runtime", name)
 	}
-	if name == "load_skill" {
-		skillName, _ := args["name"].(string)
-		return r.loadSkillContent(toolCtx.Skills, skillName)
-	}
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
+	ctx = agenttools.WithSkillSnapshot(ctx, toolCtx.Skills)
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s has no handler", name)
