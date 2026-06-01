@@ -1,12 +1,15 @@
 package storage
 
-import "context"
+import (
+	"context"
+	"database/sql"
+)
 
 func (s *Store) CreateMessage(ctx context.Context, message Message) error {
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO messages (id, conversation_id, user_id, role, content, created_at)
-		VALUES (?, ?, ?, ?, ?, NOW())
-	`, message.ID, message.ConversationID, message.UserID, message.Role, message.Content)
+		INSERT INTO messages (id, conversation_id, user_id, role, content, reasoning_content, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, NOW())
+	`, message.ID, message.ConversationID, message.UserID, message.Role, message.Content, message.ReasoningContent)
 	if err != nil {
 		return err
 	}
@@ -29,7 +32,7 @@ func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID s
 		return messages, nil
 	}
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT id, conversation_id, user_id, role, content, created_at
+		SELECT id, conversation_id, user_id, role, content, reasoning_content, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?
 	`, conversationID, limit)
 	if err != nil {
@@ -39,9 +42,11 @@ func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID s
 	var messages []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ConversationID, &m.UserID, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var reasoningContent sql.NullString
+		if err := rows.Scan(&m.ID, &m.ConversationID, &m.UserID, &m.Role, &m.Content, &reasoningContent, &m.CreatedAt); err != nil {
 			return nil, err
 		}
+		m.ReasoningContent = reasoningContent.String
 		messages = append(messages, m)
 	}
 	return messages, rows.Err()

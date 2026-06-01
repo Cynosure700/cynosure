@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id VARCHAR(64) NOT NULL,
     role VARCHAR(32) NOT NULL,
     content LONGTEXT NOT NULL,
+    reasoning_content LONGTEXT NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     KEY idx_messages_conversation_id (conversation_id, created_at),
     CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,

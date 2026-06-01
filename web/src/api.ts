@@ -26,6 +26,7 @@ export type ChatMessage = {
     user_id?: string;
     role: "user" | "assistant";
     content: string;
+    reasoning_content?: string;
 };
 
 function conversationTitlePayload(title?: string): { title?: string } {
@@ -101,7 +102,7 @@ export const api = {
         content: string,
         handlers: {
             onTool: (payload: { name: string; status: string; result: string }) => void;
-            onAssistant: (payload: { content: string }) => void;
+            onAssistant: (payload: { content: string; reasoning_content?: string }) => void;
             onError: (message: string) => void;
             onDone: () => void;
         },

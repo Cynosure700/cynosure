@@ -56,10 +56,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 		choice := resp.Choices[0]
 		msg := choice.Message
-		messages = append(messages, msg)
+		requestMsg := msg
+		messages = append(messages, requestMsg)
 
 		if choice.FinishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			return s.persistAssistantReply(ctx, conversation, user.ID, history, fallbackAssistantContent(msg.Content), writer)
+			return s.persistAssistantReply(ctx, conversation, user.ID, history, fallbackAssistantContent(msg.Content), msg.ReasoningContent, writer)
 		}
 
 		for _, tc := range msg.ToolCalls {
@@ -73,14 +74,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	}
 }
 
-func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, writer EventWriter) (storage.Message, error) {
-	assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: userID, Role: "assistant", Content: content}
+func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, reasoningContent string, writer EventWriter) (storage.Message, error) {
+	assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: userID, Role: "assistant", Content: content, ReasoningContent: reasoningContent}
 	updatedHistory := append(history, assistant)
 	if err := s.Store.SetConversationHistory(ctx, conversation.ID, updatedHistory); err != nil {
 		return storage.Message{}, err
 	}
 	if writer != nil {
-		_ = writer.Event("assistant", map[string]any{"content": assistant.Content})
+		_ = writer.Event("assistant", map[string]any{"content": assistant.Content, "reasoning_content": assistant.ReasoningContent})
 	}
 	return assistant, nil
 }

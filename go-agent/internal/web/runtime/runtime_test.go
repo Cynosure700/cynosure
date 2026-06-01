@@ -92,6 +92,20 @@ type fakeLLMClient struct {
 	reqs      []openai.ChatCompletionRequest
 }
 
+type captureEventWriter struct {
+	events []capturedEvent
+}
+
+type capturedEvent struct {
+	name string
+	data any
+}
+
+func (w *captureEventWriter) Event(name string, data any) error {
+	w.events = append(w.events, capturedEvent{name: name, data: data})
+	return nil
+}
+
 func testAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
 	return config.AppConfig{
@@ -163,6 +177,42 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	}
 	if store.touchedID != "" {
 		t.Fatalf("expected no activity-only touch when inferring title, got %q", store.touchedID)
+	}
+}
+
+func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
+		Choices: []openai.ChatCompletionChoice{{
+			FinishReason: openai.FinishReasonStop,
+			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "最终答案", ReasoningContent: "内部推理过程"},
+		}},
+	}}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reasoning", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "解释一下", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "最终答案" || message.ReasoningContent != "内部推理过程" {
+		t.Fatalf("expected content and reasoning content to be persisted, got %#v", message)
+	}
+	if got := store.historyUpdates[0][1].ReasoningContent; got != "内部推理过程" {
+		t.Fatalf("expected history reasoning content, got %q", got)
+	}
+	if len(writer.events) != 1 || writer.events[0].name != "assistant" {
+		t.Fatalf("expected one assistant event, got %#v", writer.events)
+	}
+	payload, ok := writer.events[0].data.(map[string]any)
+	if !ok || payload["reasoning_content"] != "内部推理过程" {
+		t.Fatalf("expected assistant event to include reasoning_content, got %#v", writer.events[0].data)
 	}
 }
 
@@ -276,6 +326,20 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 	}
 	if !contains(systemPrompt, "- user-skill: User description") {
 		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
+	}
+}
+
+func TestBuildOpenAIMessagesCarriesHistoryReasoningContent(t *testing.T) {
+	messages := buildOpenAIMessages("system prompt", []storage.Message{
+		{Role: "user", Content: "问题"},
+		{Role: "assistant", Content: "回答", ReasoningContent: "历史推理"},
+	})
+
+	if len(messages) != 3 {
+		t.Fatalf("expected system plus 2 history messages, got %d", len(messages))
+	}
+	if messages[2].Content != "回答" || messages[2].ReasoningContent != "历史推理" {
+		t.Fatalf("expected assistant history message to carry reasoning content, got %#v", messages[2])
 	}
 }
 

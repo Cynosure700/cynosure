@@ -67,7 +67,7 @@ func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 func buildOpenAIMessages(systemPrompt string, history []storage.Message) []openai.ChatCompletionMessage {
 	messages := []openai.ChatCompletionMessage{{Role: "system", Content: systemPrompt}}
 	for _, msg := range history {
-		messages = append(messages, openai.ChatCompletionMessage{Role: msg.Role, Content: msg.Content})
+		messages = append(messages, openai.ChatCompletionMessage{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
 	}
 	return messages
 }

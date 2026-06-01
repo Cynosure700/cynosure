@@ -16,6 +16,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureConversationHistoryColumns(ctx); err != nil {
 		return fmt.Errorf("migrate conversation history columns: %w", err)
 	}
+	if err := s.ensureMessageReasoningContentColumn(ctx); err != nil {
+		return fmt.Errorf("migrate message reasoning content column: %w", err)
+	}
 	return nil
 }
 
@@ -58,6 +61,20 @@ func (s *Store) ensureConversationHistoryColumns(ctx context.Context) error {
 		if _, err := s.DB.ExecContext(ctx, `ALTER TABLE conversations ADD UNIQUE KEY uniq_conversations_user_root_message (user_id, root_message_id)`); err != nil {
 			return fmt.Errorf("add conversation root message index: %w", err)
 		}
+	}
+	return nil
+}
+
+func (s *Store) ensureMessageReasoningContentColumn(ctx context.Context) error {
+	hasReasoningContent, err := s.columnExists(ctx, "messages", "reasoning_content")
+	if err != nil {
+		return err
+	}
+	if hasReasoningContent {
+		return nil
+	}
+	if _, err := s.DB.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN reasoning_content LONGTEXT NULL AFTER content`); err != nil {
+		return fmt.Errorf("add reasoning_content: %w", err)
 	}
 	return nil
 }

@@ -45,13 +45,15 @@ type Conversation struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// 该表已经不使用，作为存储的结构体，用于存储消息历史
 type Message struct {
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversation_id"`
-	UserID         string    `json:"user_id"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	ConversationID   string    `json:"conversation_id"`
+	UserID           string    `json:"user_id"`
+	Role             string    `json:"role"`
+	Content          string    `json:"content"`
+	ReasoningContent string    `json:"reasoning_content,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type ToolCall struct {

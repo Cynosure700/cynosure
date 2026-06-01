@@ -8,15 +8,7 @@
 - Skill：内置 Skill + 用户自定义 Skill
 - Tool：按白名单暴露 `load_skill`、`bash`、`read_file`、`write_file`、`edit_file`
 - Workspace：工具只访问服务端 `WORKSPACE_ROOT`，默认拒绝越权路径和危险命令
-- 存储：MySQL 持久化用户、会话历史、Skill、工具调用记录；Redis 缓存会话上下文
-
-## 会话历史存储
-
-- 会话以 `user_id + root_message_id` 作为用户内唯一锚点
-- `conversations.history_json` 保存完整消息历史 JSON，是新会话历史的事实来源
-- 每轮对话成功完成后，会把 user + assistant 的完整历史一次性写回 `history_json`
-- `GET /api/conversations/:id` 返回的 `messages` 从 `history_json` 解析得到
-- `messages` 表仅作为 legacy 兼容保留，新逻辑不再逐条写入
+- 存储：MySQL 持久化用户、会话、消息、Skill、工具调用记录；Redis 缓存会话上下文
 
 ## Skill 加载规则
 
@@ -33,28 +25,39 @@
 
 ## 通用 system prompt
 
-通用 system prompt 的基础内容运行时位于 `WORKSPACE_ROOT/system_prompt.md`。服务启动时读取该文件；开启 agent loop 时，再拼接当前用户、workspace、工具、Skill 等动态段，组成最终 system prompt。
+通用 system prompt 定义在 `internal/assistant/prompt.go`，当前基础内容如下，调整后会影响 Web 聊天运行时：
 
-默认路径是 `WORKSPACE_ROOT/system_prompt.md`，也可以通过 `SYSTEM_PROMPT_PATH` 或 `WORKSPACE_ROOT/config.json` 中的 `system_prompt_path` 覆盖。
+```text
+You are nano_cc, a general-purpose agent rather than a chat-only assistant.
 
-运行时会额外拼接的动态段包括：
+Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.
 
-- 当前响应场景：`surface`
-- 当前 workspace：`WORKSPACE_ROOT`
-- 本轮可用工具列表
-- 本轮 Skill snapshot 描述
-- 可选 memory 段
+Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.
 
-通常只需要编辑 `WORKSPACE_ROOT/system_prompt.md` 中的基础部分；动态段为空时不会写入最终 prompt。
+Do not assume shell access, local workspace access, or local file operations unless the runtime explicitly supports them.
+
+You are responding inside {surface}.
+
+Current workspace root: {working_directory}.
+
+Treat that workspace root as your default working directory for runtime file and shell operations unless the runtime tells you otherwise.
+
+Runtime tools available in this conversation: {tool_names}.
+
+Available skills:
+{skill_descriptions}
+
+{memory_section}
+```
+
+其中 `{surface}`、`{working_directory}`、`{tool_names}`、`{skill_descriptions}`、`{memory_section}` 会在运行时按当前用户、会话、工具和 Skill 动态填充；为空的动态段不会写入最终 prompt。
 
 ## 目录结构
 
 ```text
 go-agent/
 ├── main.go                  # Web 服务入口
-├── config.json              # 构建时同步到 output/workspace/config.json，可选
-├── system_prompt.md         # 构建时同步到 output/workspace/system_prompt.md
-├── cmd/                     # build.sh 会逐个编译其直接子目录
+├── cmd/build-artifacts/     # 构建 runtime 命令与脚本资源
 ├── internal/
 │   ├── assistant/           # system prompt
 │   ├── config/              # 配置与 runtime 路径
@@ -63,11 +66,6 @@ go-agent/
 │   └── web/                 # HTTP、鉴权、runtime、storage
 ├── skills/                  # 源码内置 Skill
 ├── workspace/               # 本地 runtime workspace
-│   ├── config.json          # 运行时配置，可选
-│   ├── system_prompt.md     # 运行时读取的基础 system prompt
-│   ├── logs/                # 会话日志、调试日志
-│   ├── cmd/                 # 构建后的 runtime 命令
-│   └── skills/              # 内置 Skill
 └── output/                  # build.sh 生成的部署产物
 ```
 
@@ -83,7 +81,7 @@ go-agent/
 
 ## 配置
 
-后端优先读取环境变量；LLM 配置缺失时可回退到 `WORKSPACE_ROOT/config.json`。
+后端优先读取环境变量；LLM 配置缺失时可回退到 `config.json`。
 
 最常用配置：
 
@@ -96,7 +94,6 @@ SERVER_ADDR=:8080
 ALLOWED_ORIGIN=http://localhost:5173
 APP_HOME=/path/to/go-agent
 WORKSPACE_ROOT=
-SYSTEM_PROMPT_PATH=
 
 WEB_ALLOWED_TOOLS=load_skill,bash,read_file,write_file,edit_file
 BASH_ALLOW_OUTSIDE_WORKSPACE=false
@@ -121,20 +118,17 @@ SESSION_TTL_MINUTES=10080
 
 - `APP_HOME` 默认是当前目录
 - `WORKSPACE_ROOT` 未设置时使用 `APP_HOME/workspace`
-- `SYSTEM_PROMPT_PATH` 未设置时使用 `WORKSPACE_ROOT/system_prompt.md`
 - `BUILTIN_SKILLS_DIR` 默认是 `WORKSPACE_ROOT/skills`
 - `COMMAND_BIN_DIR` 默认是 `WORKSPACE_ROOT/bin`
 - `COMMAND_SCRIPT_DIR` 默认是 `WORKSPACE_ROOT/cmd`
-- 日志固定写入 `WORKSPACE_ROOT/logs`
 
-`WORKSPACE_ROOT/config.json` 示例：
+`config.json` 示例：
 
 ```json
 {
   "base_url": "https://api.deepseek.com",
   "api_key": "your-api-key",
   "model_id": "deepseek-chat",
-  "system_prompt_path": "system_prompt.md",
   "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file",
   "bash_allow_outside_workspace": false,
   "bash_allow_dangerous_commands": false
@@ -189,14 +183,10 @@ cd go-agent
 output/
 ├── bin/go-agent
 └── workspace/
-    ├── cmd/                 # cmd/ 下每个直接子目录编译出的命令
-    ├── config.json          # 从根目录 config.json 同步，可选
-    ├── logs/                # 日志目录
-    ├── skills/              # 从 skills/ 同步的内置 Skill
-    └── system_prompt.md     # 从根目录 system_prompt.md 同步
+    ├── bin/
+    ├── cmd/
+    └── skills/
 ```
-
-`build.sh` 会直接完成全部构建：主服务二进制输出到 `output/bin/`，`cmd/` 下每个直接子目录编译到 `output/workspace/cmd/`，`skills/` 同步到 `output/workspace/skills/`，根目录 `system_prompt.md` 与可选的 `config.json` 同步到 `output/workspace/`。
 
 云端启动示例：
 

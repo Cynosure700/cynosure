@@ -281,7 +281,7 @@ export function App() {
 
         await api.streamConversation(activeConversationId, content, {
             onTool: (payload) => setToolEvents((prev) => [...prev, payload]),
-            onAssistant: (payload) => setMessages((prev) => [...prev, { role: "assistant", content: payload.content }]),
+            onAssistant: (payload) => setMessages((prev) => [...prev, { role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content }]),
             onError: (message) => setError(message),
             onDone: () => setSending(false),
         });
@@ -614,6 +614,12 @@ export function App() {
                         ) : messages.map((message, index) => (
                             <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
                                 <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
+                                {message.role === "assistant" && message.reasoning_content?.trim() && (
+                                    <details className="message-reasoning">
+                                        <summary>推理过程</summary>
+                                        <div>{message.reasoning_content}</div>
+                                    </details>
+                                )}
                                 <div className="message-content">
                                     {message.role === "assistant" ? renderAssistantContent(message.content) : message.content}
                                 </div>
