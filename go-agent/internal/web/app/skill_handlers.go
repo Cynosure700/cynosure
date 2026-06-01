@@ -20,7 +20,7 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"skills": appendBuiltinSkills(skills, s.builtinSkills)})
+		writeJSON(w, http.StatusOK, map[string]any{"skills": skills})
 	case http.MethodPost:
 		var body struct{ Name, Description, Content, Status string }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -49,8 +49,8 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSkillByID(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	skillID := strings.TrimPrefix(r.URL.Path, "/api/skills/")
-	if builtinSkill, ok := builtinSkillByID(skillID, s.builtinSkills); ok {
-		s.handleBuiltinSkillByID(w, r, builtinSkill)
+	if isBuiltinSkillID(skillID, s.builtinSkills) {
+		http.NotFound(w, r)
 		return
 	}
 	skill, err := s.store.GetSkillByID(r.Context(), skillID)
@@ -111,17 +111,6 @@ func (s *Server) handleSkillByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"skill": skill})
-	default:
-		methodNotAllowed(w)
-	}
-}
-
-func (s *Server) handleBuiltinSkillByID(w http.ResponseWriter, r *http.Request, skill storage.Skill) {
-	switch r.Method {
-	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"skill": skill})
-	case http.MethodPut, http.MethodPatch, http.MethodDelete:
-		http.Error(w, "builtin skills are read-only", http.StatusForbidden)
 	default:
 		methodNotAllowed(w)
 	}

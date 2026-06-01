@@ -165,7 +165,7 @@ func TestHandleSkillByID_RejectsBuiltinSlugConflictOnUpdate(t *testing.T) {
 	}
 }
 
-func TestHandleSkills_IncludesBuiltinSkillsAsReadOnlyEntries(t *testing.T) {
+func TestHandleSkills_ListsOnlyUserOwnedSkills(t *testing.T) {
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -188,25 +188,21 @@ func TestHandleSkills_IncludesBuiltinSkillsAsReadOnlyEntries(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Skills) != 2 {
-		t.Fatalf("expected builtin and custom skills, got %#v", body.Skills)
+	if len(body.Skills) != 1 {
+		t.Fatalf("expected only custom skills, got %#v", body.Skills)
 	}
-	builtinSkill := body.Skills[0]
-	if builtinSkill.ID != builtinSkillID("builtin-skill") || builtinSkill.Source != "builtin" || !builtinSkill.ReadOnly {
-		t.Fatalf("expected builtin read-only skill entry, got %#v", builtinSkill)
+	if body.Skills[0].ID != "skill_1" {
+		t.Fatalf("expected custom skill to remain in list, got %#v", body.Skills[0])
 	}
-	if builtinSkill.Status != "enabled" {
-		t.Fatalf("expected builtin skill status enabled, got %#v", builtinSkill)
+	if body.Skills[0].ReadOnly {
+		t.Fatalf("expected custom skill to remain writable, got %#v", body.Skills[0])
 	}
-	if body.Skills[1].ID != "skill_1" {
-		t.Fatalf("expected custom skill to remain in list, got %#v", body.Skills[1])
-	}
-	if body.Skills[1].ReadOnly {
-		t.Fatalf("expected custom skill to remain writable, got %#v", body.Skills[1])
+	if body.Skills[0].Source != "" {
+		t.Fatalf("expected no builtin source marker on custom skill, got %#v", body.Skills[0])
 	}
 }
 
-func TestHandleSkillByID_ReturnsBuiltinSkillWithoutStoreLookup(t *testing.T) {
+func TestHandleSkillByID_HidesBuiltinSkillDetails(t *testing.T) {
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -220,27 +216,15 @@ func TestHandleSkillByID_ReturnsBuiltinSkillWithoutStoreLookup(t *testing.T) {
 
 	server.handleSkillByID(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, resp.Code)
 	}
 	if store.getCalled {
 		t.Fatalf("expected builtin skill lookup to bypass database store")
 	}
-	var body struct {
-		Skill storage.Skill `json:"skill"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.Skill.ID != builtinSkillID("builtin-skill") || !body.Skill.ReadOnly || body.Skill.Source != "builtin" {
-		t.Fatalf("expected builtin read-only skill payload, got %#v", body.Skill)
-	}
-	if body.Skill.Content != "builtin body" {
-		t.Fatalf("expected builtin skill content, got %#v", body.Skill)
-	}
 }
 
-func TestHandleSkillByID_RejectsBuiltinMutationRequests(t *testing.T) {
+func TestHandleSkillByID_TreatsBuiltinMutationRequestsAsNotFound(t *testing.T) {
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -267,11 +251,8 @@ func TestHandleSkillByID_RejectsBuiltinMutationRequests(t *testing.T) {
 
 			server.handleSkillByID(resp, req)
 
-			if resp.Code != http.StatusForbidden {
-				t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.Code)
-			}
-			if !strings.Contains(resp.Body.String(), "builtin skills are read-only") {
-				t.Fatalf("expected readonly error, got %q", resp.Body.String())
+			if resp.Code != http.StatusNotFound {
+				t.Fatalf("expected status %d, got %d", http.StatusNotFound, resp.Code)
 			}
 			if store.getCalled || store.updateCalled || store.deleteCalled {
 				t.Fatalf("expected builtin mutation to avoid store calls, got %+v", store)
