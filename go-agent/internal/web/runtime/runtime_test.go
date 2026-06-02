@@ -493,7 +493,7 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	}
 }
 
-func TestRespondToConversation_DoesNotStreamToolRoundContentOrReasoning(t *testing.T) {
+func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
 
@@ -528,13 +528,14 @@ func TestRespondToConversation_DoesNotStreamToolRoundContentOrReasoning(t *testi
 		t.Fatalf("expected final content and reasoning, got %#v", message)
 	}
 
+	var sawToolRoundReasoningDelta bool
 	var sawFinalReasoningDelta bool
 	var sawFinalAssistantDelta bool
 	for _, event := range writer.events {
 		payload, _ := event.data.(map[string]any)
 		content, _ := payload["content"].(string)
 		if event.name == "reasoning_delta" && content == "先思考要不要调用工具" {
-			t.Fatalf("tool round reasoning delta should not be streamed: %#v", writer.events)
+			sawToolRoundReasoningDelta = true
 		}
 		if event.name == "assistant_delta" && content == "我先查一下" {
 			t.Fatalf("tool round assistant delta should not be streamed: %#v", writer.events)
@@ -546,12 +547,12 @@ func TestRespondToConversation_DoesNotStreamToolRoundContentOrReasoning(t *testi
 			sawFinalAssistantDelta = true
 		}
 	}
-	if !sawFinalReasoningDelta || !sawFinalAssistantDelta {
-		t.Fatalf("expected final round reasoning and assistant deltas, got %#v", writer.events)
+	if !sawToolRoundReasoningDelta || !sawFinalReasoningDelta || !sawFinalAssistantDelta {
+		t.Fatalf("expected tool round reasoning, final round reasoning and final assistant deltas, got %#v", writer.events)
 	}
 }
 
-func TestShouldEmitModelDeltas(t *testing.T) {
+func TestShouldEmitAssistantContentDeltas(t *testing.T) {
 	tests := []struct {
 		name         string
 		finishReason openai.FinishReason
@@ -566,7 +567,7 @@ func TestShouldEmitModelDeltas(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldEmitModelDeltas(tt.finishReason, tt.toolCalls); got != tt.expected {
+			if got := shouldEmitAssistantContentDeltas(tt.finishReason, tt.toolCalls); got != tt.expected {
 				t.Fatalf("expected %v, got %v", tt.expected, got)
 			}
 		})

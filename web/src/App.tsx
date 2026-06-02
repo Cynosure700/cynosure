@@ -170,6 +170,11 @@ export function App() {
         [conversations, activeConversationId],
     );
 
+    const menuConversation = useMemo(
+        () => (Array.isArray(conversations) ? conversations : []).find((item) => item.id === openConversationMenu?.conversationId) ?? null,
+        [conversations, openConversationMenu],
+    );
+
     const enabledSkillCount = useMemo(
         () => skills.filter((skill) => skill.status === "enabled").length,
         [skills],
@@ -402,7 +407,6 @@ export function App() {
     function toggleConversationMenu(event: MouseEvent<HTMLButtonElement>, conversationId: string) {
         event.stopPropagation();
         const rect = event.currentTarget.getBoundingClientRect();
-        const menuWidth = 150;
         const menuHeight = 96;
         const gap = 8;
         setOpenConversationMenu((current) =>
@@ -410,7 +414,7 @@ export function App() {
                 ? null
                 : {
                     conversationId,
-                    left: Math.max(gap, rect.right - menuWidth),
+                    left: rect.right + gap,
                     top: rect.bottom + gap + menuHeight > window.innerHeight ? Math.max(gap, rect.top - menuHeight - gap) : rect.bottom + gap,
                 },
         );
@@ -585,28 +589,6 @@ export function App() {
                                                     >
                                                         •••
                                                     </button>
-                                                    {openConversationMenu?.conversationId === conversation.id && (
-                                                        <div
-                                                            className="conversation-menu-panel"
-                                                            style={{ left: openConversationMenu.left, top: openConversationMenu.top }}
-                                                            onClick={(event) => event.stopPropagation()}
-                                                        >
-                                                            <button
-                                                                className="menu-action"
-                                                                onClick={() => startRenameConversation(conversation)}
-                                                                disabled={savingRename || deletingConversationId === conversation.id}
-                                                            >
-                                                                重命名会话
-                                                            </button>
-                                                            <button
-                                                                className="menu-action danger"
-                                                                onClick={() => void handleDeleteConversation(conversation.id)}
-                                                                disabled={deletingConversationId === conversation.id || savingRename}
-                                                            >
-                                                                {deletingConversationId === conversation.id ? "删除中..." : "删除会话"}
-                                                            </button>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </>
                                         )}
@@ -780,6 +762,28 @@ export function App() {
                     </section>
                 )}
             </main>
+            {openConversationMenu && menuConversation && (
+                <div
+                    className="conversation-menu-panel"
+                    style={{ left: openConversationMenu.left, top: openConversationMenu.top }}
+                    onClick={(event) => event.stopPropagation()}
+                >
+                    <button
+                        className="menu-action"
+                        onClick={() => startRenameConversation(menuConversation)}
+                        disabled={savingRename || deletingConversationId === menuConversation.id}
+                    >
+                        重命名会话
+                    </button>
+                    <button
+                        className="menu-action danger"
+                        onClick={() => void handleDeleteConversation(menuConversation.id)}
+                        disabled={deletingConversationId === menuConversation.id || savingRename}
+                    >
+                        {deletingConversationId === menuConversation.id ? "删除中..." : "删除会话"}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

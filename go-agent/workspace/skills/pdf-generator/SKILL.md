@@ -51,15 +51,18 @@ Choose the appropriate library based on the user's needs:
 
 ## Working with fpdf2
 
+> ⚠️ **fpdf2 v2.7+ API Note**: In fpdf2 2.7+, use `XPos.LMARGIN` / `YPos.NEXT` enums (not string `"LMARGIN"` / `"NEXT_LINE"`) for cell positioning. Import them from `fpdf.enums`.
+
 ```python
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 pdf = FPDF()
 pdf.add_page()
 
 # Text
 pdf.set_font("Helvetica", size=12)
-pdf.cell(text="Hello World", new_x="LMARGIN", new_y="NEXT_LINE")
+pdf.cell(text="Hello World", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 # Multi-line text
 pdf.multi_cell(w=0, text="Long paragraph text...")
@@ -81,10 +84,11 @@ pdf.output("output.pdf")
 ### fpdf2 Key Features
 
 - **`pdf.set_font(family, style, size)`** — Set font (families: Helvetica, Times, Courier; style: '', 'B', 'I', 'U')
-- **`pdf.cell(w, h, text, border, align, fill)`** — Single cell (use `new_x="LMARGIN", new_y="NEXT_LINE"` for line break)
+- **`pdf.cell(w, h, text, border, align, fill)`** — Single cell. For line break, use `new_x=XPos.LMARGIN, new_y=YPos.NEXT` (import from `fpdf.enums`)
 - **`pdf.multi_cell(w, h, text)`** — Auto-wrapping multi-line text
 - **`pdf.image(name, x, y, w, h)`** — Insert image (supports PNG, JPG)
 - **`pdf.add_page()`** — New page
+- **`pdf.set_auto_page_break(auto, margin)`** — Enable automatic page breaks
 - **`pdf.set_fill_color(r, g, b)`** — Background color
 - **`pdf.set_text_color(r, g, b)`** — Text color
 - **`pdf.set_draw_color(r, g, b)`** — Border/line color
