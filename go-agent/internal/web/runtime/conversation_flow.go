@@ -14,6 +14,16 @@ import (
 	"nano_cc/internal/web/storage"
 )
 
+const (
+	assistantDeltaEvent = "assistant_delta"
+	reasoningDeltaEvent = "reasoning_delta"
+)
+
+type bufferedModelDelta struct {
+	Event   string
+	Content string
+}
+
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
 	history, err := s.loadConversationMessages(ctx, conversation.ID)
 	if err != nil {
@@ -83,6 +93,7 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 	var reasoningContent strings.Builder
 	var finishReason openai.FinishReason
 	toolCalls := &streamedToolCallAccumulator{}
+	var bufferedDeltas []bufferedModelDelta
 	seenChoice := false
 	seenOutput := false
 
@@ -102,16 +113,12 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		if choice.Delta.Content != "" {
 			seenOutput = true
 			content.WriteString(choice.Delta.Content)
-			if state.Writer != nil {
-				_ = state.Writer.Event("assistant_delta", map[string]any{"content": choice.Delta.Content})
-			}
+			bufferedDeltas = append(bufferedDeltas, bufferedModelDelta{Event: assistantDeltaEvent, Content: choice.Delta.Content})
 		}
 		if choice.Delta.ReasoningContent != "" {
 			seenOutput = true
 			reasoningContent.WriteString(choice.Delta.ReasoningContent)
-			if state.Writer != nil {
-				_ = state.Writer.Event("reasoning_delta", map[string]any{"content": choice.Delta.ReasoningContent})
-			}
+			bufferedDeltas = append(bufferedDeltas, bufferedModelDelta{Event: reasoningDeltaEvent, Content: choice.Delta.ReasoningContent})
 		}
 		if len(choice.Delta.ToolCalls) > 0 {
 			seenOutput = true
@@ -124,8 +131,18 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 	if !seenChoice || (!seenOutput && finishReason == "") {
 		return openai.ChatCompletionMessage{}, "", fmt.Errorf("model stream returned no choices")
 	}
+	calls := toolCalls.Calls()
+	if state.Writer != nil && shouldEmitModelDeltas(finishReason, calls) {
+		for _, delta := range bufferedDeltas {
+			_ = state.Writer.Event(delta.Event, map[string]any{"content": delta.Content})
+		}
+	}
 
-	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: toolCalls.Calls()}, finishReason, nil
+	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, nil
+}
+
+func shouldEmitModelDeltas(finishReason openai.FinishReason, toolCalls []openai.ToolCall) bool {
+	return finishReason != openai.FinishReasonToolCalls && len(toolCalls) == 0
 }
 
 type streamedToolCallAccumulator struct {

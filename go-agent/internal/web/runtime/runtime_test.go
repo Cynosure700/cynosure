@@ -493,6 +493,86 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_DoesNotStreamToolRoundContentOrReasoning(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考要不要调用工具"}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "我先查一下"}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "工具已返回，组织最终答案"}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "最终答案"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	config.Client = llm
+
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_round_text", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "先查资料再回答", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "最终答案" || message.ReasoningContent != "工具已返回，组织最终答案" {
+		t.Fatalf("expected final content and reasoning, got %#v", message)
+	}
+
+	var sawFinalReasoningDelta bool
+	var sawFinalAssistantDelta bool
+	for _, event := range writer.events {
+		payload, _ := event.data.(map[string]any)
+		content, _ := payload["content"].(string)
+		if event.name == "reasoning_delta" && content == "先思考要不要调用工具" {
+			t.Fatalf("tool round reasoning delta should not be streamed: %#v", writer.events)
+		}
+		if event.name == "assistant_delta" && content == "我先查一下" {
+			t.Fatalf("tool round assistant delta should not be streamed: %#v", writer.events)
+		}
+		if event.name == "reasoning_delta" && content == "工具已返回，组织最终答案" {
+			sawFinalReasoningDelta = true
+		}
+		if event.name == "assistant_delta" && content == "最终答案" {
+			sawFinalAssistantDelta = true
+		}
+	}
+	if !sawFinalReasoningDelta || !sawFinalAssistantDelta {
+		t.Fatalf("expected final round reasoning and assistant deltas, got %#v", writer.events)
+	}
+}
+
+func TestShouldEmitModelDeltas(t *testing.T) {
+	tests := []struct {
+		name         string
+		finishReason openai.FinishReason
+		toolCalls    []openai.ToolCall
+		expected     bool
+	}{
+		{name: "stop without tool calls", finishReason: openai.FinishReasonStop, expected: true},
+		{name: "tool calls finish reason", finishReason: openai.FinishReasonToolCalls, toolCalls: []openai.ToolCall{{ID: "tool_1"}}, expected: false},
+		{name: "tool calls with stop finish reason", finishReason: openai.FinishReasonStop, toolCalls: []openai.ToolCall{{ID: "tool_1"}}, expected: false},
+		{name: "empty finish reason without tool calls", expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldEmitModelDeltas(tt.finishReason, tt.toolCalls); got != tt.expected {
+				t.Fatalf("expected %v, got %v", tt.expected, got)
+			}
+		})
+	}
+}
+
 func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesNotEmitToolEvents(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
