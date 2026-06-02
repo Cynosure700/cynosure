@@ -402,13 +402,16 @@ export function App() {
     function toggleConversationMenu(event: MouseEvent<HTMLButtonElement>, conversationId: string) {
         event.stopPropagation();
         const rect = event.currentTarget.getBoundingClientRect();
+        const menuWidth = 150;
+        const menuHeight = 96;
+        const gap = 8;
         setOpenConversationMenu((current) =>
             current?.conversationId === conversationId
                 ? null
                 : {
                     conversationId,
-                    left: rect.right + 8,
-                    top: rect.top,
+                    left: Math.max(gap, rect.right - menuWidth),
+                    top: rect.bottom + gap + menuHeight > window.innerHeight ? Math.max(gap, rect.top - menuHeight - gap) : rect.bottom + gap,
                 },
         );
     }

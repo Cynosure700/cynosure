@@ -89,12 +89,7 @@ func handleLoadSkill(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	content := renderLoadedSkill(loaded)
-	envNote := formatRuntimeEnvNoteFromContext(ctx)
-	if envNote == "" {
-		return content, nil
-	}
-	return content + "\n\n" + envNote, nil
+	return renderLoadedSkill(loaded), nil
 }
 
 func renderLoadedSkill(loaded LoadedSkill) string {
@@ -102,10 +97,7 @@ func renderLoadedSkill(loaded LoadedSkill) string {
 	if entry == nil {
 		entry = &sessions.SkillEntry{}
 	}
-	metadata := make([]string, 0, len(entry.Meta)+1)
-	if strings.TrimSpace(entry.Path) != "" {
-		metadata = append(metadata, "path: "+entry.Path)
-	}
+	metadata := make([]string, 0, len(entry.Meta))
 	keys := make([]string, 0, len(entry.Meta))
 	for key := range entry.Meta {
 		keys = append(keys, key)
@@ -124,31 +116,4 @@ func renderLoadedSkill(loaded LoadedSkill) string {
 		html.EscapeString(strings.Join(metadata, "\n")),
 		entry.Body,
 	)
-}
-
-func formatRuntimeEnvNoteFromContext(ctx context.Context) string {
-	env, ok := RuntimeEnvFromContext(ctx)
-	if !ok {
-		return ""
-	}
-	lines := make([]string, 0, 5)
-	if env.AppHome != "" {
-		lines = append(lines, "APP_HOME="+env.AppHome)
-	}
-	if env.CommandBinDir != "" {
-		lines = append(lines, "COMMAND_BIN_DIR="+env.CommandBinDir)
-	}
-	if env.CommandScriptDir != "" {
-		lines = append(lines, "COMMAND_SCRIPT_DIR="+env.CommandScriptDir)
-	}
-	if env.WorkspaceRoot != "" {
-		lines = append(lines, "WORKSPACE_ROOT="+env.WorkspaceRoot)
-	}
-	if env.CurrentWorkingDir != "" {
-		lines = append(lines, "CURRENT_WORKING_DIR="+env.CurrentWorkingDir)
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return "<runtime-paths>\n" + strings.Join(lines, "\n") + "\n</runtime-paths>"
 }

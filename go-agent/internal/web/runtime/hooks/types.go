@@ -116,7 +116,7 @@ func (s *LoopState) InferTitle(input string) string {
 }
 
 func (o ToolExecutionOutcome) MessageContent() string {
-	data, err := json.Marshal(o.Result)
+	data, err := json.Marshal(o)
 	if err != nil {
 		return fmt.Sprintf(`{"status":%q,"result":%q}`, o.Status, o.Result)
 	}

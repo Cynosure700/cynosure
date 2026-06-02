@@ -1356,7 +1356,7 @@ func TestToolRegistryDefinitions_AreLoadedAtRegistryCreation(t *testing.T) {
 	}
 }
 
-func TestToolRegistryExecute_LoadSkillReturnsFullSkillInfo(t *testing.T) {
+func TestToolRegistryExecute_LoadSkillReturnsSkillContentWithoutRuntimePaths(t *testing.T) {
 	localSkills := sessions.NewSkillLoader()
 	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description", "tags": "go,agent"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -1377,43 +1377,17 @@ func TestToolRegistryExecute_LoadSkillReturnsFullSkillInfo(t *testing.T) {
 	if !contains(content, "<skill source=\"local\" name=\"builtin-skill\">") || !contains(content, "builtin body") {
 		t.Fatalf("expected loaded skill content, got %q", content)
 	}
-	if !contains(content, "<metadata>") || !contains(content, "description: Builtin description") || !contains(content, "tags: go,agent") || !contains(content, "path: builtin://builtin-skill") {
-		t.Fatalf("expected loaded skill to include full metadata, got %q", content)
+	if !contains(content, "<metadata>") || !contains(content, "description: Builtin description") || !contains(content, "tags: go,agent") {
+		t.Fatalf("expected loaded skill to include non-path metadata, got %q", content)
 	}
-	if !contains(content, "<runtime-paths>") || !contains(content, "COMMAND_BIN_DIR=/deploy/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/deploy/app/workspace/cmd") {
-		t.Fatalf("expected loaded skill content to include runtime paths, got %q", content)
+	if contains(content, "path: builtin://builtin-skill") || contains(content, "<runtime-paths>") {
+		t.Fatalf("expected loaded skill output to omit local paths, got %q", content)
 	}
-	if !contains(content, "WORKSPACE_ROOT=/deploy/app/workspace") {
-		t.Fatalf("expected loaded skill content to include workspace root, got %q", content)
+	if contains(content, "/deploy/app") || contains(content, "COMMAND_BIN_DIR") || contains(content, "COMMAND_SCRIPT_DIR") || contains(content, "WORKSPACE_ROOT") {
+		t.Fatalf("expected loaded skill output to omit runtime path details, got %q", content)
 	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
-	}
-}
-
-func TestToolRegistryExecute_LoadSkillUsesConfiguredLocalWorkspacePaths(t *testing.T) {
-	localSkills := sessions.NewSkillLoader()
-	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{
-		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
-	})
-	snapshot := agenttools.NewSkillSnapshot(nil, localSkills)
-	registry := NewToolRegistry(config.AppConfig{
-		AppHome:          "/repo/app",
-		WorkspaceRoot:    "/repo/app/workspace",
-		CommandBinDir:    "/repo/app/workspace/bin",
-		CommandScriptDir: "/repo/app/workspace/cmd",
-	})
-
-	result, err := registry.Execute(context.Background(), ToolContext{Skills: snapshot}, "load_skill", `{"name":"builtin-skill"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	content := result.Output
-	if !contains(content, "COMMAND_BIN_DIR=/repo/app/workspace/bin") || !contains(content, "COMMAND_SCRIPT_DIR=/repo/app/workspace/cmd") {
-		t.Fatalf("expected loaded skill content to include configured local workspace paths, got %q", content)
-	}
-	if !contains(content, "WORKSPACE_ROOT=/repo/app/workspace") {
-		t.Fatalf("expected loaded skill content to include local workspace root, got %q", content)
 	}
 }
 
