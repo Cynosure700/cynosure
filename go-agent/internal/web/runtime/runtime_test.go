@@ -524,13 +524,15 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if message.Content != "最终答案" || message.ReasoningContent != "工具已返回，组织最终答案" {
+	expectedReasoning := "先思考要不要调用工具工具已返回，组织最终答案"
+	if message.Content != "最终答案" || message.ReasoningContent != expectedReasoning {
 		t.Fatalf("expected final content and reasoning, got %#v", message)
 	}
 
 	var sawToolRoundReasoningDelta bool
 	var sawFinalReasoningDelta bool
 	var sawFinalAssistantDelta bool
+	var sawFinalAssistantWithFullReasoning bool
 	for _, event := range writer.events {
 		payload, _ := event.data.(map[string]any)
 		content, _ := payload["content"].(string)
@@ -546,9 +548,12 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 		if event.name == "assistant_delta" && content == "最终答案" {
 			sawFinalAssistantDelta = true
 		}
+		if event.name == "assistant" && payload["reasoning_content"] == expectedReasoning {
+			sawFinalAssistantWithFullReasoning = true
+		}
 	}
-	if !sawToolRoundReasoningDelta || !sawFinalReasoningDelta || !sawFinalAssistantDelta {
-		t.Fatalf("expected tool round reasoning, final round reasoning and final assistant deltas, got %#v", writer.events)
+	if !sawToolRoundReasoningDelta || !sawFinalReasoningDelta || !sawFinalAssistantDelta || !sawFinalAssistantWithFullReasoning {
+		t.Fatalf("expected tool round reasoning, final round reasoning, final assistant delta and full final reasoning, got %#v", writer.events)
 	}
 }
 

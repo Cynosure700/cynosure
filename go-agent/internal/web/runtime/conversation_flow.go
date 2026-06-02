@@ -42,6 +42,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	state.SystemPrompt = s.buildSystemPrompt(user, snapshot)
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.History)
 	round := 0
+	var cumulativeReasoning strings.Builder
 
 	for {
 		round++
@@ -57,11 +58,12 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		if err != nil {
 			return storage.Message{}, err
 		}
+		cumulativeReasoning.WriteString(msg.ReasoningContent)
 		requestMsg := msg
 		state.Messages = append(state.Messages, requestMsg)
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: msg.ReasoningContent}
+			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
 				return storage.Message{}, err
 			}
