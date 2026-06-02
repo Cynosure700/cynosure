@@ -61,7 +61,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": messages})
+		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": displayConversationMessages(messages)})
 		return
 	}
 
@@ -115,4 +115,14 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	methodNotAllowed(w)
+}
+
+func displayConversationMessages(messages []storage.Message) []storage.Message {
+	displayMessages := make([]storage.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == "user" || (message.Role == "assistant" && len(message.ToolCalls) == 0) {
+			displayMessages = append(displayMessages, message)
+		}
+	}
+	return displayMessages
 }

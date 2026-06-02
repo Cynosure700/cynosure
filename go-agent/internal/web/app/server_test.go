@@ -20,6 +20,7 @@ type fakeServerStore struct {
 	skillToReturn        storage.Skill
 	conversationToReturn storage.Conversation
 	createdConversation  storage.Conversation
+	messages             []storage.Message
 	skills               []storage.Skill
 	createCalled         bool
 	updateCalled         bool
@@ -95,7 +96,7 @@ func (f *fakeServerStore) DeleteConversation(ctx context.Context, conversationID
 }
 
 func (f *fakeServerStore) ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error) {
-	return nil, nil
+	return f.messages, nil
 }
 
 func loadWorkspaceBuiltinSkillsForTest(t *testing.T) *sessions.SkillLoader {
@@ -326,6 +327,41 @@ func TestHandleConversationByID_ReturnsNotFoundAfterDelete(t *testing.T) {
 
 	if getResp.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d after delete, got %d", http.StatusNotFound, getResp.Code)
+	}
+}
+
+func TestHandleConversationByID_ReturnsOnlyDisplayMessages(t *testing.T) {
+	store := &fakeServerStore{
+		conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "test"},
+		messages: []storage.Message{
+			{ID: "msg_user", ConversationID: "conv_1", UserID: "usr_1", Role: "user", Content: "帮我加载技能"},
+			{ID: "msg_assistant_tool", ConversationID: "conv_1", UserID: "usr_1", Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_1", Type: "function", Function: storage.MessageFunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}}}},
+			{ID: "msg_tool", ConversationID: "conv_1", UserID: "usr_1", Role: "tool", ToolCallID: "tool_1", Content: `{"status":"success","result":"loaded"}`},
+			{ID: "msg_assistant", ConversationID: "conv_1", UserID: "usr_1", Role: "assistant", Content: "已经加载完成"},
+		},
+	}
+	server := &Server{store: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/conversations/conv_1", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
+	resp := httptest.NewRecorder()
+
+	server.handleConversationByID(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+	var body struct {
+		Messages []storage.Message `json:"messages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Messages) != 2 {
+		t.Fatalf("expected only user and final assistant messages, got %#v", body.Messages)
+	}
+	if body.Messages[0].Role != "user" || body.Messages[1].Role != "assistant" || body.Messages[1].Content != "已经加载完成" {
+		t.Fatalf("unexpected display messages: %#v", body.Messages)
 	}
 }
 

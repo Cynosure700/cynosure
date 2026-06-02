@@ -12,7 +12,7 @@
 html,
 body,
 #root {
-    min-height: 100%;
+    height: 100%;
 }
 
 body {
@@ -244,8 +244,10 @@ p {
 
 .app-shell {
     display: grid;
-    grid-template-columns: 380px minmax(0, 1fr);
-    min-height: 100vh;
+    grid-template-columns: 420px minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
     background:
         radial-gradient(circle at 62% 10%, rgba(56, 189, 248, 0.08), transparent 24%),
         rgba(0, 0, 0, 0.06);
@@ -255,6 +257,9 @@ p {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
     padding: 18px;
     border-right: 1px solid rgba(148, 163, 184, 0.14);
     background: rgba(6, 10, 24, 0.82);
@@ -637,7 +642,9 @@ p {
 .main-content {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .main-content.with-side-panel {
@@ -646,7 +653,8 @@ p {
 
 .chat-panel,
 .right-panel {
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 0;
     padding: 18px;
 }
 
@@ -971,6 +979,7 @@ p {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    overflow: auto;
     border-left: 1px solid rgba(148, 163, 184, 0.14);
     background: rgba(6, 10, 24, 0.72);
     backdrop-filter: blur(18px);
@@ -1050,12 +1059,17 @@ p {
     .main-content,
     .main-content.with-side-panel {
         grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
     }
 
     .sidebar,
     .chat-panel,
     .right-panel {
+        height: auto;
         min-height: auto;
+        overflow: visible;
     }
 
     .right-panel {
