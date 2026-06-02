@@ -22,6 +22,7 @@ type conversationStore interface {
 	GetConversationCache(ctx context.Context, conversationID string) ([]storage.Message, bool, error)
 	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
 	CreateToolCall(ctx context.Context, tc storage.ToolCall) error
+	CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error
 }
 
 type Service struct {

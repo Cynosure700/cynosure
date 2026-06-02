@@ -23,6 +23,7 @@ type fakeStore struct {
 	messages         []storage.Message
 	historyUpdates   [][]storage.Message
 	toolCalls        []storage.ToolCall
+	subagentMessages []storage.SubagentMessage
 	cached           []storage.Message
 	enabledSkills    []storage.Skill
 	enabledSkillSets [][]storage.Skill
@@ -84,6 +85,11 @@ func (f *fakeStore) ListMessagesByConversation(ctx context.Context, conversation
 
 func (f *fakeStore) CreateToolCall(ctx context.Context, tc storage.ToolCall) error {
 	f.toolCalls = append(f.toolCalls, tc)
+	return nil
+}
+
+func (f *fakeStore) CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error {
+	f.subagentMessages = append(f.subagentMessages, message)
 	return nil
 }
 
@@ -484,6 +490,70 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	}
 	if len(writer.events) < 3 || writer.events[0].name != "tool" || writer.events[1].name != "assistant_delta" || writer.events[len(writer.events)-1].name != "assistant" {
 		t.Fatalf("expected tool event followed by streamed final answer, got %#v", writer.events)
+	}
+}
+
+func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesNotEmitToolEvents(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	spawnArgs := `{"task":"inspect workspace only","cwd":"."}`
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "sub summary"}, FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{cached: []storage.Message{{ID: "old_msg", ConversationID: "conv_spawn", UserID: "usr_1", Role: "user", Content: "previous context must not leak"}}}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"spawn_subagent"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_spawn", Title: "已有标题"}, storage.User{ID: "usr_1", Username: "alice"}, "parent request", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+	if llm.calls != 3 {
+		t.Fatalf("expected main, subagent, main llm calls, got %d", llm.calls)
+	}
+	subReq := llm.reqs[1]
+	if len(subReq.Messages) != 2 || subReq.Messages[1].Role != "user" || subReq.Messages[1].Content != "inspect workspace only" {
+		t.Fatalf("expected subagent to receive fresh system+task messages only, got %#v", subReq.Messages)
+	}
+	for _, msg := range subReq.Messages {
+		if contains(msg.Content, "previous context must not leak") || contains(msg.Content, "parent request") {
+			t.Fatalf("subagent messages leaked parent context: %#v", subReq.Messages)
+		}
+	}
+	for _, event := range writer.events {
+		if event.name != "tool" {
+			continue
+		}
+		payload, _ := event.data.(map[string]any)
+		if payload["name"] == "spawn_subagent" {
+			t.Fatalf("spawn_subagent tool event should not be emitted to frontend: %#v", writer.events)
+		}
+	}
+	if len(store.subagentMessages) < 2 {
+		t.Fatalf("expected subagent trace messages to be stored, got %#v", store.subagentMessages)
+	}
+	if store.subagentMessages[0].Role != "user" || store.subagentMessages[0].Content != "inspect workspace only" {
+		t.Fatalf("expected stored subagent task, got %#v", store.subagentMessages[0])
+	}
+	lastTrace := store.subagentMessages[len(store.subagentMessages)-1]
+	if lastTrace.Role != "assistant" || lastTrace.Content != "sub summary" || lastTrace.ParentToolCallID != "spawn_1" {
+		t.Fatalf("expected stored subagent summary tied to parent tool call, got %#v", lastTrace)
 	}
 }
 

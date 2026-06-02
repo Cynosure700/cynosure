@@ -71,3 +71,22 @@ CREATE TABLE IF NOT EXISTS tool_calls (
     CONSTRAINT fk_tool_calls_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
     CONSTRAINT fk_tool_calls_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS subagent_messages (
+    id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    parent_tool_call_id VARCHAR(128) NOT NULL,
+    conversation_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    sequence_no INT NOT NULL,
+    role VARCHAR(32) NOT NULL,
+    content LONGTEXT NOT NULL,
+    reasoning_content LONGTEXT NULL,
+    tool_call_id VARCHAR(128) NOT NULL DEFAULT '',
+    tool_calls_json LONGTEXT NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uniq_subagent_messages_run_sequence (run_id, sequence_no),
+    KEY idx_subagent_messages_conversation (conversation_id, created_at),
+    CONSTRAINT fk_subagent_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_subagent_messages_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -78,3 +78,18 @@ type ToolCall struct {
 	Summary        string    `json:"summary"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+type SubagentMessage struct {
+	ID               string            `json:"id"`
+	RunID            string            `json:"run_id"`
+	ParentToolCallID string            `json:"parent_tool_call_id"`
+	ConversationID   string            `json:"conversation_id"`
+	UserID           string            `json:"user_id"`
+	SequenceNo       int               `json:"sequence_no"`
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"`
+	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+}

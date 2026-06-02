@@ -158,6 +158,9 @@ func displayConversationToolEvents(messages []storage.Message) []toolEventPayloa
 		if name == "" {
 			name = "tool"
 		}
+		if name == "spawn_subagent" {
+			continue
+		}
 		events = append(events, toolEventPayload{ID: message.ToolCallID, Name: name, Status: status, Result: preview, Truncated: truncated})
 	}
 	return events

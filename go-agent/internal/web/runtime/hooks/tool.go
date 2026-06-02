@@ -38,6 +38,9 @@ func emitToolEventHook(ctx context.Context, h *ToolUseContext) error {
 	if h.State.Writer == nil {
 		return nil
 	}
+	if h.Name == "spawn_subagent" {
+		return nil
+	}
 	preview, truncated := toolResultPreview(h.Outcome.Result)
 	_ = h.State.Writer.Event("tool", map[string]any{"id": h.ToolCall.ID, "name": h.Name, "status": h.Outcome.Status, "result": preview, "truncated": truncated})
 	return nil

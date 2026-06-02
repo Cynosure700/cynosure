@@ -2,5 +2,5 @@
     "base_url": "https://api.deepseek.com",
     "api_key": "sk-b6bf7342c586486fa9dea755ab769250",
     "model_id": "deepseek-v4-flash",
-    "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file"
+    "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file,spawn_subagent"
 }

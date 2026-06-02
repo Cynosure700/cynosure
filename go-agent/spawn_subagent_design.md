@@ -25,12 +25,15 @@
 6. 子 Agent 的工作目录只能位于 `WorkspaceRoot` 下。
 7. 子 Agent 不能递归调用 `spawn_subagent`。
 8. 子 Agent 的工具调用仍经过现有 hook 流程，尤其是工具使用前/后的审计、权限与记录逻辑。
+9. 子 Agent 的回复结果和内部工具调用不通过 SSE 或会话详情接口展示给前端。
+10. 新增数据库表持久化子 Agent 的交互过程，便于后端审计和排查。
+11. LLM 日志需要明确区分主 Agent 和子 Agent。
 
 ## 3. 非目标
 
-1. 不新增前端交互面板或专门的子 Agent UI。
+1. 不新增前端交互面板或专门的子 Agent UI，也不把子 Agent 内部过程暴露给现有工具面板。
 2. 不持久化子 Agent 的完整消息列表为主会话 history。
-3. 不支持子 Agent 并发后台运行；`spawn_subagent` 是同步工具调用，结束后返回文本。
+3. 不支持子 Agent 并发后台运行；`spawn_subagent` 是同步工具调用，结束后只把文本返回给主 Agent。
 4. 不设计多级 Agent DAG；明确禁止递归 spawn。
 5. 不改变现有 `bash/read_file/write_file/edit_file/load_skill` 的参数语义。
 
@@ -64,7 +67,7 @@
 - 向 SSE writer 发工具事件。
 - 把 tool result 追加进当前 `LoopState.Messages` / `LoopState.History`。
 
-子 Agent 要“仍经过权限 hook”，因此不能绕开这条执行链。设计上应把“执行一轮模型 + 工具 hooks”的循环抽成可复用内部方法，让主 Agent 与子 Agent 共用同一工具执行路径。
+子 Agent 要“仍经过权限 hook”，因此不能绕开这条执行链。设计上应把“执行一轮模型 + 工具 hooks”的循环抽成可复用内部方法，让主 Agent 与子 Agent 共用同一工具执行路径；但子 Agent 的 writer 必须为空，并且 `spawn_subagent` 本身的工具事件不能把子 Agent 摘要泄露给前端。
 
 ### 4.3 workspace 约束
 
@@ -171,6 +174,8 @@ Subagent failed: <错误原因>
 
 工具调用对主 Agent 来说仍是普通 tool result；主 Agent 可以基于该摘要继续回答用户。
 
+该结果只进入主 Agent 的模型上下文，不发送给前端工具事件。`emitToolEventHook` 对 `spawn_subagent` 直接跳过，避免前端展示子 Agent 的最终摘要。
+
 ## 8. 子 Agent 循环设计
 
 ### 8.1 抽取通用循环
@@ -256,8 +261,39 @@ messages := []openai.ChatCompletionMessage{
 - 子 Agent `LoopState.Writer` 设为 `nil`，因此默认 SSE tool event 不会发给前端。
 - `persistToolCallHook` 继续写入 `tool_calls` 表，用于审计；记录仍关联父 conversation ID。第一版不新增字段区分主/子 Agent 工具调用，避免数据库或审计结构扩展。
 - `appendToolMessageHook` 仍可运行，因为它只追加到子 Agent 内存态 `State.Messages` / `State.History`，循环结束后丢弃。
+- 主 Agent 的 `spawn_subagent` 工具调用不触发前端 `tool` SSE event，避免把子 Agent 摘要作为工具结果展示。
 
 如果后续需要区分主 Agent 与子 Agent 工具调用，可在 `ToolExecutionAudit` 增加 `agent_scope` / `parent_tool_call_id` 字段；这不作为第一版范围。
+
+### 8.5 子 Agent 交互过程存储
+
+新增数据库表 `subagent_messages`，专门存储子 Agent 的内部交互，不复用主 conversation history：
+
+```sql
+CREATE TABLE IF NOT EXISTS subagent_messages (
+    id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    parent_tool_call_id VARCHAR(128) NOT NULL,
+    conversation_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    sequence_no INT NOT NULL,
+    role VARCHAR(32) NOT NULL,
+    content LONGTEXT NOT NULL,
+    reasoning_content LONGTEXT NULL,
+    tool_call_id VARCHAR(128) NOT NULL DEFAULT '',
+    tool_calls_json LONGTEXT NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uniq_subagent_messages_run_sequence (run_id, sequence_no),
+    KEY idx_subagent_messages_conversation (conversation_id, created_at)
+);
+```
+
+存储规则：
+
+1. 每次 `spawn_subagent` 创建一个 `run_id`。
+2. 子 Agent 初始 user task、assistant tool call、tool result、最终 assistant summary 都写入 `subagent_messages`。
+3. `parent_tool_call_id` 使用主 Agent 调用 `spawn_subagent` 的 OpenAI tool call ID，方便关联。
+4. 该表第一版只写入，不新增前端查询接口。
 
 ## 9. 工作目录与安全设计
 
@@ -351,6 +387,15 @@ const defaultSubagentMaxRounds = 20
 
 普通工具执行失败仍以 tool result 的形式返回给子 Agent，让子 Agent 自行总结或修复。只有 Runtime 级错误（例如 cwd 非法、模型调用失败、超过轮数）才让 `spawn_subagent` 返回失败。
 
+### 11.5 日志区分
+
+`logger.LogLLMRound` 的 `source` 字段需要明确区分：
+
+- 主 Agent：`main-agent conversation=<conversation_id>`
+- 子 Agent：`subagent run=<run_id> parent_tool_call=<tool_call_id> conversation=<conversation_id>`
+
+这样同一个日志文件中可以直接识别每一轮模型调用属于主 Agent 还是子 Agent。
+
 ## 12. 测试设计
 
 ### 12.1 单元测试
@@ -386,6 +431,20 @@ const defaultSubagentMaxRounds = 20
    - 子 Agent 调用 `read_file` 或 `bash`。
    - 断言 hook 被调用。
 
+8. `spawn_subagent` 不向前端发送工具事件
+   - 主会话传入 writer。
+   - 主 Agent 调用 `spawn_subagent`。
+   - 断言 writer 中没有 `name=spawn_subagent` 的 `tool` event，也没有子 Agent 内部工具 event。
+
+9. 子 Agent 交互过程写入数据库
+   - fake store 记录 `CreateSubagentMessage` 调用。
+   - 子 Agent 执行 task 并返回 summary。
+   - 断言写入了 user task 和 assistant summary；有工具调用时写入 assistant tool call 与 tool result。
+
+10. LLM 日志 source 区分主/子 Agent
+    - fake LLM 触发主 Agent 和子 Agent 各一轮。
+    - 断言日志调用 source 分别包含 `main-agent` 和 `subagent run=`。
+
 ### 12.2 集成测试
 
 1. 文件系统副作用保留
@@ -398,7 +457,7 @@ const defaultSubagentMaxRounds = 20
 
 3. 子 Agent 无 SSE 输出
    - 主会话传入 writer。
-   - 子 Agent 内部工具调用不直接发 `tool` event；前端只看到主 Agent 的 `spawn_subagent` 工具事件和最终 assistant。
+   - 子 Agent 内部工具调用不直接发 `tool` event；前端也看不到主 Agent 的 `spawn_subagent` 工具事件，只看到最终 assistant。
 
 ## 13. 实施步骤
 
@@ -409,7 +468,10 @@ const defaultSubagentMaxRounds = 20
 5. 在 `executeToolCall` 中拦截 `spawn_subagent`，解析参数并启动子 Agent。
 6. 为子 Agent 构造独立 `LoopState`、独立 `messages[]`、独立 runtime env、无 writer。
 7. 添加最大轮数与递归保护。
-8. 补充单元测试和集成测试。
+8. 新增 `subagent_messages` 模型、migration 和写入 repo。
+9. 调整 `emitToolEventHook` 跳过 `spawn_subagent`。
+10. 调整 LLM 日志 source，主 Agent 与子 Agent 使用不同前缀。
+11. 补充单元测试和集成测试。
 
 ## 14. 兼容性
 
@@ -422,5 +484,5 @@ const defaultSubagentMaxRounds = 20
 ## 15. 设计决策
 
 1. `spawn_subagent` 第一版不默认加入 `WEB_ALLOWED_TOOLS`，显式配置后使用。
-2. 子 Agent 内部工具调用第一版不直接展示在 UI 中，只保留现有审计记录。
+2. 子 Agent 内部工具调用和最终摘要第一版不直接展示在 UI 中；内部交互写入 `subagent_messages` 表。
 3. `defaultSubagentMaxRounds` 第一版取 20。

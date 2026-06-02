@@ -43,7 +43,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundStream(ctx, state, req)
 		respBody, _ := json.Marshal(msg)
-		logger.LogLLMRound(round, fmt.Sprintf("web-runtime conversation=%s", conversation.ID), reqBody, respBody, err)
+		logger.LogLLMRound(round, fmt.Sprintf("main-agent conversation=%s", conversation.ID), reqBody, respBody, err)
 		if err != nil {
 			return storage.Message{}, err
 		}
@@ -64,7 +64,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
-			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
@@ -169,18 +169,6 @@ func (a *streamedToolCallAccumulator) Calls() []openai.ToolCall {
 		return nil
 	}
 	return append([]openai.ToolCall(nil), a.calls...)
-}
-
-func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, reasoningContent string, writer EventWriter) (storage.Message, error) {
-	assistant := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: userID, Role: "assistant", Content: content, ReasoningContent: reasoningContent}
-	updatedHistory := append(history, assistant)
-	if err := s.Store.SetConversationHistory(ctx, conversation.ID, updatedHistory); err != nil {
-		return storage.Message{}, err
-	}
-	if writer != nil {
-		_ = writer.Event("assistant", map[string]any{"content": assistant.Content, "reasoning_content": assistant.ReasoningContent})
-	}
-	return assistant, nil
 }
 
 func (s *Service) loadConversationMessages(ctx context.Context, conversationID string) ([]storage.Message, error) {

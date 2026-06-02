@@ -55,7 +55,7 @@ func buildToolDefinitions(allowed []string) []openai.Tool {
 }
 
 func lookupRegisteredTool(name string) (openai.Tool, bool) {
-	for _, tool := range agenttools.ChildToolDefs {
+	for _, tool := range agenttools.AllToolDefs {
 		if tool.Function != nil && tool.Function.Name == name {
 			return tool, true
 		}

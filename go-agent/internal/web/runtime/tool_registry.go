@@ -14,9 +14,10 @@ import (
 )
 
 type ToolContext struct {
-	User         storage.User
-	Conversation storage.Conversation
-	Skills       *agenttools.SkillSnapshot
+	User             storage.User
+	Conversation     storage.Conversation
+	Skills           *agenttools.SkillSnapshot
+	ParentToolCallID string
 }
 
 type ToolExecutionResult struct {
@@ -36,6 +37,14 @@ func NewToolRegistry(cfg config.AppConfig) *ToolRegistry {
 		definitions: buildToolDefinitions(allowed),
 		baseEnv:     runtimeEnvFromConfig(cfg),
 	}
+}
+
+func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
+	allowed := withoutTool(loadAllowedToolNames(cfg), "spawn_subagent")
+	env := runtimeEnvFromConfig(cfg)
+	env.CurrentWorkingDir = strings.TrimSpace(cwd)
+	env.AllowOutsideWorkspace = false
+	return &ToolRegistry{definitions: buildToolDefinitions(allowed), baseEnv: env}
 }
 
 func (r *ToolRegistry) Definitions() []openai.Tool {
@@ -66,15 +75,30 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 	env := r.baseEnv
 	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
+	currentWorkingDir := strings.TrimSpace(env.CurrentWorkingDir)
+	if currentWorkingDir == "" {
+		currentWorkingDir = workspaceRoot
+	}
 	return agenttools.RuntimeEnv{
 		AppHome:                env.AppHome,
 		CommandBinDir:          strings.TrimSpace(env.CommandBinDir),
 		CommandScriptDir:       strings.TrimSpace(env.CommandScriptDir),
 		WorkspaceRoot:          workspaceRoot,
-		CurrentWorkingDir:      workspaceRoot,
+		CurrentWorkingDir:      currentWorkingDir,
 		AllowOutsideWorkspace:  env.AllowOutsideWorkspace,
 		AllowDangerousCommands: env.AllowDangerousCommands,
 	}
+}
+
+func withoutTool(names []string, excluded string) []string {
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == excluded {
+			continue
+		}
+		filtered = append(filtered, name)
+	}
+	return filtered
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {

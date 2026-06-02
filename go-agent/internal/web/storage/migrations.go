@@ -19,6 +19,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureMessageReasoningContentColumn(ctx); err != nil {
 		return fmt.Errorf("migrate message reasoning content column: %w", err)
 	}
+	if err := s.ensureSubagentMessagesTable(ctx); err != nil {
+		return fmt.Errorf("migrate subagent messages table: %w", err)
+	}
 	return nil
 }
 
@@ -77,6 +80,30 @@ func (s *Store) ensureMessageReasoningContentColumn(ctx context.Context) error {
 		return fmt.Errorf("add reasoning_content: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) ensureSubagentMessagesTable(ctx context.Context) error {
+	_, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS subagent_messages (
+			id VARCHAR(64) PRIMARY KEY,
+			run_id VARCHAR(64) NOT NULL,
+			parent_tool_call_id VARCHAR(128) NOT NULL,
+			conversation_id VARCHAR(64) NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			sequence_no INT NOT NULL,
+			role VARCHAR(32) NOT NULL,
+			content LONGTEXT NOT NULL,
+			reasoning_content LONGTEXT NULL,
+			tool_call_id VARCHAR(128) NOT NULL DEFAULT '',
+			tool_calls_json LONGTEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			UNIQUE KEY uniq_subagent_messages_run_sequence (run_id, sequence_no),
+			KEY idx_subagent_messages_conversation (conversation_id, created_at),
+			CONSTRAINT fk_subagent_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			CONSTRAINT fk_subagent_messages_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`)
+	return err
 }
 
 func (s *Store) columnExists(ctx context.Context, tableName, columnName string) (bool, error) {

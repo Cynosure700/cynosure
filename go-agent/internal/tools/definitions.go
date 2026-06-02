@@ -81,4 +81,14 @@ var baseToolDefs = []openai.Tool{
 	}),
 }
 
+var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared.", true),
+		"cwd":  strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace.", false),
+	},
+	"required": []string{"task"},
+})
+
+var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef)
 var ChildToolDefs = baseToolDefs
