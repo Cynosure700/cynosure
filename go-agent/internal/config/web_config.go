@@ -46,7 +46,7 @@ func LoadWebConfig() (AppConfig, error) {
 		CommandScriptDir:           runtimeDirs.commandScriptDir,
 		SystemPromptPath:           runtimeDirs.systemPromptPath,
 		WorkspaceRoot:              runtimeDirs.workspaceRoot,
-		WebAllowedTools:            parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file"))),
+		WebAllowedTools:            parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file,todo_write"))),
 		BashAllowOutsideWorkspace:  getenvBool("BASH_ALLOW_OUTSIDE_WORKSPACE", fileCfg.BashAllowOutsideWorkspace),
 		BashAllowDangerousCommands: getenvBool("BASH_ALLOW_DANGEROUS_COMMANDS", fileCfg.BashAllowDangerousCommands),
 		CookieName:                 getenv("SESSION_COOKIE_NAME", "nano_cc_session"),

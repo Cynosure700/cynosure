@@ -493,6 +493,134 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"}]}`
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "todo_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: todoArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "已更新计划"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"todo_write"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	manager := NewDefaultHookManager()
+	var observedTodos []agenttools.TodoItem
+	manager.PostToolUse = append(manager.PostToolUse, func(ctx context.Context, h *ToolUseContext) error {
+		observedTodos = append([]agenttools.TodoItem(nil), h.State.Todos...)
+		return nil
+	})
+	service.Hooks = manager
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_todo", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "实现 todo 工具", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []agenttools.TodoItem{{ID: "1", Content: "梳理需求", Status: "completed"}, {ID: "2", Content: "实现功能", Status: "in_progress"}}
+	if len(observedTodos) != len(expected) {
+		t.Fatalf("expected observed todos %#v, got %#v", expected, observedTodos)
+	}
+	for i := range expected {
+		if observedTodos[i] != expected[i] {
+			t.Fatalf("todo[%d] expected %#v, got %#v", i, expected[i], observedTodos[i])
+		}
+	}
+}
+
+func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTodoWrite(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		bashToolRound("tool_1"),
+		bashToolRound("tool_2"),
+		bashToolRound("tool_3"),
+		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"bash", "todo_write"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "连续执行工具", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(llm.reqs) != 4 {
+		t.Fatalf("expected 4 model requests, got %d", len(llm.reqs))
+	}
+	if !requestContainsTodoWriteReminder(llm.reqs[3]) {
+		t.Fatalf("expected fourth request to contain todo_write reminder, got %#v", llm.reqs[3].Messages)
+	}
+}
+
+func TestRespondToConversation_TodoWriteResetsReminderCounter(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		bashToolRound("tool_1"),
+		todoWriteToolRound("todo_1"),
+		bashToolRound("tool_2"),
+		bashToolRound("tool_3"),
+		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"bash", "todo_write"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder_reset", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "执行并更新计划", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, req := range llm.reqs {
+		if requestContainsTodoWriteReminder(req) {
+			t.Fatalf("todo_write should reset reminder counter; request %d contained reminder: %#v", i, req.Messages)
+		}
+	}
+}
+
+func TestRespondToConversation_DoesNotInjectTodoWriteReminderWhenToolDisabled(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		bashToolRound("tool_1"),
+		bashToolRound("tool_2"),
+		bashToolRound("tool_3"),
+		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"bash"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder_disabled", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "连续执行工具", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, req := range llm.reqs {
+		if requestContainsTodoWriteReminder(req) {
+			t.Fatalf("todo_write disabled; request %d should not contain reminder: %#v", i, req.Messages)
+		}
+	}
+}
+
 func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
@@ -1778,6 +1906,23 @@ func findToolMessageByID(t *testing.T, messages []openai.ChatCompletionMessage, 
 	}
 	t.Fatalf("expected tool message for toolCallID %q", toolCallID)
 	return openai.ChatCompletionMessage{}
+}
+
+func bashToolRound(id string) []openai.ChatCompletionStreamResponse {
+	return []openai.ChatCompletionStreamResponse{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: id, Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}}}
+}
+
+func todoWriteToolRound(id string) []openai.ChatCompletionStreamResponse {
+	return []openai.ChatCompletionStreamResponse{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: id, Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: `{"todos":[{"id":"1","content":"更新计划","status":"in_progress"}]}`}}}}, FinishReason: openai.FinishReasonToolCalls}}}}
+}
+
+func requestContainsTodoWriteReminder(req openai.ChatCompletionRequest) bool {
+	for _, message := range req.Messages {
+		if strings.Contains(message.Content, "not called todo_write for 3 consecutive model rounds") {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(s, substr string) bool {

@@ -51,6 +51,7 @@ type LoopState struct {
 	SkillSnapshot *agenttools.SkillSnapshot
 	SystemPrompt  string
 	Messages      []openai.ChatCompletionMessage
+	Todos         []agenttools.TodoItem
 
 	Writer EventWriter
 }
@@ -76,9 +77,10 @@ type StopContext struct {
 }
 
 type ToolExecutionOutcome struct {
-	Status string             `json:"status"`
-	Result string             `json:"result"`
-	Audit  ToolExecutionAudit `json:"-"`
+	Status string                `json:"status"`
+	Result string                `json:"result"`
+	Audit  ToolExecutionAudit    `json:"-"`
+	Todos  []agenttools.TodoItem `json:"-"`
 }
 
 type ToolExecutionAudit struct {

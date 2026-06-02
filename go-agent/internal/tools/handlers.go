@@ -11,6 +11,15 @@ var Handlers = map[string]ToolHandler{
 	"write_file": handleWrite,
 	"edit_file":  handleEdit,
 	"load_skill": handleLoadSkill,
+	"todo_write": handleTodoWriteAdapter,
+}
+
+func handleTodoWriteAdapter(ctx context.Context, args map[string]any) (string, error) {
+	result, err := handleTodoWrite(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	return result.Output, nil
 }
 
 func handleBash(ctx context.Context, args map[string]any) (string, error) {

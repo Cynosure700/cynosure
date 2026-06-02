@@ -11,6 +11,7 @@ import (
 
 	"nano_cc/internal/config"
 	"nano_cc/internal/logger"
+	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
@@ -42,6 +43,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	state.SystemPrompt = s.buildSystemPrompt(user, snapshot)
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.History)
 	round := 0
+	roundsSinceTodoWrite := 0
 	var cumulativeReasoning strings.Builder
 
 	for {
@@ -61,6 +63,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		cumulativeReasoning.WriteString(msg.ReasoningContent)
 		requestMsg := msg
 		state.Messages = append(state.Messages, requestMsg)
+		if toolCallsInclude(msg.ToolCalls, todoWriteToolName) {
+			roundsSinceTodoWrite = 0
+		} else {
+			roundsSinceTodoWrite++
+		}
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
@@ -77,10 +84,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 				return storage.Message{}, err
 			}
 			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			if toolCtx.Name == todoWriteToolName && toolCtx.Outcome.Status == "success" {
+				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
+			}
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
 		}
+		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 	}
 }
 

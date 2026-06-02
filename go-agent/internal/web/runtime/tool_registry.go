@@ -22,6 +22,7 @@ type ToolContext struct {
 
 type ToolExecutionResult struct {
 	Output string
+	Todos  []agenttools.TodoItem
 }
 
 type ToolRegistry struct {
@@ -61,6 +62,13 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	}
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	ctx = agenttools.WithSkillSnapshot(ctx, toolCtx.Skills)
+	if name == todoWriteToolName {
+		result, err := agenttools.ExecuteTodoWrite(ctx, args)
+		if err != nil {
+			return ToolExecutionResult{}, err
+		}
+		return ToolExecutionResult{Output: result.Output, Todos: result.Todos}, nil
+	}
 	handler, ok := agenttools.Handlers[name]
 	if !ok || handler == nil {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s has no handler", name)

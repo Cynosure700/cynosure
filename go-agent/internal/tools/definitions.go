@@ -79,6 +79,24 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"name"},
 	}),
+	toolDef("todo_write", "Create or update the current task plan. Use this tool to track progress on multi-step tasks.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"todos": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"id":      map[string]any{"type": "string"},
+						"content": map[string]any{"type": "string"},
+						"status":  map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},
+					},
+					"required": []string{"id", "content", "status"},
+				},
+			},
+		},
+		"required": []string{"todos"},
+	}),
 }
 
 var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{

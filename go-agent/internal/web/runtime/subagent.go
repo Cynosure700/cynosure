@@ -76,6 +76,7 @@ func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agentto
 }
 
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, trace *subagentTrace, maxRounds int) (openai.ChatCompletionMessage, error) {
+	roundsSinceTodoWrite := 0
 	for round := 1; round <= maxRounds; round++ {
 		req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, Tools: tools.Definitions()}
 		reqBody, _ := json.Marshal(req)
@@ -86,6 +87,11 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 			return openai.ChatCompletionMessage{}, err
 		}
 		state.Messages = append(state.Messages, msg)
+		if toolCallsInclude(msg.ToolCalls, todoWriteToolName) {
+			roundsSinceTodoWrite = 0
+		} else {
+			roundsSinceTodoWrite++
+		}
 		storedAssistant := storage.Message{ID: state.NextMessageID(), ConversationID: parent.Conversation.ID, UserID: parent.User.ID, Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
 		if err := trace.record(ctx, storedAssistant); err != nil {
 			return openai.ChatCompletionMessage{}, err
@@ -100,6 +106,9 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 				return openai.ChatCompletionMessage{}, err
 			}
 			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, parent, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			if toolCtx.Name == todoWriteToolName && toolCtx.Outcome.Status == "success" {
+				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
+			}
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return openai.ChatCompletionMessage{}, err
 			}
@@ -109,6 +118,7 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 				}
 			}
 		}
+		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, tools, roundsSinceTodoWrite)
 	}
 	return openai.ChatCompletionMessage{}, fmt.Errorf("subagent exceeded max rounds")
 }
@@ -121,7 +131,7 @@ func (s *Service) executeChildToolCall(ctx context.Context, tools *ToolRegistry,
 	if err != nil {
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
-	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit}
+	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
 }
 
 func (t *subagentTrace) record(ctx context.Context, msg storage.Message) error {

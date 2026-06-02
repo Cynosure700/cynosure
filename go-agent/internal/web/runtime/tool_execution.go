@@ -30,5 +30,5 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 	if err != nil {
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
-	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit}
+	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
 }
