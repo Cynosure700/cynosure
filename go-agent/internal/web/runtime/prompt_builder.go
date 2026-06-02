@@ -67,7 +67,29 @@ func buildDBSkillLoader(skills []storage.Skill) *sessions.SkillLoader {
 func buildOpenAIMessages(systemPrompt string, history []storage.Message) []openai.ChatCompletionMessage {
 	messages := []openai.ChatCompletionMessage{{Role: "system", Content: systemPrompt}}
 	for _, msg := range history {
-		messages = append(messages, openai.ChatCompletionMessage{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
+		messages = append(messages, openai.ChatCompletionMessage{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCallID: msg.ToolCallID, ToolCalls: storageToolCallsToOpenAI(msg.ToolCalls)})
 	}
 	return messages
+}
+
+func storageToolCallsToOpenAI(toolCalls []storage.MessageToolCall) []openai.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	converted := make([]openai.ToolCall, 0, len(toolCalls))
+	for _, toolCall := range toolCalls {
+		converted = append(converted, openai.ToolCall{ID: toolCall.ID, Type: openai.ToolType(toolCall.Type), Function: openai.FunctionCall{Name: toolCall.Function.Name, Arguments: toolCall.Function.Arguments}})
+	}
+	return converted
+}
+
+func openAIToolCallsToStorage(toolCalls []openai.ToolCall) []storage.MessageToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	converted := make([]storage.MessageToolCall, 0, len(toolCalls))
+	for _, toolCall := range toolCalls {
+		converted = append(converted, storage.MessageToolCall{ID: toolCall.ID, Type: string(toolCall.Type), Function: storage.MessageFunctionCall{Name: toolCall.Function.Name, Arguments: toolCall.Function.Arguments}})
+	}
+	return converted
 }

@@ -455,6 +455,66 @@ func TestBuildOpenAIMessagesCarriesHistoryReasoningContent(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIMessagesCarriesHistoricalToolResult(t *testing.T) {
+	messages := buildOpenAIMessages("system prompt", []storage.Message{
+		{Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_1", Type: "function", Function: storage.MessageFunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}}}},
+		{Role: "tool", ToolCallID: "tool_1", Content: `{"status":"success","result":"loaded"}`},
+	})
+
+	if len(messages) != 3 {
+		t.Fatalf("expected system plus 2 history messages, got %d", len(messages))
+	}
+	if len(messages[1].ToolCalls) != 1 || messages[1].ToolCalls[0].ID != "tool_1" || messages[1].ToolCalls[0].Function.Name != "load_skill" {
+		t.Fatalf("expected assistant history message to carry tool call metadata, got %#v", messages[1])
+	}
+	if messages[2].Role != "tool" || messages[2].ToolCallID != "tool_1" || messages[2].Content == "" {
+		t.Fatalf("expected historical tool result message to carry tool_call_id and content, got %#v", messages[2])
+	}
+}
+
+func TestRespondToConversation_LoadsHistoricalToolResultBeforeAgentLoop(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
+		Choices: []openai.ChatCompletionChoice{{
+			FinishReason: openai.FinishReasonStop,
+			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "继续回答"},
+		}},
+	}}}
+	config.Client = llm
+
+	store := &fakeStore{cached: []storage.Message{
+		{ID: "msg_old_user", ConversationID: "conv_history", UserID: "usr_history", Role: "user", Content: "先加载技能"},
+		{ID: "msg_old_assistant_tool", ConversationID: "conv_history", UserID: "usr_history", Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_1", Type: "function", Function: storage.MessageFunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}}}},
+		{ID: "msg_old_tool", ConversationID: "conv_history", UserID: "usr_history", Role: "tool", ToolCallID: "tool_1", Content: `{"status":"success","result":"loaded"}`},
+		{ID: "msg_old_assistant", ConversationID: "conv_history", UserID: "usr_history", Role: "assistant", Content: "已经加载"},
+	}}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_history", Title: "历史会话"}, storage.User{ID: "usr_history", Username: "history-user"}, "继续", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if llm.calls != 1 {
+		t.Fatalf("expected llm to be called once, got %d", llm.calls)
+	}
+	reqMessages := llm.reqs[0].Messages
+	if len(reqMessages) != 6 {
+		t.Fatalf("expected system, 4 historical messages, and current user message, got %#v", reqMessages)
+	}
+	if len(reqMessages[2].ToolCalls) != 1 || reqMessages[2].ToolCalls[0].ID != "tool_1" || reqMessages[2].ToolCalls[0].Function.Name != "load_skill" {
+		t.Fatalf("expected historical assistant tool call before agent loop, got %#v", reqMessages[2])
+	}
+	if reqMessages[3].Role != "tool" || reqMessages[3].ToolCallID != "tool_1" || reqMessages[3].Content == "" {
+		t.Fatalf("expected historical tool result before agent loop, got %#v", reqMessages[3])
+	}
+	if reqMessages[5].Role != "user" || reqMessages[5].Content != "继续" {
+		t.Fatalf("expected current user message after loaded history, got %#v", reqMessages[5])
+	}
+}
+
 func TestRespondToConversation_PreservesExplicitConversationTitle(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
@@ -649,6 +709,22 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	if !contains(outcome.Result, "<skill source=\"local\" name=\"builtin-skill\">") {
 		t.Fatalf("expected tool result to include skill content, got %q", outcome.Result)
 	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
+	}
+	storedHistory := store.historyUpdates[0]
+	if len(storedHistory) != 4 {
+		t.Fatalf("expected user, assistant tool call, tool result, final assistant in history, got %#v", storedHistory)
+	}
+	if storedHistory[1].Role != "assistant" || len(storedHistory[1].ToolCalls) != 1 || storedHistory[1].ToolCalls[0].ID != "tool_1" {
+		t.Fatalf("expected assistant tool call message in history, got %#v", storedHistory[1])
+	}
+	if storedHistory[2].Role != "tool" || storedHistory[2].ToolCallID != "tool_1" || storedHistory[2].Content != toolMessage.Content {
+		t.Fatalf("expected tool result message in history, got %#v", storedHistory[2])
+	}
+	if storedHistory[3].Role != "assistant" || storedHistory[3].Content != "final answer" {
+		t.Fatalf("expected final assistant message at end of history, got %#v", storedHistory[3])
+	}
 }
 
 func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
@@ -729,6 +805,19 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	if !contains(outcome.Result, "Error: unknown skill \"missing-skill\"") {
 		t.Fatalf("expected rejection result to include tool error, got %q", outcome.Result)
 	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
+	}
+	storedHistory := store.historyUpdates[0]
+	if len(storedHistory) != 4 {
+		t.Fatalf("expected user, assistant tool call, rejected tool result, final assistant in history, got %#v", storedHistory)
+	}
+	if storedHistory[1].Role != "assistant" || len(storedHistory[1].ToolCalls) != 1 || storedHistory[1].ToolCalls[0].ID != "tool_2" {
+		t.Fatalf("expected assistant tool call message in history, got %#v", storedHistory[1])
+	}
+	if storedHistory[2].Role != "tool" || storedHistory[2].ToolCallID != "tool_2" || storedHistory[2].Content != toolMessage.Content {
+		t.Fatalf("expected rejected tool result message in history, got %#v", storedHistory[2])
+	}
 }
 
 func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T) {
@@ -806,6 +895,25 @@ func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T
 	}
 	if filepath.Clean(outcome.Result) != filepath.Clean(workspace) {
 		t.Fatalf("expected bash tool result %q, got %q", workspace, outcome.Result)
+	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
+	}
+	storedHistory := store.historyUpdates[0]
+	if len(storedHistory) != 5 {
+		t.Fatalf("expected user, assistant tool calls, two tool results, final assistant in history, got %#v", storedHistory)
+	}
+	if storedHistory[1].Role != "assistant" || len(storedHistory[1].ToolCalls) != 2 {
+		t.Fatalf("expected assistant message with two tool calls in history, got %#v", storedHistory[1])
+	}
+	if storedHistory[2].Role != "tool" || storedHistory[2].ToolCallID != "tool_load" {
+		t.Fatalf("expected first tool result in history, got %#v", storedHistory[2])
+	}
+	if storedHistory[3].Role != "tool" || storedHistory[3].ToolCallID != "tool_bash" {
+		t.Fatalf("expected second tool result in history, got %#v", storedHistory[3])
+	}
+	if storedHistory[4].Role != "assistant" || storedHistory[4].Content != "final answer" {
+		t.Fatalf("expected final assistant message at end of history, got %#v", storedHistory[4])
 	}
 }
 

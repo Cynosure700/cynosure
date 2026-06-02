@@ -60,6 +60,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			}
 			return stopCtx.AssistantMessage, nil
 		}
+		state.History = append(state.History, storage.Message{ID: state.NextMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)})
 
 		for _, tc := range msg.ToolCalls {
 			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}

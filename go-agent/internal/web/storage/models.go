@@ -47,13 +47,26 @@ type Conversation struct {
 
 // 该表已经不使用，作为存储的结构体，用于存储消息历史
 type Message struct {
-	ID               string    `json:"id"`
-	ConversationID   string    `json:"conversation_id"`
-	UserID           string    `json:"user_id"`
-	Role             string    `json:"role"`
-	Content          string    `json:"content"`
-	ReasoningContent string    `json:"reasoning_content,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID               string            `json:"id"`
+	ConversationID   string            `json:"conversation_id"`
+	UserID           string            `json:"user_id"`
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"`
+	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+}
+
+type MessageToolCall struct {
+	ID       string              `json:"id"`
+	Type     string              `json:"type"`
+	Function MessageFunctionCall `json:"function"`
+}
+
+type MessageFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type ToolCall struct {

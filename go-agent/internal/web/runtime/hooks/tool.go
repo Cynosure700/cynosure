@@ -42,7 +42,9 @@ func emitToolEventHook(ctx context.Context, h *ToolUseContext) error {
 }
 
 func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {
-	h.State.Messages = append(h.State.Messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: h.ToolCall.ID, Content: h.Outcome.MessageContent()})
+	content := h.Outcome.MessageContent()
+	h.State.Messages = append(h.State.Messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: h.ToolCall.ID, Content: content})
+	h.State.History = append(h.State.History, storage.Message{ID: h.State.NextMessageID(), ConversationID: h.State.Conversation.ID, UserID: h.State.User.ID, Role: "tool", Content: content, ToolCallID: h.ToolCall.ID})
 	return nil
 }
 
