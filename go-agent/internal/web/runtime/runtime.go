@@ -30,10 +30,18 @@ type Service struct {
 	Tools         *ToolRegistry
 	BuiltinSkills *sessions.SkillLoader
 	BasePrompt    string
+	Hooks         *HookManager
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig) *Service {
-	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager()}
+}
+
+func (s *Service) hookManager() *HookManager {
+	if s.Hooks == nil {
+		s.Hooks = NewDefaultHookManager()
+	}
+	return s.Hooks
 }
 
 func (s *Service) SetBuiltinSkills(loader *sessions.SkillLoader) {

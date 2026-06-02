@@ -126,6 +126,118 @@ func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.Cha
 	return resp, nil
 }
 
+func TestHookManagerRunsUserPromptSubmitHooksInOrder(t *testing.T) {
+	var order []string
+	manager := &HookManager{UserPromptSubmit: []UserPromptSubmitHook{
+		func(ctx context.Context, h *UserPromptSubmitContext) error {
+			order = append(order, "first")
+			return nil
+		},
+		func(ctx context.Context, h *UserPromptSubmitContext) error {
+			order = append(order, "second")
+			return nil
+		},
+	}}
+
+	if err := manager.RunUserPromptSubmit(context.Background(), &UserPromptSubmitContext{State: &LoopState{}}); err != nil {
+		t.Fatalf("run user prompt hooks: %v", err)
+	}
+	if strings.Join(order, ",") != "first,second" {
+		t.Fatalf("expected hooks to run in order, got %v", order)
+	}
+}
+
+func TestHookManagerStopsOnUserPromptSubmitError(t *testing.T) {
+	var order []string
+	manager := &HookManager{UserPromptSubmit: []UserPromptSubmitHook{
+		func(ctx context.Context, h *UserPromptSubmitContext) error {
+			order = append(order, "first")
+			return context.Canceled
+		},
+		func(ctx context.Context, h *UserPromptSubmitContext) error {
+			order = append(order, "second")
+			return nil
+		},
+	}}
+
+	if err := manager.RunUserPromptSubmit(context.Background(), &UserPromptSubmitContext{State: &LoopState{}}); err == nil {
+		t.Fatalf("expected hook error")
+	}
+	if strings.Join(order, ",") != "first" {
+		t.Fatalf("expected hooks to stop on error, got %v", order)
+	}
+}
+
+func TestDefaultHooksPersistAssistantOnStop(t *testing.T) {
+	store := &fakeStore{}
+	writer := &captureEventWriter{}
+	state := &LoopState{
+		Store:        store,
+		NewMessageID: newMessageID,
+		Conversation: storage.Conversation{ID: "conv_stop"},
+		User:         storage.User{ID: "usr_stop"},
+		History:      []storage.Message{{ID: "msg_user", ConversationID: "conv_stop", UserID: "usr_stop", Role: "user", Content: "hello"}},
+		Writer:       writer,
+	}
+	stopCtx := &StopContext{State: state, Content: "answer", ReasoningContent: "thinking"}
+
+	if err := NewDefaultHookManager().RunStop(context.Background(), stopCtx); err != nil {
+		t.Fatalf("run stop hooks: %v", err)
+	}
+	if stopCtx.AssistantMessage.Content != "answer" || stopCtx.AssistantMessage.ReasoningContent != "thinking" {
+		t.Fatalf("expected assistant message to be filled, got %#v", stopCtx.AssistantMessage)
+	}
+	if len(store.historyUpdates) != 1 || len(store.historyUpdates[0]) != 2 || store.historyUpdates[0][1].ReasoningContent != "thinking" {
+		t.Fatalf("expected stop hook to persist full history, got %#v", store.historyUpdates)
+	}
+	if len(writer.events) != 1 || writer.events[0].name != "assistant" {
+		t.Fatalf("expected assistant event, got %#v", writer.events)
+	}
+}
+
+func TestDefaultToolHooksAuditPersistEmitAndAppendToolMessage(t *testing.T) {
+	store := &fakeStore{}
+	writer := &captureEventWriter{}
+	workspace := t.TempDir()
+	tools := NewToolRegistry(config.AppConfig{WorkspaceRoot: workspace})
+	state := &LoopState{
+		Store:          store,
+		NewMessageID:   newMessageID,
+		ToolRuntimeEnv: tools.runtimeEnv,
+		Conversation:   storage.Conversation{ID: "conv_tool"},
+		User:           storage.User{ID: "usr_tool"},
+		Messages:       []openai.ChatCompletionMessage{{Role: "system", Content: "system"}},
+		Writer:         writer,
+	}
+	toolCtx := &ToolUseContext{
+		State:    state,
+		ToolCall: openai.ToolCall{ID: "tool_1", Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}},
+		Name:     "bash",
+		RawArgs:  `{"command":"pwd"}`,
+		Outcome:  toolExecutionOutcome{Status: "success", Result: workspace},
+	}
+	manager := NewDefaultHookManager()
+
+	if err := manager.RunPreToolUse(context.Background(), toolCtx); err != nil {
+		t.Fatalf("run pre tool hooks: %v", err)
+	}
+	if err := manager.RunPostToolUse(context.Background(), toolCtx); err != nil {
+		t.Fatalf("run post tool hooks: %v", err)
+	}
+	if toolCtx.Outcome.Audit.ResolvedCWD != workspace || toolCtx.Outcome.Audit.OutcomeSummary == "" {
+		t.Fatalf("expected audit to be filled, got %#v", toolCtx.Outcome.Audit)
+	}
+	if len(store.toolCalls) != 1 || store.toolCalls[0].Status != "success" {
+		t.Fatalf("expected persisted tool call, got %#v", store.toolCalls)
+	}
+	if len(writer.events) != 1 || writer.events[0].name != "tool" {
+		t.Fatalf("expected tool event, got %#v", writer.events)
+	}
+	if len(state.Messages) != 2 || state.Messages[1].Role != "tool" || state.Messages[1].ToolCallID != "tool_1" {
+		t.Fatalf("expected tool message to be appended, got %#v", state.Messages)
+	}
+}
+
 func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
@@ -1041,7 +1153,7 @@ func TestExecuteToolCall_AuditUsesWorkspaceRootAsResolvedCWD(t *testing.T) {
 
 	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Status != "success" {
 		t.Fatalf("expected success, got %#v", outcome)
@@ -1083,7 +1195,7 @@ func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
 
 	cfg := config.AppConfig{WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+script+` --flag"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+script+` --flag"}`)
 
 	if outcome.Audit.CommandArtifactPath != script {
 		t.Fatalf("expected audit command artifact path %q, got %#v", script, outcome.Audit)
@@ -1106,7 +1218,7 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 
 	cfg := config.AppConfig{WorkspaceRoot: workspace, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+outside+`"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+outside+`"}`)
 
 	if outcome.Status != "rejected" {
 		t.Fatalf("expected rejected outcome, got %#v", outcome)
@@ -1139,7 +1251,7 @@ func TestExecuteToolCall_AuditClassifiesWorkspaceCommandArtifactSource(t *testin
 
 	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Audit.CommandArtifactSource != "workspace" {
 		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
@@ -1160,7 +1272,7 @@ func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T
 
 	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: customRoot, WebAllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Audit.CommandArtifactSource != "custom" {
 		t.Fatalf("expected custom artifact source, got %#v", outcome.Audit)
@@ -1186,7 +1298,7 @@ func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
 		WebAllowedTools: []string{"bash"},
 	}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := service.executeToolCall(context.Background(), ToolContext{}, "bash", `{"command":"`+command+`"}`)
+	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
 
 	if outcome.Status != "success" {
 		t.Fatalf("expected successful outcome, got %#v", outcome)
@@ -1203,6 +1315,30 @@ func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
 	if outcome.Audit.CommandArtifactSource != "workspace" {
 		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
 	}
+}
+
+func executeToolCallWithDefaultHooks(t *testing.T, service *Service, name, rawArgs string) toolExecutionOutcome {
+	t.Helper()
+	if service.Store == nil {
+		service.Store = &fakeStore{}
+	}
+	if service.Hooks == nil {
+		service.Hooks = NewDefaultHookManager()
+	}
+	ctx := &ToolUseContext{
+		State:    service.newLoopState(storage.Conversation{ID: "conv_audit"}, storage.User{ID: "usr_audit"}, "", nil, nil),
+		ToolCall: openai.ToolCall{ID: "tool_audit", Function: openai.FunctionCall{Name: name, Arguments: rawArgs}},
+		Name:     name,
+		RawArgs:  rawArgs,
+	}
+	if err := service.Hooks.RunPreToolUse(context.Background(), ctx); err != nil {
+		t.Fatalf("run pre tool hooks: %v", err)
+	}
+	ctx.Outcome = service.executeToolCall(context.Background(), ToolContext{}, name, rawArgs, ctx.Outcome.Audit)
+	if err := service.Hooks.RunPostToolUse(context.Background(), ctx); err != nil {
+		t.Fatalf("run post tool hooks: %v", err)
+	}
+	return ctx.Outcome
 }
 
 func findToolMessage(t *testing.T, messages []openai.ChatCompletionMessage) openai.ChatCompletionMessage {

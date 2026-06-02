@@ -1,4 +1,4 @@
-package runtime
+package hooks
 
 import (
 	"encoding/json"
@@ -57,4 +57,11 @@ func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, str
 		return cleanResolved, ""
 	}
 	return "", ""
+}
+
+func truncate(text string, max int) string {
+	if len(text) <= max {
+		return text
+	}
+	return text[:max]
 }

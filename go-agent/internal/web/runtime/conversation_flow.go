@@ -17,31 +17,25 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err != nil {
 		return storage.Message{}, err
 	}
-	userEntry := storage.Message{ID: newMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "user", Content: userMessage}
-	history = append(history, userEntry)
-	if shouldInferConversationTitle(conversation.Title) {
-		if err := s.Store.UpdateConversationTitle(ctx, conversation.ID, inferConversationTitle(userMessage)); err != nil {
-			return storage.Message{}, err
-		}
-	} else {
-		if err := s.Store.TouchConversationActivity(ctx, conversation.ID); err != nil {
-			return storage.Message{}, err
-		}
+	state := s.newLoopState(conversation, user, userMessage, history, writer)
+	if err := s.hookManager().RunUserPromptSubmit(ctx, &UserPromptSubmitContext{State: state}); err != nil {
+		return storage.Message{}, err
 	}
 
 	snapshot, err := s.buildSkillSnapshot(ctx, user.ID)
 	if err != nil {
 		return storage.Message{}, err
 	}
-	systemPrompt := s.buildSystemPrompt(user, snapshot)
-	messages := buildOpenAIMessages(systemPrompt, history)
+	state.SkillSnapshot = snapshot
+	state.SystemPrompt = s.buildSystemPrompt(user, snapshot)
+	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.History)
 	round := 0
 
 	for {
 		round++
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
-			Messages: messages,
+			Messages: state.Messages,
 			Tools:    s.Tools.Definitions(),
 		}
 		reqBody, _ := json.Marshal(req)
@@ -57,19 +51,25 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		choice := resp.Choices[0]
 		msg := choice.Message
 		requestMsg := msg
-		messages = append(messages, requestMsg)
+		state.Messages = append(state.Messages, requestMsg)
 
 		if choice.FinishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			return s.persistAssistantReply(ctx, conversation, user.ID, history, fallbackAssistantContent(msg.Content), msg.ReasoningContent, writer)
+			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: msg.ReasoningContent}
+			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
+				return storage.Message{}, err
+			}
+			return stopCtx.AssistantMessage, nil
 		}
 
 		for _, tc := range msg.ToolCalls {
-			outcome := s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot}, tc.Function.Name, tc.Function.Arguments)
-			_ = s.Store.CreateToolCall(ctx, storage.ToolCall{ID: newToolCallID(), ConversationID: conversation.ID, UserID: user.ID, ToolName: tc.Function.Name, Status: outcome.Status, Summary: outcome.AuditSummary()})
-			if writer != nil {
-				_ = writer.Event("tool", map[string]any{"name": tc.Function.Name, "status": outcome.Status, "result": outcome.Result})
+			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}
+			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
+				return storage.Message{}, err
 			}
-			messages = append(messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: tc.ID, Content: outcome.MessageContent()})
+			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
+				return storage.Message{}, err
+			}
 		}
 	}
 }
