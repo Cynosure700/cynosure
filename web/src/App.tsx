@@ -163,7 +163,11 @@ export function App() {
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
     const [skillForm, setSkillForm] = useState({ id: "", name: "", description: "", content: "", status: "draft" as Skill["status"] });
+    const [expandedReasoningIds, setExpandedReasoningIds] = useState<Set<string>>(new Set());
+    const [manualClosedReasoningIds, setManualClosedReasoningIds] = useState<Set<string>>(new Set());
     const activeConversationIdRef = useRef("");
+    const expandedReasoningIdsRef = useRef<Set<string>>(new Set());
+    const manualClosedReasoningIdsRef = useRef<Set<string>>(new Set());
 
     const activeConversation = useMemo(
         () => (Array.isArray(conversations) ? conversations : []).find((item) => item.id === activeConversationId) ?? null,
@@ -196,6 +200,7 @@ export function App() {
 
     useEffect(() => {
         activeConversationIdRef.current = activeConversationId;
+        resetReasoningState();
         if (!activeConversationId) {
             setMessages([]);
             setToolEvents([]);
@@ -235,6 +240,65 @@ export function App() {
             window.removeEventListener("scroll", closeMenu, true);
         };
     }, [openConversationMenu]);
+
+    function updateReasoningSet(
+        ref: { current: Set<string> },
+        setter: (value: Set<string>) => void,
+        updater: (current: Set<string>) => Set<string>,
+    ) {
+        const next = updater(ref.current);
+        if (next === ref.current) return;
+        ref.current = next;
+        setter(next);
+    }
+
+    function addReasoningSetValue(ref: { current: Set<string> }, setter: (value: Set<string>) => void, id: string) {
+        updateReasoningSet(ref, setter, (current) => {
+            if (current.has(id)) return current;
+            const next = new Set(current);
+            next.add(id);
+            return next;
+        });
+    }
+
+    function removeReasoningSetValue(ref: { current: Set<string> }, setter: (value: Set<string>) => void, id: string) {
+        updateReasoningSet(ref, setter, (current) => {
+            if (!current.has(id)) return current;
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+        });
+    }
+
+    function migrateReasoningSetValue(ref: { current: Set<string> }, setter: (value: Set<string>) => void, fromId: string, toId?: string) {
+        if (!toId || fromId === toId) return;
+        updateReasoningSet(ref, setter, (current) => {
+            if (!current.has(fromId)) return current;
+            const next = new Set(current);
+            next.delete(fromId);
+            next.add(toId);
+            return next;
+        });
+    }
+
+    function resetReasoningState() {
+        const nextExpanded = new Set<string>();
+        const nextManualClosed = new Set<string>();
+        expandedReasoningIdsRef.current = nextExpanded;
+        manualClosedReasoningIdsRef.current = nextManualClosed;
+        setExpandedReasoningIds(nextExpanded);
+        setManualClosedReasoningIds(nextManualClosed);
+    }
+
+    function handleReasoningToggle(reasoningKey: string, open: boolean) {
+        if (open) {
+            addReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, reasoningKey);
+            removeReasoningSetValue(manualClosedReasoningIdsRef, setManualClosedReasoningIds, reasoningKey);
+            return;
+        }
+        removeReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, reasoningKey);
+        addReasoningSetValue(manualClosedReasoningIdsRef, setManualClosedReasoningIds, reasoningKey);
+    }
 
     async function refreshAll() {
         const [conversationResult, skillResult] = await Promise.all([api.listConversations(), api.listSkills()]);
@@ -310,18 +374,26 @@ export function App() {
                 onAssistantDelta: (payload) => setMessages((prev) => prev.map((message) => (
                     activeConversationIdRef.current === requestConversationId && message.id === streamingAssistantId ? { ...message, content: message.content + payload.content } : message
                 ))),
-                onReasoningDelta: (payload) => setMessages((prev) => prev.map((message) => (
-                    activeConversationIdRef.current === requestConversationId && message.id === streamingAssistantId ? { ...message, reasoning_content: `${message.reasoning_content ?? ""}${payload.content}` } : message
-                ))),
+                onReasoningDelta: (payload) => {
+                    if (activeConversationIdRef.current !== requestConversationId) return;
+                    if (payload.content && !manualClosedReasoningIdsRef.current.has(streamingAssistantId)) {
+                        addReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, streamingAssistantId);
+                    }
+                    setMessages((prev) => prev.map((message) => (
+                        message.id === streamingAssistantId ? { ...message, reasoning_content: `${message.reasoning_content ?? ""}${payload.content}` } : message
+                    )));
+                },
                 onAssistant: (payload) => setMessages((prev) => {
                     if (activeConversationIdRef.current !== requestConversationId) return prev;
+                    migrateReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, streamingAssistantId, payload.message_id);
+                    migrateReasoningSetValue(manualClosedReasoningIdsRef, setManualClosedReasoningIds, streamingAssistantId, payload.message_id);
                     const hasStreamingMessage = prev.some((message) => message.id === streamingAssistantId);
                     if (!hasStreamingMessage) {
                         return [...prev, { id: payload.message_id, role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content }];
                     }
                     return prev.map((message) => (
                         message.id === streamingAssistantId
-                            ? { ...message, id: payload.message_id ?? message.id, content: payload.content, reasoning_content: payload.reasoning_content }
+                            ? { ...message, id: payload.message_id ?? message.id, content: payload.content, reasoning_content: payload.reasoning_content ?? message.reasoning_content }
                             : message
                     ));
                 }),
@@ -653,20 +725,27 @@ export function App() {
                                     </div>
                                 </div>
                             </div>
-                        ) : messages.map((message, index) => (
-                            <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-                                <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
-                                {message.role === "assistant" && message.reasoning_content?.trim() && (
-                                    <details className="message-reasoning">
-                                        <summary>推理过程</summary>
-                                        <div>{message.reasoning_content}</div>
-                                    </details>
-                                )}
-                                <div className="message-content">
-                                    {message.role === "assistant" ? (message.content.trim() ? renderAssistantContent(message.content) : <span className="muted">正在生成...</span>) : message.content}
+                        ) : messages.map((message, index) => {
+                            const reasoningKey = message.id ?? `${message.role}-${index}`;
+                            return (
+                                <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
+                                    <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
+                                    {message.role === "assistant" && message.reasoning_content?.trim() && (
+                                        <details
+                                            className="message-reasoning"
+                                            open={expandedReasoningIds.has(reasoningKey)}
+                                            onToggle={(event) => handleReasoningToggle(reasoningKey, event.currentTarget.open)}
+                                        >
+                                            <summary>推理过程</summary>
+                                            <div>{message.reasoning_content}</div>
+                                        </details>
+                                    )}
+                                    <div className="message-content">
+                                        {message.role === "assistant" ? (message.content.trim() ? renderAssistantContent(message.content) : <span className="muted">正在生成...</span>) : message.content}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     <form onSubmit={handleSendMessage} className="composer">
                         <div className="composer-head">

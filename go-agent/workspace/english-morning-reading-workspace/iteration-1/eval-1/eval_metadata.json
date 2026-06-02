@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "eval_name": "basic-pronunciation-guide",
+  "prompt": "帮我做英语早读，这段话：\"The secret of getting ahead is getting started.\" 我想重点练习发音和连读。",
+  "assertions": [
+    {
+      "name": "provides-phonetic-transcription",
+      "description": "输出应包含音标标注",
+      "check": "output_contains_phonetic"
+    },
+    {
+      "name": "includes-linking-analysis",
+      "description": "输出应包含连读分析",
+      "check": "output_contains_linking"
+    },
+    {
+      "name": "provides-reading-suggestions",
+      "description": "输出应包含朗读建议",
+      "check": "output_contains_suggestions"
+    }
+  ]
+}
