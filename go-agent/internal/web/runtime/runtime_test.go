@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,11 +88,35 @@ func (f *fakeStore) CreateToolCall(ctx context.Context, tc storage.ToolCall) err
 }
 
 type fakeLLMClient struct {
-	responses []openai.ChatCompletionResponse
-	calls     int
-	lastReq   openai.ChatCompletionRequest
-	reqs      []openai.ChatCompletionRequest
+	responses       []openai.ChatCompletionResponse
+	streamChunks    []openai.ChatCompletionStreamResponse
+	streamChunkSets [][]openai.ChatCompletionStreamResponse
+	calls           int
+	lastReq         openai.ChatCompletionRequest
+	reqs            []openai.ChatCompletionRequest
 }
+
+type fakeChatStream struct {
+	chunks []openai.ChatCompletionStreamResponse
+	errAt  int
+	index  int
+}
+
+func (s *fakeChatStream) Recv() (openai.ChatCompletionStreamResponse, error) {
+	if s.errAt > 0 && s.index == s.errAt {
+		return openai.ChatCompletionStreamResponse{}, errors.New("stream failed")
+	}
+	if s.index >= len(s.chunks) {
+		return openai.ChatCompletionStreamResponse{}, io.EOF
+	}
+	chunk := s.chunks[s.index]
+	s.index++
+	return chunk, nil
+}
+
+func (s *fakeChatStream) Close() error { return nil }
+
+func intPointer(value int) *int { return &value }
 
 type captureEventWriter struct {
 	events []capturedEvent
@@ -124,6 +150,33 @@ func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.Cha
 	resp := f.responses[0]
 	f.responses = f.responses[1:]
 	return resp, nil
+}
+
+func (f *fakeLLMClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (config.ChatCompletionStream, error) {
+	f.calls++
+	f.lastReq = req
+	f.reqs = append(f.reqs, req)
+	if len(f.streamChunkSets) > 0 {
+		chunks := f.streamChunkSets[0]
+		f.streamChunkSets = f.streamChunkSets[1:]
+		return &fakeChatStream{chunks: chunks}, nil
+	}
+	if len(f.streamChunks) > 0 {
+		stream := &fakeChatStream{chunks: f.streamChunks}
+		f.streamChunks = nil
+		return stream, nil
+	}
+	if len(f.responses) > 0 {
+		resp := f.responses[0]
+		f.responses = f.responses[1:]
+		chunks := make([]openai.ChatCompletionStreamResponse, 0, len(resp.Choices))
+		for _, choice := range resp.Choices {
+			chunks = append(chunks, openai.ChatCompletionStreamResponse{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: choice.Message.Content, ReasoningContent: choice.Message.ReasoningContent, ToolCalls: choice.Message.ToolCalls}, FinishReason: choice.FinishReason}}})
+		}
+		return &fakeChatStream{chunks: chunks}, nil
+	}
+	stream := &fakeChatStream{}
+	return stream, nil
 }
 
 func TestHookManagerRunsUserPromptSubmitHooksInOrder(t *testing.T) {
@@ -209,12 +262,13 @@ func TestDefaultToolHooksAuditPersistEmitAndAppendToolMessage(t *testing.T) {
 		Messages:       []openai.ChatCompletionMessage{{Role: "system", Content: "system"}},
 		Writer:         writer,
 	}
+	longResult := strings.Join([]string{"line1", "line2", "line3", "line4", "line5", "line6", "line7"}, "\n")
 	toolCtx := &ToolUseContext{
 		State:    state,
 		ToolCall: openai.ToolCall{ID: "tool_1", Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}},
 		Name:     "bash",
 		RawArgs:  `{"command":"pwd"}`,
-		Outcome:  toolExecutionOutcome{Status: "success", Result: workspace},
+		Outcome:  toolExecutionOutcome{Status: "success", Result: longResult},
 	}
 	manager := NewDefaultHookManager()
 
@@ -232,6 +286,10 @@ func TestDefaultToolHooksAuditPersistEmitAndAppendToolMessage(t *testing.T) {
 	}
 	if len(writer.events) != 1 || writer.events[0].name != "tool" {
 		t.Fatalf("expected tool event, got %#v", writer.events)
+	}
+	payload, ok := writer.events[0].data.(map[string]any)
+	if !ok || payload["id"] != "tool_1" || payload["name"] != "bash" || payload["status"] != "success" || payload["truncated"] != true || strings.Contains(payload["result"].(string), "line7") {
+		t.Fatalf("expected compact truncated tool event payload, got %#v", writer.events[0].data)
 	}
 	if len(state.Messages) != 2 || state.Messages[1].Role != "tool" || state.Messages[1].ToolCallID != "tool_1" {
 		t.Fatalf("expected tool message to be appended, got %#v", state.Messages)
@@ -292,6 +350,36 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "你"}}}},
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "好"}, FinishReason: openai.FinishReasonStop}}},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "打招呼", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "你好" {
+		t.Fatalf("expected streamed content to be persisted, got %q", message.Content)
+	}
+	if len(writer.events) != 3 {
+		t.Fatalf("expected 2 deltas and final assistant, got %#v", writer.events)
+	}
+	if writer.events[0].name != "assistant_delta" || writer.events[1].name != "assistant_delta" || writer.events[2].name != "assistant" {
+		t.Fatalf("unexpected events: %#v", writer.events)
+	}
+}
+
 func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 	originalClient := config.Client
 	defer func() { config.Client = originalClient }()
@@ -319,12 +407,103 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 	if got := store.historyUpdates[0][1].ReasoningContent; got != "内部推理过程" {
 		t.Fatalf("expected history reasoning content, got %q", got)
 	}
-	if len(writer.events) != 1 || writer.events[0].name != "assistant" {
-		t.Fatalf("expected one assistant event, got %#v", writer.events)
+	if len(writer.events) != 3 || writer.events[2].name != "assistant" {
+		t.Fatalf("expected streamed deltas and final assistant event, got %#v", writer.events)
 	}
-	payload, ok := writer.events[0].data.(map[string]any)
+	payload, ok := writer.events[2].data.(map[string]any)
 	if !ok || payload["reasoning_content"] != "内部推理过程" {
 		t.Fatalf("expected assistant event to include reasoning_content, got %#v", writer.events[0].data)
+	}
+}
+
+func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考"}}}},
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "答案"}, FinishReason: openai.FinishReasonStop}}},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reasoning_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "解释", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "答案" || message.ReasoningContent != "先思考" {
+		t.Fatalf("expected streamed reasoning and content, got %#v", message)
+	}
+	if len(writer.events) != 3 {
+		t.Fatalf("expected reasoning delta, content delta and final assistant, got %#v", writer.events)
+	}
+	if writer.events[0].name != "reasoning_delta" || writer.events[1].name != "assistant_delta" || writer.events[2].name != "assistant" {
+		t.Fatalf("unexpected events: %#v", writer.events)
+	}
+	payload, ok := writer.events[2].data.(map[string]any)
+	if !ok || payload["message_id"] == "" || payload["final"] != true || payload["reasoning_content"] != "先思考" {
+		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", writer.events[2].data)
+	}
+}
+
+func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash"}}}}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), Function: openai.FunctionCall{Arguments: `{"command"`}}}}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), Function: openai.FunctionCall{Arguments: `:"pwd"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "工具执行完成"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.WebAllowedTools = []string{"bash"}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "执行 pwd", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "工具执行完成" {
+		t.Fatalf("expected final streamed answer after tool call, got %q", message.Content)
+	}
+	if len(store.toolCalls) != 1 || store.toolCalls[0].ToolName != "bash" || store.toolCalls[0].Status != "success" {
+		t.Fatalf("expected one successful bash tool call, got %#v", store.toolCalls)
+	}
+	if len(writer.events) < 3 || writer.events[0].name != "tool" || writer.events[1].name != "assistant_delta" || writer.events[len(writer.events)-1].name != "assistant" {
+		t.Fatalf("expected tool event followed by streamed final answer, got %#v", writer.events)
+	}
+}
+
+func TestRespondToConversation_ReturnsErrorForEmptyModelStream(t *testing.T) {
+	originalClient := config.Client
+	defer func() { config.Client = originalClient }()
+
+	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{{}}}
+	config.Client = llm
+
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_empty_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "空响应", nil)
+	if err == nil || !strings.Contains(err.Error(), "model stream returned no choices") {
+		t.Fatalf("expected empty stream error, got %v", err)
+	}
+	if len(store.historyUpdates) != 0 {
+		t.Fatalf("expected no assistant history update for empty stream, got %#v", store.historyUpdates)
 	}
 }
 

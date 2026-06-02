@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
@@ -61,7 +62,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": displayConversationMessages(messages)})
+		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": displayConversationMessages(messages), "tool_events": displayConversationToolEvents(messages)})
 		return
 	}
 
@@ -125,4 +126,76 @@ func displayConversationMessages(messages []storage.Message) []storage.Message {
 		}
 	}
 	return displayMessages
+}
+
+type toolEventPayload struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Result    string `json:"result"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+func displayConversationToolEvents(messages []storage.Message) []toolEventPayload {
+	toolNames := map[string]string{}
+	events := []toolEventPayload{}
+	for _, message := range messages {
+		if message.Role == "assistant" {
+			for _, tc := range message.ToolCalls {
+				if tc.ID != "" {
+					toolNames[tc.ID] = tc.Function.Name
+				}
+			}
+			continue
+		}
+		if message.Role != "tool" {
+			continue
+		}
+
+		status, result := parseToolMessageContent(message.Content)
+		preview, truncated := toolResultPreview(result)
+		name := toolNames[message.ToolCallID]
+		if name == "" {
+			name = "tool"
+		}
+		events = append(events, toolEventPayload{ID: message.ToolCallID, Name: name, Status: status, Result: preview, Truncated: truncated})
+	}
+	return events
+}
+
+func parseToolMessageContent(content string) (string, string) {
+	var payload struct {
+		Status string `json:"status"`
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return "unknown", content
+	}
+	if payload.Status == "" {
+		payload.Status = "unknown"
+	}
+	return payload.Status, payload.Result
+}
+
+func toolResultPreview(result string) (string, bool) {
+	trimmed := strings.TrimSpace(result)
+	if trimmed == "" {
+		return "(无输出)", false
+	}
+	lines := strings.Split(trimmed, "\n")
+	truncated := false
+	if len(lines) > 6 {
+		lines = lines[:6]
+		truncated = true
+	}
+	preview := strings.Join(lines, "\n")
+	if utf8.RuneCountInString(preview) > 300 {
+		runes := []rune(preview)
+		preview = string(runes[:300])
+		truncated = true
+	}
+	if truncated {
+		preview += "…"
+	}
+	return preview, truncated
 }

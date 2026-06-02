@@ -17,6 +17,6 @@ func emitAssistantStopHook(ctx context.Context, h *StopContext) error {
 	if h.State.Writer == nil {
 		return nil
 	}
-	_ = h.State.Writer.Event("assistant", map[string]any{"content": h.AssistantMessage.Content, "reasoning_content": h.AssistantMessage.ReasoningContent})
+	_ = h.State.Writer.Event("assistant", map[string]any{"message_id": h.AssistantMessage.ID, "content": h.AssistantMessage.Content, "reasoning_content": h.AssistantMessage.ReasoningContent, "final": true})
 	return nil
 }

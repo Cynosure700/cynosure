@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -39,21 +41,16 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			Tools:    s.Tools.Definitions(),
 		}
 		reqBody, _ := json.Marshal(req)
-		resp, err := config.Client.CreateChatCompletion(ctx, req)
-		respBody, _ := json.Marshal(resp)
+		msg, finishReason, err := s.runModelRoundStream(ctx, state, req)
+		respBody, _ := json.Marshal(msg)
 		logger.LogLLMRound(round, fmt.Sprintf("web-runtime conversation=%s", conversation.ID), reqBody, respBody, err)
 		if err != nil {
 			return storage.Message{}, err
 		}
-		if len(resp.Choices) == 0 {
-			return storage.Message{}, fmt.Errorf("model returned no choices")
-		}
-		choice := resp.Choices[0]
-		msg := choice.Message
 		requestMsg := msg
 		state.Messages = append(state.Messages, requestMsg)
 
-		if choice.FinishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
+		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: msg.ReasoningContent}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
 				return storage.Message{}, err
@@ -73,6 +70,105 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			}
 		}
 	}
+}
+
+func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
+	stream, err := config.Client.CreateChatCompletionStream(ctx, req)
+	if err != nil {
+		return openai.ChatCompletionMessage{}, "", err
+	}
+	defer stream.Close()
+
+	var content strings.Builder
+	var reasoningContent strings.Builder
+	var finishReason openai.FinishReason
+	toolCalls := &streamedToolCallAccumulator{}
+	seenChoice := false
+	seenOutput := false
+
+	for {
+		chunk, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return openai.ChatCompletionMessage{}, "", err
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		seenChoice = true
+		choice := chunk.Choices[0]
+		if choice.Delta.Content != "" {
+			seenOutput = true
+			content.WriteString(choice.Delta.Content)
+			if state.Writer != nil {
+				_ = state.Writer.Event("assistant_delta", map[string]any{"content": choice.Delta.Content})
+			}
+		}
+		if choice.Delta.ReasoningContent != "" {
+			seenOutput = true
+			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+			if state.Writer != nil {
+				_ = state.Writer.Event("reasoning_delta", map[string]any{"content": choice.Delta.ReasoningContent})
+			}
+		}
+		if len(choice.Delta.ToolCalls) > 0 {
+			seenOutput = true
+			toolCalls.Add(choice.Delta.ToolCalls)
+		}
+		if choice.FinishReason != "" {
+			finishReason = choice.FinishReason
+		}
+	}
+	if !seenChoice || (!seenOutput && finishReason == "") {
+		return openai.ChatCompletionMessage{}, "", fmt.Errorf("model stream returned no choices")
+	}
+
+	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: toolCalls.Calls()}, finishReason, nil
+}
+
+type streamedToolCallAccumulator struct {
+	calls []openai.ToolCall
+}
+
+func (a *streamedToolCallAccumulator) Add(deltas []openai.ToolCall) {
+	for deltaPosition, delta := range deltas {
+		index := len(a.calls) - 1
+		if delta.Index != nil {
+			index = *delta.Index
+		} else if len(deltas) > 1 {
+			index = deltaPosition
+		}
+		if index < 0 {
+			index = 0
+		}
+		for len(a.calls) <= index {
+			a.calls = append(a.calls, openai.ToolCall{})
+		}
+
+		call := a.calls[index]
+		if delta.ID != "" {
+			call.ID = delta.ID
+		}
+		if delta.Type != "" {
+			call.Type = delta.Type
+		}
+		if delta.Function.Name != "" {
+			call.Function.Name = delta.Function.Name
+		}
+		if delta.Function.Arguments != "" {
+			call.Function.Arguments += delta.Function.Arguments
+		}
+		a.calls[index] = call
+	}
+}
+
+func (a *streamedToolCallAccumulator) Calls() []openai.ToolCall {
+	if len(a.calls) == 0 {
+		return nil
+	}
+	return append([]openai.ToolCall(nil), a.calls...)
 }
 
 func (s *Service) persistAssistantReply(ctx context.Context, conversation storage.Conversation, userID string, history []storage.Message, content string, reasoningContent string, writer EventWriter) (storage.Message, error) {

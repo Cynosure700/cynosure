@@ -49,6 +49,12 @@ type AppConfig struct {
 
 type LLMClient interface {
 	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
+	CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error)
+}
+
+type ChatCompletionStream interface {
+	Recv() (openai.ChatCompletionStreamResponse, error)
+	Close() error
 }
 
 var (

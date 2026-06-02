@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -37,8 +38,31 @@ func emitToolEventHook(ctx context.Context, h *ToolUseContext) error {
 	if h.State.Writer == nil {
 		return nil
 	}
-	_ = h.State.Writer.Event("tool", map[string]any{"name": h.Name, "status": h.Outcome.Status, "result": h.Outcome.Result})
+	preview, truncated := toolResultPreview(h.Outcome.Result)
+	_ = h.State.Writer.Event("tool", map[string]any{"id": h.ToolCall.ID, "name": h.Name, "status": h.Outcome.Status, "result": preview, "truncated": truncated})
 	return nil
+}
+
+func toolResultPreview(result string) (string, bool) {
+	trimmed := strings.TrimSpace(result)
+	if trimmed == "" {
+		return "(无输出)", false
+	}
+	lines := strings.Split(trimmed, "\n")
+	truncated := false
+	if len(lines) > 6 {
+		lines = lines[:6]
+		truncated = true
+	}
+	preview := strings.Join(lines, "\n")
+	if len([]rune(preview)) > 300 {
+		preview = string([]rune(preview)[:300])
+		truncated = true
+	}
+	if truncated {
+		preview += "…"
+	}
+	return preview, truncated
 }
 
 func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {

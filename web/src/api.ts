@@ -29,6 +29,14 @@ export type ChatMessage = {
     reasoning_content?: string;
 };
 
+export type ToolEvent = {
+    id?: string;
+    name: string;
+    status: string;
+    result: string;
+    truncated?: boolean;
+};
+
 function conversationTitlePayload(title?: string): { title?: string } {
     const trimmed = title?.trim();
     return trimmed ? { title: trimmed } : {};
@@ -94,15 +102,17 @@ export const api = {
     deleteConversation: (conversationId: string) =>
         request<{ ok: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
     getConversation: async (conversationId: string) => {
-        const result = await request<{ conversation: Conversation; messages: ChatMessage[] | null }>(`/api/conversations/${conversationId}`);
-        return { ...result, messages: normalizeArray(result.messages) };
+        const result = await request<{ conversation: Conversation; messages: ChatMessage[] | null; tool_events?: ToolEvent[] | null }>(`/api/conversations/${conversationId}`);
+        return { ...result, messages: normalizeArray(result.messages), tool_events: normalizeArray(result.tool_events) };
     },
     streamConversation: async (
         conversationId: string,
         content: string,
         handlers: {
-            onTool: (payload: { name: string; status: string; result: string }) => void;
-            onAssistant: (payload: { content: string; reasoning_content?: string }) => void;
+            onTool: (payload: ToolEvent) => void;
+            onAssistantDelta: (payload: { content: string }) => void;
+            onReasoningDelta: (payload: { content: string }) => void;
+            onAssistant: (payload: { message_id?: string; content: string; reasoning_content?: string; final?: boolean }) => void;
             onError: (message: string) => void;
             onDone: () => void;
         },
@@ -137,11 +147,13 @@ export const api = {
             for (const chunk of chunks) {
                 const lines = chunk.split("\n");
                 const eventLine = lines.find((line) => line.startsWith("event:"));
-                const dataLine = lines.find((line) => line.startsWith("data:"));
-                if (!eventLine || !dataLine) continue;
+                const dataLines = lines.filter((line) => line.startsWith("data:"));
+                if (!eventLine || dataLines.length === 0) continue;
                 const event = eventLine.replace("event:", "").trim();
-                const payload = JSON.parse(dataLine.replace("data:", "").trim());
+                const payload = JSON.parse(dataLines.map((line) => line.replace("data:", "").trim()).join("\n"));
                 if (event === "tool") handlers.onTool(payload);
+                if (event === "assistant_delta") handlers.onAssistantDelta(payload);
+                if (event === "reasoning_delta") handlers.onReasoningDelta(payload);
                 if (event === "assistant") handlers.onAssistant(payload);
                 if (event === "error") handlers.onError(payload.message);
                 if (event === "done") handlers.onDone();

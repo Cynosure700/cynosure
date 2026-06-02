@@ -244,7 +244,7 @@ p {
 
 .app-shell {
     display: grid;
-    grid-template-columns: 420px minmax(0, 1fr);
+    grid-template-columns: 360px minmax(0, 1fr);
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
@@ -256,11 +256,11 @@ p {
 .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
-    padding: 18px;
+    padding: 16px;
     border-right: 1px solid rgba(148, 163, 184, 0.14);
     background: rgba(6, 10, 24, 0.82);
     backdrop-filter: blur(22px);
@@ -279,6 +279,12 @@ p {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+.sidebar-top {
+    flex: 0 0 auto;
+    gap: 12px;
+    padding: 14px 16px;
+}
+
 .brand-row {
     display: flex;
     align-items: center;
@@ -288,15 +294,15 @@ p {
 .brand-mark {
     display: grid;
     place-items: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
     background:
         radial-gradient(circle at 30% 20%, #ffffff, transparent 22%),
         linear-gradient(135deg, #38bdf8, #8b5cf6);
     color: #020617;
     font-weight: 800;
-    font-size: 22px;
+    font-size: 20px;
     box-shadow: 0 16px 38px rgba(59, 130, 246, 0.28);
 }
 
@@ -315,14 +321,14 @@ p {
 }
 
 .sidebar-brand strong {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 600;
 }
 
 .sidebar-insights {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
 }
 
 .sidebar-insights > div,
@@ -335,12 +341,12 @@ p {
 .sidebar-insights > div {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px;
+    gap: 2px;
+    padding: 9px 12px;
 }
 
 .sidebar-insights strong {
-    font-size: 22px;
+    font-size: 20px;
     letter-spacing: -0.03em;
 }
 
@@ -354,8 +360,8 @@ p {
 .current-session-card {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 14px;
+    gap: 6px;
+    padding: 11px 12px;
     overflow: hidden;
 }
 
@@ -383,6 +389,10 @@ p {
     flex-shrink: 0;
 }
 
+.sidebar-header button {
+    padding: 8px 12px;
+}
+
 .section-title h2,
 .panel-header h2,
 .panel-box h3,
@@ -402,8 +412,45 @@ p {
 
 .conversation-section {
     min-height: 0;
-    flex: 1;
-    padding-bottom: 20px;
+    flex: 1 1 auto;
+    padding: 16px;
+    padding-bottom: 18px;
+}
+
+.conversation-title-row {
+    align-items: center;
+}
+
+.conversation-add-button {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 12px;
+    color: #dbeafe;
+    background: rgba(15, 23, 42, 0.72);
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: none;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.conversation-add-button:hover:not(:disabled) {
+    color: #ffffff;
+    background: rgba(37, 99, 235, 0.26);
+    border-color: rgba(125, 211, 252, 0.38);
+    box-shadow: none;
+}
+
+.new-conversation-form {
+    display: flex;
+}
+
+.new-conversation-form input {
+    height: 40px;
+    padding: 9px 12px;
+    border-radius: 14px;
 }
 
 .list,
@@ -412,7 +459,7 @@ p {
 .tool-events {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     min-height: 0;
 }
 
@@ -434,7 +481,7 @@ p {
 
 .list-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 42px;
+    grid-template-columns: minmax(0, 1fr) 44px;
     gap: 10px;
     align-items: start;
     position: relative;
@@ -494,11 +541,12 @@ p {
 
 .list-item {
     width: 100%;
+    min-height: 54px;
     text-align: left;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px;
+    padding: 14px 15px;
     color: #dbeafe;
     background: rgba(15, 23, 42, 0.66);
     border-color: rgba(148, 163, 184, 0.16);
@@ -527,6 +575,7 @@ p {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 15px;
 }
 
 .conversation-copy small {
@@ -541,8 +590,8 @@ p {
 .conversation-menu-trigger {
     display: grid;
     place-items: center;
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 54px;
     border: 1px solid rgba(148, 163, 184, 0.18);
     border-radius: 14px;
     background: rgba(15, 23, 42, 0.72);
@@ -1008,12 +1057,30 @@ p {
     padding: 14px;
 }
 
-.tool-event pre {
-    margin: 10px 0 0;
+.tool-event.compact {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tool-event-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.tool-event-preview {
+    margin: 0;
     white-space: pre-wrap;
     font-size: 12px;
     line-height: 1.6;
     color: #c9c9c9;
+    overflow-wrap: anywhere;
+}
+
+.tool-event-truncated {
+    color: #94a3b8;
 }
 
 .status {

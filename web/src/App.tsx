@@ -1,8 +1,7 @@
-import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
-import { api, type ChatMessage, type Conversation, type Skill, type User } from "./api";
+import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { api, type ChatMessage, type Conversation, type Skill, type ToolEvent, type User } from "./api";
 
 type AuthMode = "login" | "register";
-type ToolEvent = { name: string; status: string; result: string };
 type SidePanel = "capabilities" | "details" | null;
 
 type ContentBlock =
@@ -164,6 +163,7 @@ export function App() {
     const [sidePanel, setSidePanel] = useState<SidePanel>(null);
     const [authForm, setAuthForm] = useState({ email: "", username: "", login: "", password: "" });
     const [skillForm, setSkillForm] = useState({ id: "", name: "", description: "", content: "", status: "draft" as Skill["status"] });
+    const activeConversationIdRef = useRef("");
 
     const activeConversation = useMemo(
         () => (Array.isArray(conversations) ? conversations : []).find((item) => item.id === activeConversationId) ?? null,
@@ -190,11 +190,26 @@ export function App() {
     }, [user]);
 
     useEffect(() => {
-        if (!activeConversationId) return;
+        activeConversationIdRef.current = activeConversationId;
+        if (!activeConversationId) {
+            setMessages([]);
+            setToolEvents([]);
+            return;
+        }
+        const requestConversationId = activeConversationId;
+        setMessages([]);
+        setToolEvents([]);
         void api
-            .getConversation(activeConversationId)
-            .then((result) => setMessages(Array.isArray(result.messages) ? result.messages : []))
-            .catch((err) => setError(err.message));
+            .getConversation(requestConversationId)
+            .then((result) => {
+                if (activeConversationIdRef.current !== requestConversationId) return;
+                setMessages(Array.isArray(result.messages) ? result.messages : []);
+                setToolEvents(Array.isArray(result.tool_events) ? result.tool_events : []);
+            })
+            .catch((err) => {
+                if (activeConversationIdRef.current !== requestConversationId) return;
+                setError(err.message);
+            });
     }, [activeConversationId]);
 
     useEffect(() => {
@@ -275,18 +290,57 @@ export function App() {
         setSending(true);
         setError("");
         const content = chatInput.trim();
+        const requestConversationId = activeConversationId;
+        const streamingAssistantId = `streaming-${Date.now()}`;
         setChatInput("");
-        setMessages((prev) => [...prev, { role: "user", content }]);
+        setMessages((prev) => [...prev, { role: "user", content }, { id: streamingAssistantId, role: "assistant", content: "", reasoning_content: "" }]);
         setToolEvents([]);
 
-        await api.streamConversation(activeConversationId, content, {
-            onTool: (payload) => setToolEvents((prev) => [...prev, payload]),
-            onAssistant: (payload) => setMessages((prev) => [...prev, { role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content }]),
-            onError: (message) => setError(message),
-            onDone: () => setSending(false),
-        });
-
-        await refreshAll();
+        try {
+            await api.streamConversation(requestConversationId, content, {
+                onTool: (payload) => {
+                    if (activeConversationIdRef.current !== requestConversationId) return;
+                    setToolEvents((prev) => [...prev, payload]);
+                },
+                onAssistantDelta: (payload) => setMessages((prev) => prev.map((message) => (
+                    activeConversationIdRef.current === requestConversationId && message.id === streamingAssistantId ? { ...message, content: message.content + payload.content } : message
+                ))),
+                onReasoningDelta: (payload) => setMessages((prev) => prev.map((message) => (
+                    activeConversationIdRef.current === requestConversationId && message.id === streamingAssistantId ? { ...message, reasoning_content: `${message.reasoning_content ?? ""}${payload.content}` } : message
+                ))),
+                onAssistant: (payload) => setMessages((prev) => {
+                    if (activeConversationIdRef.current !== requestConversationId) return prev;
+                    const hasStreamingMessage = prev.some((message) => message.id === streamingAssistantId);
+                    if (!hasStreamingMessage) {
+                        return [...prev, { id: payload.message_id, role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content }];
+                    }
+                    return prev.map((message) => (
+                        message.id === streamingAssistantId
+                            ? { ...message, id: payload.message_id ?? message.id, content: payload.content, reasoning_content: payload.reasoning_content }
+                            : message
+                    ));
+                }),
+                onError: (message) => {
+                    if (activeConversationIdRef.current !== requestConversationId) {
+                        setSending(false);
+                        return;
+                    }
+                    setError(message);
+                    setMessages((prev) => prev.filter((item) => item.id !== streamingAssistantId || item.content.trim() || item.reasoning_content?.trim()));
+                    setSending(false);
+                },
+                onDone: () => setSending(false),
+            });
+            await refreshAll();
+        } catch (err) {
+            if (activeConversationIdRef.current !== requestConversationId) {
+                setSending(false);
+                return;
+            }
+            setError(err instanceof Error ? err.message : "发送消息失败");
+            setMessages((prev) => prev.filter((item) => item.id !== streamingAssistantId || item.content.trim() || item.reasoning_content?.trim()));
+            setSending(false);
+        }
     }
 
     async function handleSkillSubmit(event: FormEvent<HTMLFormElement>) {
@@ -461,14 +515,18 @@ export function App() {
                 </div>
 
                 <section className="sidebar-section conversation-section">
-                    <div className="section-title">
+                    <div className="section-title conversation-title-row">
                         <div>
                             <h2>会话</h2>
                             <div className="section-subtitle">最近的聊天会出现在这里</div>
                         </div>
+                        <button type="submit" form="new-conversation-form" className="conversation-add-button" disabled={creatingConversation}>
+                            {creatingConversation ? "..." : "+"}
+                        </button>
                     </div>
                     <form
-                        className="stack"
+                        id="new-conversation-form"
+                        className="new-conversation-form"
                         onSubmit={(event) => {
                             event.preventDefault();
                             void handleCreateConversation();
@@ -480,7 +538,6 @@ export function App() {
                             onChange={(event) => setNewConversationTitle(event.target.value)}
                             disabled={creatingConversation}
                         />
-                        <button type="submit" disabled={creatingConversation}>{creatingConversation ? "创建中..." : "新对话"}</button>
                     </form>
                     <div className="list">
                         {conversations.map((conversation) => {
@@ -621,7 +678,7 @@ export function App() {
                                     </details>
                                 )}
                                 <div className="message-content">
-                                    {message.role === "assistant" ? renderAssistantContent(message.content) : message.content}
+                                    {message.role === "assistant" ? (message.content.trim() ? renderAssistantContent(message.content) : <span className="muted">正在生成...</span>) : message.content}
                                 </div>
                             </div>
                         ))}
@@ -656,11 +713,15 @@ export function App() {
                                     <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                                 </div>
                                 <div className="tool-events">
-                                    {toolEvents.length === 0 ? <div className="muted">这轮对话还没有工具调用</div> : toolEvents.map((event, index) => (
-                                        <div key={`${event.name}-${index}`} className="tool-event">
-                                            <strong>{event.name}</strong>
-                                            <span className={`status ${event.status}`}>{event.status}</span>
-                                            <pre>{event.result}</pre>
+                                    {toolEvents.length === 0 ? <div className="muted">当前会话暂无工具调用</div> : toolEvents.map((event, index) => (
+                                        <div key={`${event.id ?? event.name}-${index}`} className="tool-event compact">
+                                            <div className="tool-event-head">
+                                                <strong>{event.name}</strong>
+                                                <span className={`status ${event.status}`}>{event.status}</span>
+                                            </div>
+                                            <p className="tool-event-preview">
+                                                {event.result || "(无输出)"}{event.truncated ? <span className="tool-event-truncated"> 已截断</span> : null}
+                                            </p>
                                         </div>
                                     ))}
                                 </div>
