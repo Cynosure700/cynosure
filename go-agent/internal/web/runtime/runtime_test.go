@@ -146,6 +146,28 @@ func testAppConfig(t *testing.T) config.AppConfig {
 	}
 }
 
+func TestBuildSubagentSystemPromptAppendsStructuredChildAgentContext(t *testing.T) {
+	service := &Service{
+		Cfg:        testAppConfig(t),
+		BasePrompt: "Base prompt.",
+	}
+
+	prompt := service.buildSubagentSystemPrompt(storage.User{Username: "agent-user"}, nil)
+
+	for _, want := range []string{
+		"## Child Agent Context",
+		"You are a child agent spawned by `spawn_subagent`.",
+		"- You cannot see the parent conversation history.",
+		"- Work only from the current task and workspace files.",
+		"- Do not call `spawn_subagent`.",
+		"- When finished, output only a concise summary of what you did, key findings, and unresolved items.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected subagent prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
 func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
 	f.calls++
 	f.lastReq = req
@@ -827,13 +849,13 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 		t.Fatalf("expected shell request to expose bash tool, got %#v", llm.lastReq.Tools)
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected system prompt to include workspace root, got %q", systemPrompt)
 	}
 	if !contains(systemPrompt, "rather than a chat-only assistant") {
 		t.Fatalf("expected system prompt to position the model as a full agent, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "Runtime tools available in this conversation: bash.") {
+	if !contains(systemPrompt, "The following tools are available in this conversation:\n\n- bash") {
 		t.Fatalf("expected system prompt to include available tools, got %q", systemPrompt)
 	}
 	if len(store.historyUpdates) != 1 {
@@ -890,16 +912,16 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		t.Fatalf("expected load_skill tool to be exposed, got %d tools", len(llm.lastReq.Tools))
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected workspace root in prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "Runtime tools available in this conversation: load_skill.") {
+	if !contains(systemPrompt, "The following tools are available in this conversation:\n\n- load_skill") {
 		t.Fatalf("expected load_skill to be listed in prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "- builtin-skill: Builtin description") {
+	if !contains(systemPrompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
 		t.Fatalf("expected builtin skill description in prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "- user-skill: User description") {
+	if !contains(systemPrompt, "<name>user-skill</name>\n<description>User description</description>") {
 		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
 	}
 }
@@ -1017,16 +1039,16 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 	})
 
 	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader))
-	if !contains(prompt, "Current workspace root: "+cfg.WorkspaceRoot) {
+	if !contains(prompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
 	if !contains(prompt, "rather than a chat-only assistant") {
 		t.Fatalf("expected prompt to describe a full agent, got %q", prompt)
 	}
-	if contains(prompt, "Runtime tools available in this conversation:") {
+	if contains(prompt, "The following tools are available in this conversation:") {
 		t.Fatalf("expected prompt without tool registry to omit tool list, got %q", prompt)
 	}
-	if !contains(prompt, "- builtin-skill: Builtin description") {
+	if !contains(prompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
 		t.Fatalf("expected prompt to include skill descriptions, got %q", prompt)
 	}
 }

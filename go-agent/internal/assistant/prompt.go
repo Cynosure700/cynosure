@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const sectionSeparator = "---"
+
 const DefaultBaseSystemPrompt = "You are nano_cc, a general-purpose agent rather than a chat-only assistant.\n\n" +
 	"Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.\n\n" +
 	"Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.\n\n" +
@@ -39,16 +41,19 @@ func BuildSystemPrompt(opts PromptOptions) string {
 	}
 
 	sections := []string{
-		basePrompt,
-		"You are responding inside " + surface + ".",
+		"# System Instructions",
+		renderSection("Identity", basePrompt),
 	}
 
+	runtimeContext := []string{"Surface: " + surface}
+
 	if workingDirectory := strings.TrimSpace(opts.WorkingDirectory); workingDirectory != "" {
-		sections = append(sections,
-			"Current workspace root: "+workingDirectory+".",
-			"Treat that workspace root as your default working directory for runtime file and shell operations unless the runtime tells you otherwise.",
+		runtimeContext = append(runtimeContext,
+			"Workspace root: "+workingDirectory,
+			"Use the workspace root as the default working directory for runtime file and shell operations unless the runtime tells you otherwise.",
 		)
 	}
+	sections = append(sections, renderSection("Runtime Context", strings.Join(runtimeContext, "\n\n")))
 
 	toolNames := make([]string, 0, len(opts.ToolNames))
 	for _, name := range opts.ToolNames {
@@ -59,16 +64,50 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		toolNames = append(toolNames, trimmed)
 	}
 	if len(toolNames) > 0 {
-		sections = append(sections, "Runtime tools available in this conversation: "+strings.Join(toolNames, ", ")+".")
+		sections = append(sections, renderSection("Runtime Tools", "The following tools are available in this conversation:\n\n"+renderList(toolNames)))
 	}
 
 	if descriptions := strings.TrimSpace(opts.SkillDescriptions); descriptions != "" {
-		sections = append(sections, "Available skills:\n"+descriptions)
+		skillBody := strings.Join([]string{
+			"The following skills are available as summaries only.",
+			"Important rules:\n" + renderList([]string{
+				"Each listed skill has a name and description.",
+				"Before using or following a skill, call `load_skill` with the exact skill name to load its full instructions.",
+				"Do not infer the full workflow from the summary alone.",
+				"If multiple skills seem relevant, load the most specific matching skill first.",
+			}),
+			"Available skills:\n\n" + descriptions,
+		}, "\n\n")
+		sections = append(sections, renderSection("Skills", skillBody))
 	}
 
 	if memory := strings.TrimSpace(opts.MemorySection); memory != "" {
-		sections = append(sections, memory)
+		sections = append(sections, renderSection("Memory", memory))
 	}
 
-	return strings.Join(sections, "\n\n")
+	return strings.Join(sections, "\n\n"+sectionSeparator+"\n\n")
+}
+
+func renderSection(title, body string) string {
+	title = strings.TrimSpace(title)
+	body = strings.TrimSpace(body)
+	if title == "" {
+		return body
+	}
+	if body == "" {
+		return "## " + title
+	}
+	return "## " + title + "\n\n" + body
+}
+
+func renderList(items []string) string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		lines = append(lines, "- "+trimmed)
+	}
+	return strings.Join(lines, "\n")
 }

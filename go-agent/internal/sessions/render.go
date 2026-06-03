@@ -2,9 +2,12 @@ package sessions
 
 import (
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 )
+
+const defaultSkillDescription = "No description provided."
 
 func (sl *SkillLoader) GetDescriptions() string {
 	sl.mu.RLock()
@@ -21,16 +24,25 @@ func (sl *SkillLoader) GetDescriptions() string {
 	sort.Strings(names)
 
 	var lines []string
+	lines = append(lines, "<skills>")
 	for _, name := range names {
 		skill := sl.Skills[name]
-		desc := skill.Meta["description"]
-		tags := skill.Meta["tags"]
-		line := fmt.Sprintf("- %s: %s", name, desc)
-		if tags != "" {
-			line += fmt.Sprintf(" [%s]", tags)
+		desc := strings.TrimSpace(skill.Meta["description"])
+		if desc == "" {
+			desc = defaultSkillDescription
 		}
-		lines = append(lines, line)
+		tags := strings.TrimSpace(skill.Meta["tags"])
+		lines = append(lines,
+			"<skill>",
+			fmt.Sprintf("<name>%s</name>", html.EscapeString(name)),
+			fmt.Sprintf("<description>%s</description>", html.EscapeString(desc)),
+		)
+		if tags != "" {
+			lines = append(lines, fmt.Sprintf("<tags>%s</tags>", html.EscapeString(tags)))
+		}
+		lines = append(lines, "</skill>")
 	}
+	lines = append(lines, "</skills>")
 
 	return strings.Join(lines, "\n")
 }
