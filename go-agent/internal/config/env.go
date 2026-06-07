@@ -8,10 +8,10 @@ import (
 )
 
 func buildDefaultMySQLDSN() string {
-	host := getenv("MYSQL_HOST", "127.0.0.1")
+	host := getenv("MYSQL_HOST", "1.12.217.28")
 	port := getenv("MYSQL_PORT", "3306")
 	user := getenv("MYSQL_USER", getenv("DB_USER", "root"))
-	password := getenv("MYSQL_PASSWORD", getenv("DB_PASSWORD", ""))
+	password := getenv("MYSQL_PASSWORD", getenv("DB_PASSWORD", "213140"))
 	database := getenv("MYSQL_DATABASE", getenv("DB_NAME", "vibe_coding"))
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&multiStatements=true&loc=Local", user, password, host, port, database)
 }
