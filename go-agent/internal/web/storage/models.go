@@ -79,6 +79,33 @@ type ToolCall struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type PersistedOutput struct {
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversation_id"`
+	UserID         string    `json:"user_id"`
+	MessageID      string    `json:"message_id"`
+	ToolCallID     string    `json:"tool_call_id"`
+	Kind           string    `json:"kind"`
+	Strategy       string    `json:"strategy"`
+	OriginalBytes  int       `json:"original_bytes"`
+	ContentSHA256  string    `json:"content_sha256"`
+	Content        string    `json:"content"`
+	Preview        string    `json:"preview"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type ContextSummary struct {
+	ID                    string    `json:"id"`
+	ConversationID        string    `json:"conversation_id"`
+	UserID                string    `json:"user_id"`
+	SourceHistorySHA256   string    `json:"source_history_sha256"`
+	Strategy              string    `json:"strategy"`
+	EstimatedTokensBefore int       `json:"estimated_tokens_before"`
+	EstimatedTokensAfter  int       `json:"estimated_tokens_after"`
+	Summary               string    `json:"summary"`
+	CreatedAt             time.Time `json:"created_at"`
+}
+
 type SubagentMessage struct {
 	ID               string            `json:"id"`
 	RunID            string            `json:"run_id"`

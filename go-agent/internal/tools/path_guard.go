@@ -50,7 +50,7 @@ func validatedCurrentWorkingDirFromContext(ctx context.Context) (string, error) 
 		return "", fmt.Errorf("current working directory is not a directory")
 	}
 	resolved = filepath.Clean(resolved)
-	if resolved != workspaceRoot && !strings.HasPrefix(resolved, workspaceRoot+string(os.PathSeparator)) {
+	if !safety.Contains(workspaceRoot, resolved) {
 		return "", fmt.Errorf("current working directory escapes workspace: %s", workingDir)
 	}
 	return resolved, nil
@@ -94,7 +94,7 @@ func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool) 
 		if allowOutsideWorkspace {
 			continue
 		}
-		if cleanResolved != cleanRoot && !strings.HasPrefix(cleanResolved, cleanRoot+string(os.PathSeparator)) {
+		if !safety.Contains(cleanRoot, cleanResolved) {
 			return fmt.Errorf("command path escapes workspace: %s", token)
 		}
 	}

@@ -7,6 +7,10 @@ import (
 
 const sectionSeparator = "---"
 
+const persistedOutputGuidance = "When you see a `<persisted-output ...>` marker in earlier messages, the full tool output has been stored in the database and only a preview is inline. " +
+	"If the preview is not enough to complete the task, call `read_persisted_output` with the marker id and an offset to read more in chunks; do not guess the omitted content. " +
+	"When you see `[Earlier result compacted. Re-run if needed]`, re-run the relevant tool to obtain that result again."
+
 const DefaultBaseSystemPrompt = "You are nano_cc, a general-purpose agent rather than a chat-only assistant.\n\n" +
 	"Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.\n\n" +
 	"Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.\n\n" +
@@ -64,7 +68,11 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		toolNames = append(toolNames, trimmed)
 	}
 	if len(toolNames) > 0 {
-		sections = append(sections, renderSection("Runtime Tools", "The following tools are available in this conversation:\n\n"+renderList(toolNames)))
+		toolBody := "The following tools are available in this conversation:\n\n" + renderList(toolNames)
+		if toolNamesContain(toolNames, "read_persisted_output") {
+			toolBody += "\n\n" + persistedOutputGuidance
+		}
+		sections = append(sections, renderSection("Runtime Tools", toolBody))
 	}
 
 	if descriptions := strings.TrimSpace(opts.SkillDescriptions); descriptions != "" {
@@ -98,6 +106,15 @@ func renderSection(title, body string) string {
 		return "## " + title
 	}
 	return "## " + title + "\n\n" + body
+}
+
+func toolNamesContain(names []string, target string) bool {
+	for _, name := range names {
+		if name == target {
+			return true
+		}
+	}
+	return false
 }
 
 func renderList(items []string) string {

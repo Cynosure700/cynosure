@@ -7,7 +7,7 @@ import (
 )
 
 func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
-	result, err := handleTodoWrite(context.Background(), map[string]any{"todos": []any{
+	result, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
 		map[string]any{"id": "1", "content": "梳理需求", "status": "completed"},
 		map[string]any{"id": "2", "content": "实现功能", "status": "in_progress"},
 		map[string]any{"id": "3", "content": "运行测试", "status": "pending"},
@@ -34,7 +34,7 @@ func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
 }
 
 func TestHandleTodoWrite_AllowsEmptyTodoList(t *testing.T) {
-	result, err := handleTodoWrite(context.Background(), map[string]any{"todos": []any{}})
+	result, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestHandleTodoWrite_AllowsEmptyTodoList(t *testing.T) {
 }
 
 func TestHandleTodoWrite_RejectsInvalidStatus(t *testing.T) {
-	_, err := handleTodoWrite(context.Background(), map[string]any{"todos": []any{
+	_, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
 		map[string]any{"id": "1", "content": "实现功能", "status": "blocked"},
 	}})
 	if err == nil {
@@ -59,7 +59,7 @@ func TestHandleTodoWrite_RejectsInvalidStatus(t *testing.T) {
 }
 
 func TestHandleTodoWrite_RejectsMissingContent(t *testing.T) {
-	_, err := handleTodoWrite(context.Background(), map[string]any{"todos": []any{
+	_, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
 		map[string]any{"id": "1", "status": "pending"},
 	}})
 	if err == nil {

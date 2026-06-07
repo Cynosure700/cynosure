@@ -3,7 +3,13 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+
+	"nano_cc/internal/idgen"
 )
+
+func newID(prefix string) string {
+	return idgen.New(prefix)
+}
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

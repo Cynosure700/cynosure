@@ -14,16 +14,18 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 
 	"nano_cc/internal/config"
+	llmpkg "nano_cc/internal/llm"
 	"nano_cc/internal/sessions"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
 type fakeStore struct {
-	messages         []storage.Message
 	historyUpdates   [][]storage.Message
 	toolCalls        []storage.ToolCall
 	subagentMessages []storage.SubagentMessage
+	persistedOutputs []storage.PersistedOutput
+	contextSummaries []storage.ContextSummary
 	cached           []storage.Message
 	enabledSkills    []storage.Skill
 	enabledSkillSets [][]storage.Skill
@@ -31,11 +33,6 @@ type fakeStore struct {
 	updatedTitle     string
 	updatedID        string
 	touchedID        string
-}
-
-func (f *fakeStore) CreateMessage(ctx context.Context, message storage.Message) error {
-	f.messages = append(f.messages, message)
-	return nil
 }
 
 func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
@@ -91,6 +88,43 @@ func (f *fakeStore) CreateToolCall(ctx context.Context, tc storage.ToolCall) err
 func (f *fakeStore) CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error {
 	f.subagentMessages = append(f.subagentMessages, message)
 	return nil
+}
+
+func (f *fakeStore) CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error {
+	f.persistedOutputs = append(f.persistedOutputs, output)
+	return nil
+}
+
+func (f *fakeStore) GetPersistedOutputForConversation(ctx context.Context, id, userID, conversationID string) (storage.PersistedOutput, error) {
+	for _, o := range f.persistedOutputs {
+		if o.ID == id && o.UserID == userID && o.ConversationID == conversationID {
+			return o, nil
+		}
+	}
+	return storage.PersistedOutput{}, errors.New("persisted output not found")
+}
+
+func (f *fakeStore) GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error) {
+	for _, o := range f.persistedOutputs {
+		if o.ConversationID == conversationID && o.UserID == userID && o.MessageID == messageID && o.ToolCallID == toolCallID && o.Strategy == strategy && o.ContentSHA256 == contentSHA256 {
+			return o, nil
+		}
+	}
+	return storage.PersistedOutput{}, errors.New("persisted output not found")
+}
+
+func (f *fakeStore) CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error {
+	f.contextSummaries = append(f.contextSummaries, summary)
+	return nil
+}
+
+func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error) {
+	for _, c := range f.contextSummaries {
+		if c.ConversationID == conversationID && c.UserID == userID && c.SourceHistorySHA256 == sourceHistorySHA256 {
+			return c, nil
+		}
+	}
+	return storage.ContextSummary{}, errors.New("context summary not found")
 }
 
 type fakeLLMClient struct {
@@ -180,7 +214,7 @@ func (f *fakeLLMClient) CreateChatCompletion(ctx context.Context, req openai.Cha
 	return resp, nil
 }
 
-func (f *fakeLLMClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (config.ChatCompletionStream, error) {
+func (f *fakeLLMClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (llmpkg.ChatCompletionStream, error) {
 	f.calls++
 	f.lastReq = req
 	f.reqs = append(f.reqs, req)
@@ -325,20 +359,15 @@ func TestDefaultToolHooksAuditPersistEmitAndAppendToolMessage(t *testing.T) {
 }
 
 func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "当然可以，我来帮你规划。"},
 		}},
 	}}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	conversation := storage.Conversation{ID: "conv_1", Title: "新对话"}
 	user := storage.User{ID: "usr_1", Username: "alice"}
 
@@ -352,14 +381,11 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	if llm.calls != 1 {
 		t.Fatalf("expected llm to be called once, got %d", llm.calls)
 	}
-	if len(llm.lastReq.Tools) != 1 || llm.lastReq.Tools[0].Function == nil || llm.lastReq.Tools[0].Function.Name != "load_skill" {
-		t.Fatalf("expected startup-loaded default load_skill tool, got %#v", llm.lastReq.Tools)
+	if len(llm.lastReq.Tools) != 2 || !toolNamesInclude(llm.lastReq.Tools, "load_skill") || !toolNamesInclude(llm.lastReq.Tools, "read_persisted_output") {
+		t.Fatalf("expected startup-loaded default load_skill tool plus read_persisted_output, got %#v", llm.lastReq.Tools)
 	}
 	if len(store.toolCalls) != 0 {
 		t.Fatalf("expected no tool calls to be stored, got %d", len(store.toolCalls))
-	}
-	if len(store.messages) != 0 {
-		t.Fatalf("expected no legacy message row writes, got %d", len(store.messages))
 	}
 	if len(store.historyUpdates) != 1 {
 		t.Fatalf("expected one full history update, got %d", len(store.historyUpdates))
@@ -379,18 +405,13 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 }
 
 func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "你"}}}},
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "好"}, FinishReason: openai.FinishReasonStop}}},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "打招呼", writer)
@@ -409,20 +430,15 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 }
 
 func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "最终答案", ReasoningContent: "内部推理过程"},
 		}},
 	}}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reasoning", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "解释一下", writer)
@@ -445,18 +461,13 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 }
 
 func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考"}}}},
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "答案"}, FinishReason: openai.FinishReasonStop}}},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reasoning_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "解释", writer)
@@ -479,9 +490,6 @@ func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
 }
 
 func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash"}}}}}}},
@@ -492,12 +500,10 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "工具执行完成"}, FinishReason: openai.FinishReasonStop}}},
 		},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "执行 pwd", writer)
@@ -516,9 +522,6 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 }
 
 func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"}]}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
@@ -528,12 +531,10 @@ func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "已更新计划"}, FinishReason: openai.FinishReasonStop}}},
 		},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"todo_write"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	manager := NewDefaultHookManager()
 	var observedTodos []agenttools.TodoItem
 	manager.PostToolUse = append(manager.PostToolUse, func(ctx context.Context, h *ToolUseContext) error {
@@ -558,21 +559,16 @@ func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
 }
 
 func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTodoWrite(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		bashToolRound("tool_1"),
 		bashToolRound("tool_2"),
 		bashToolRound("tool_3"),
 		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash", "todo_write"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "连续执行工具", nil)
 	if err != nil {
@@ -587,9 +583,6 @@ func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTo
 }
 
 func TestRespondToConversation_TodoWriteResetsReminderCounter(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		bashToolRound("tool_1"),
 		todoWriteToolRound("todo_1"),
@@ -597,12 +590,10 @@ func TestRespondToConversation_TodoWriteResetsReminderCounter(t *testing.T) {
 		bashToolRound("tool_3"),
 		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash", "todo_write"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder_reset", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "执行并更新计划", nil)
 	if err != nil {
@@ -616,21 +607,16 @@ func TestRespondToConversation_TodoWriteResetsReminderCounter(t *testing.T) {
 }
 
 func TestRespondToConversation_DoesNotInjectTodoWriteReminderWhenToolDisabled(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		bashToolRound("tool_1"),
 		bashToolRound("tool_2"),
 		bashToolRound("tool_3"),
 		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_reminder_disabled", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "连续执行工具", nil)
 	if err != nil {
@@ -644,9 +630,6 @@ func TestRespondToConversation_DoesNotInjectTodoWriteReminderWhenToolDisabled(t 
 }
 
 func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考要不要调用工具"}}}},
@@ -658,8 +641,6 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "最终答案"}, FinishReason: openai.FinishReasonStop}}},
 		},
 	}}
-	config.Client = llm
-
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -667,7 +648,7 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_round_text", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "先查资料再回答", writer)
@@ -730,9 +711,6 @@ func TestShouldEmitAssistantContentDeltas(t *testing.T) {
 }
 
 func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesNotEmitToolEvents(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	spawnArgs := `{"task":"inspect workspace only","cwd":"."}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
@@ -745,12 +723,10 @@ func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesN
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
 		},
 	}}
-	config.Client = llm
-
 	store := &fakeStore{cached: []storage.Message{{ID: "old_msg", ConversationID: "conv_spawn", UserID: "usr_1", Role: "user", Content: "previous context must not leak"}}}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"spawn_subagent"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	writer := &captureEventWriter{}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_spawn", Title: "已有标题"}, storage.User{ID: "usr_1", Username: "alice"}, "parent request", writer)
@@ -794,15 +770,10 @@ func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesN
 }
 
 func TestRespondToConversation_ReturnsErrorForEmptyModelStream(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{{}}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_empty_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "空响应", nil)
 	if err == nil || !strings.Contains(err.Error(), "model stream returned no choices") {
@@ -814,21 +785,16 @@ func TestRespondToConversation_ReturnsErrorForEmptyModelStream(t *testing.T) {
 }
 
 func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "我会在 workspace 中执行命令。"},
 		}},
 	}}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.WebAllowedTools = []string{"bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	conversation := storage.Conversation{ID: "conv_2", Title: "新对话", UpdatedAt: time.Now()}
 	user := storage.User{ID: "usr_2", Username: "bob"}
 
@@ -845,8 +811,8 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 	if got := message.Content; got != "我会在 workspace 中执行命令。" {
 		t.Fatalf("unexpected assistant content: %q", got)
 	}
-	if len(llm.lastReq.Tools) != 1 || llm.lastReq.Tools[0].Function == nil || llm.lastReq.Tools[0].Function.Name != "bash" {
-		t.Fatalf("expected shell request to expose bash tool, got %#v", llm.lastReq.Tools)
+	if len(llm.lastReq.Tools) != 2 || !toolNamesInclude(llm.lastReq.Tools, "bash") || !toolNamesInclude(llm.lastReq.Tools, "read_persisted_output") {
+		t.Fatalf("expected shell request to expose bash tool plus read_persisted_output, got %#v", llm.lastReq.Tools)
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
 	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
@@ -867,17 +833,12 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 }
 
 func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "我会结合这些能力来回答。"},
 		}},
 	}}}
-	config.Client = llm
-
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {
@@ -897,7 +858,7 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		Status:      "enabled",
 	}}}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_3", Title: "新对话"}
 	user := storage.User{ID: "usr_3", Username: "carol"}
 
@@ -908,7 +869,7 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 	if llm.calls != 1 {
 		t.Fatalf("expected llm to be called once, got %d", llm.calls)
 	}
-	if len(llm.lastReq.Tools) != 1 {
+	if len(llm.lastReq.Tools) != 2 || !toolNamesInclude(llm.lastReq.Tools, "load_skill") {
 		t.Fatalf("expected load_skill tool to be exposed, got %d tools", len(llm.lastReq.Tools))
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
@@ -958,17 +919,12 @@ func TestBuildOpenAIMessagesCarriesHistoricalToolResult(t *testing.T) {
 }
 
 func TestRespondToConversation_LoadsHistoricalToolResultBeforeAgentLoop(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "继续回答"},
 		}},
 	}}}
-	config.Client = llm
-
 	store := &fakeStore{cached: []storage.Message{
 		{ID: "msg_old_user", ConversationID: "conv_history", UserID: "usr_history", Role: "user", Content: "先加载技能"},
 		{ID: "msg_old_assistant_tool", ConversationID: "conv_history", UserID: "usr_history", Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_1", Type: "function", Function: storage.MessageFunctionCall{Name: "load_skill", Arguments: `{"name":"builtin-skill"}`}}}},
@@ -976,7 +932,7 @@ func TestRespondToConversation_LoadsHistoricalToolResultBeforeAgentLoop(t *testi
 		{ID: "msg_old_assistant", ConversationID: "conv_history", UserID: "usr_history", Role: "assistant", Content: "已经加载"},
 	}}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_history", Title: "历史会话"}, storage.User{ID: "usr_history", Username: "history-user"}, "继续", nil)
 	if err != nil {
@@ -1001,20 +957,15 @@ func TestRespondToConversation_LoadsHistoricalToolResultBeforeAgentLoop(t *testi
 }
 
 func TestRespondToConversation_PreservesExplicitConversationTitle(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{{
 		Choices: []openai.ChatCompletionChoice{{
 			FinishReason: openai.FinishReasonStop,
 			Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "好的，我继续回答。"},
 		}},
 	}}}
-	config.Client = llm
-
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	conversation := storage.Conversation{ID: "conv_custom", Title: "周报整理"}
 	user := storage.User{ID: "usr_custom", Username: "grace"}
 
@@ -1117,9 +1068,6 @@ func TestSkillSnapshotLoadSkillPrefersUserSkillThenFallsBackToLocal(t *testing.T
 }
 
 func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{
 			Choices: []openai.ChatCompletionChoice{{
@@ -1141,8 +1089,6 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 			}},
 		},
 	}}
-	config.Client = llm
-
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -1150,7 +1096,7 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_4", Title: "新对话"}
 	user := storage.User{ID: "usr_4", Username: "dave"}
 
@@ -1213,9 +1159,6 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 }
 
 func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
-	originalClient := config.Client
-	defer func() { config.Client = originalClient }()
-
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{
 			Choices: []openai.ChatCompletionChoice{{
@@ -1237,8 +1180,6 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 			}},
 		},
 	}}
-	config.Client = llm
-
 	builtin := sessions.NewSkillLoader()
 	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
@@ -1246,7 +1187,7 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 	conversation := storage.Conversation{ID: "conv_5", Title: "新对话"}
 	user := storage.User{ID: "usr_5", Username: "erin"}
 
@@ -1306,10 +1247,8 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 }
 
 func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T) {
-	originalClient := config.Client
 	originalBash := agenttools.Handlers["bash"]
 	defer func() {
-		config.Client = originalClient
 		agenttools.Handlers["bash"] = originalBash
 	}()
 
@@ -1338,8 +1277,6 @@ func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T
 			}},
 		},
 	}}
-	config.Client = llm
-
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, "skills", "builtin-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -1354,7 +1291,7 @@ func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T
 	cfg := testAppConfig(t)
 	cfg.WorkspaceRoot = workspace
 	cfg.WebAllowedTools = []string{"load_skill", "bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_skill", Title: "新对话"}, storage.User{ID: "usr_skill", Username: "skill-user"}, "请加载技能后执行 bash", nil)
 	if err != nil {
@@ -1403,10 +1340,8 @@ func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T
 }
 
 func TestRespondToConversation_DBSkillFallsBackToWorkspaceWithinMultiToolTurn(t *testing.T) {
-	originalClient := config.Client
 	originalBash := agenttools.Handlers["bash"]
 	defer func() {
-		config.Client = originalClient
 		agenttools.Handlers["bash"] = originalBash
 	}()
 
@@ -1435,8 +1370,6 @@ func TestRespondToConversation_DBSkillFallsBackToWorkspaceWithinMultiToolTurn(t 
 			}},
 		},
 	}}
-	config.Client = llm
-
 	workspace := t.TempDir()
 	store := &fakeStore{enabledSkills: []storage.Skill{{
 		ID:          "skill_1",
@@ -1450,7 +1383,7 @@ func TestRespondToConversation_DBSkillFallsBackToWorkspaceWithinMultiToolTurn(t 
 	cfg := testAppConfig(t)
 	cfg.WorkspaceRoot = workspace
 	cfg.WebAllowedTools = []string{"load_skill", "bash"}
-	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
 
 	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_db", Title: "新对话"}, storage.User{ID: "usr_db", Username: "db-user"}, "请加载 db skill 后执行 bash", nil)
 	if err != nil {
@@ -1483,21 +1416,19 @@ func TestToolRegistryDefinitions_UsesRegisteredToolDefinition(t *testing.T) {
 	registry := NewToolRegistry(config.AppConfig{})
 
 	defs := registry.Definitions()
-	if len(defs) != 1 {
-		t.Fatalf("expected one web tool definition, got %d", len(defs))
+	if len(defs) != 2 || !toolNamesInclude(defs, "read_persisted_output") {
+		t.Fatalf("expected configured tool plus auto read_persisted_output, got %#v", defs)
 	}
 	expected, ok := lookupRegisteredTool("load_skill")
 	if !ok {
 		t.Fatalf("expected load_skill to exist in registered tool definitions")
 	}
-	if defs[0].Function == nil || expected.Function == nil {
+	loadSkill := findToolDef(t, defs, "load_skill")
+	if loadSkill.Function == nil || expected.Function == nil {
 		t.Fatalf("expected function definitions to be present")
 	}
-	if defs[0].Function.Name != expected.Function.Name {
-		t.Fatalf("expected tool name %q, got %q", expected.Function.Name, defs[0].Function.Name)
-	}
-	if defs[0].Function.Description != expected.Function.Description {
-		t.Fatalf("expected tool description %q, got %q", expected.Function.Description, defs[0].Function.Description)
+	if loadSkill.Function.Description != expected.Function.Description {
+		t.Fatalf("expected tool description %q, got %q", expected.Function.Description, loadSkill.Function.Description)
 	}
 }
 
@@ -1507,9 +1438,20 @@ func TestToolRegistryDefinitions_AreLoadedAtRegistryCreation(t *testing.T) {
 	cfg.WebAllowedTools = []string{"read_file"}
 
 	defs := registry.Definitions()
-	if len(defs) != 1 || defs[0].Function == nil || defs[0].Function.Name != "bash" {
+	if len(defs) != 2 || !toolNamesInclude(defs, "bash") {
 		t.Fatalf("expected registry to keep startup-loaded bash definition, got %#v", defs)
 	}
+}
+
+func findToolDef(t *testing.T, tools []openai.Tool, name string) openai.Tool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Function != nil && tool.Function.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("expected tool %q in definitions", name)
+	return openai.Tool{}
 }
 
 func TestToolRegistryExecute_LoadSkillReturnsSkillContentWithoutRuntimePaths(t *testing.T) {
@@ -1965,4 +1907,13 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func toolNamesInclude(tools []openai.Tool, name string) bool {
+	for _, tool := range tools {
+		if tool.Function != nil && tool.Function.Name == name {
+			return true
+		}
+	}
+	return false
 }

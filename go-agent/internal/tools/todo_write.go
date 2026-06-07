@@ -23,10 +23,6 @@ type TodoWriteResult struct {
 	Todos  []TodoItem
 }
 
-func handleTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult, error) {
-	return ExecuteTodoWrite(ctx, args)
-}
-
 func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult, error) {
 	rawTodos, ok := args["todos"].([]any)
 	if !ok {

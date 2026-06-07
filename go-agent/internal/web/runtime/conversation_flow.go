@@ -9,7 +9,6 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/config"
 	"nano_cc/internal/logger"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
@@ -48,6 +47,12 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 
 	for {
 		round++
+		requestHistory, err := s.compressContextBeforeLLM(ctx, state)
+		if err != nil {
+			return storage.Message{}, err
+		}
+		state.Messages = buildOpenAIMessages(state.SystemPrompt, requestHistory)
+		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
 			Messages: state.Messages,
@@ -63,7 +68,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		cumulativeReasoning.WriteString(msg.ReasoningContent)
 		requestMsg := msg
 		state.Messages = append(state.Messages, requestMsg)
-		if toolCallsInclude(msg.ToolCalls, todoWriteToolName) {
+		if toolCallsInclude(msg.ToolCalls, agenttools.TodoWriteToolName) {
 			roundsSinceTodoWrite = 0
 		} else {
 			roundsSinceTodoWrite++
@@ -83,20 +88,19 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
-			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
-			if toolCtx.Name == todoWriteToolName && toolCtx.Outcome.Status == "success" {
+			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID)}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
 			}
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
 		}
-		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 	}
 }
 
 func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
-	stream, err := config.Client.CreateChatCompletionStream(ctx, req)
+	stream, err := s.LLM.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		return openai.ChatCompletionMessage{}, "", err
 	}

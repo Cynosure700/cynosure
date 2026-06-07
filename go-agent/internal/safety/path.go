@@ -11,6 +11,13 @@ func SafePath(p string) (string, error) {
 	return SafePathFromRoot("", p)
 }
 
+// Contains reports whether the cleaned absolute path resolved is the root
+// itself or located within it. Both arguments are expected to be cleaned,
+// absolute paths.
+func Contains(root, resolved string) bool {
+	return resolved == root || strings.HasPrefix(resolved, root+string(os.PathSeparator))
+}
+
 func SafePathFromRoot(root, p string) (string, error) {
 	workdir, err := os.Getwd()
 	if strings.TrimSpace(root) != "" {

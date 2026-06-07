@@ -8,6 +8,7 @@ import (
 
 	"nano_cc/internal/assistant"
 	"nano_cc/internal/config"
+	"nano_cc/internal/llm"
 	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
 	"nano_cc/internal/web/auth"
@@ -51,7 +52,7 @@ func NewServer() (*Server, error) {
 	if err := config.ValidateAppLayout(cfg); err != nil {
 		return nil, err
 	}
-	config.InitLLM(cfg.LLM)
+	llmClient := llm.NewDeepseekClient(cfg.LLM.BaseURL, cfg.LLM.APIKey)
 	store, err := storage.NewStore(cfg)
 	if err != nil {
 		return nil, err
@@ -77,7 +78,7 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load system prompt: %w", err)
 	}
-	runtimeService := runtime.NewService(store, cfg)
+	runtimeService := runtime.NewService(store, cfg, llmClient)
 	runtimeService.SetBuiltinSkills(builtinSkills)
 	runtimeService.SetBasePrompt(basePrompt)
 	server := &Server{

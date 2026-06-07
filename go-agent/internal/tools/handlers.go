@@ -5,21 +5,48 @@ import (
 	"fmt"
 )
 
-var Handlers = map[string]ToolHandler{
-	"bash":       handleBash,
-	"read_file":  handleRead,
-	"write_file": handleWrite,
-	"edit_file":  handleEdit,
-	"load_skill": handleLoadSkill,
-	"todo_write": handleTodoWriteAdapter,
+// TodoWriteToolName is the tool that updates the task plan and returns
+// structured todo items in addition to a textual summary.
+const TodoWriteToolName = "todo_write"
+
+// ExecResult is the unified result of executing a stateless tool. Todos is
+// populated only by the todo_write tool.
+type ExecResult struct {
+	Output string
+	Todos  []TodoItem
 }
 
-func handleTodoWriteAdapter(ctx context.Context, args map[string]any) (string, error) {
-	result, err := handleTodoWrite(ctx, args)
-	if err != nil {
-		return "", err
+// Handlers maps stateless tool names to their textual handlers. todo_write is
+// dispatched separately because it returns structured todos (see Dispatch).
+var Handlers = map[string]ToolHandler{
+	"bash":                  handleBash,
+	"read_file":             handleRead,
+	"write_file":            handleWrite,
+	"edit_file":             handleEdit,
+	"load_skill":            handleLoadSkill,
+	"read_persisted_output": handleReadPersistedOutput,
+}
+
+// Dispatch is the single entry point for executing a stateless tool by name.
+// It is the authority for tool execution semantics, including todo_write's
+// structured output.
+func Dispatch(ctx context.Context, name string, args map[string]any) (ExecResult, error) {
+	if name == TodoWriteToolName {
+		result, err := ExecuteTodoWrite(ctx, args)
+		if err != nil {
+			return ExecResult{}, err
+		}
+		return ExecResult{Output: result.Output, Todos: result.Todos}, nil
 	}
-	return result.Output, nil
+	handler, ok := Handlers[name]
+	if !ok || handler == nil {
+		return ExecResult{}, fmt.Errorf("tool %s has no handler", name)
+	}
+	output, err := handler(ctx, args)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	return ExecResult{Output: output}, nil
 }
 
 func handleBash(ctx context.Context, args map[string]any) (string, error) {

@@ -2,10 +2,15 @@ package hooks
 
 import (
 	"context"
+	"encoding/json"
+	"path/filepath"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/idgen"
+	"nano_cc/internal/safety"
+	"nano_cc/internal/textutil"
 	"nano_cc/internal/web/storage"
 )
 
@@ -21,7 +26,7 @@ func toolAuditPreHook(ctx context.Context, h *ToolUseContext) error {
 
 func toolAuditPostHook(ctx context.Context, h *ToolUseContext) error {
 	if h.Outcome.Status == "success" {
-		h.Outcome.Audit.OutcomeSummary = truncate(h.Outcome.Result, 500)
+		h.Outcome.Audit.OutcomeSummary = textutil.Truncate(h.Outcome.Result, 500)
 		return nil
 	}
 	h.Outcome.Audit.DenialReason = h.Outcome.Result
@@ -41,31 +46,9 @@ func emitToolEventHook(ctx context.Context, h *ToolUseContext) error {
 	if h.Name == "spawn_subagent" {
 		return nil
 	}
-	preview, truncated := toolResultPreview(h.Outcome.Result)
+	preview, truncated := textutil.ToolResultPreview(h.Outcome.Result)
 	_ = h.State.Writer.Event("tool", map[string]any{"id": h.ToolCall.ID, "name": h.Name, "status": h.Outcome.Status, "result": preview, "truncated": truncated})
 	return nil
-}
-
-func toolResultPreview(result string) (string, bool) {
-	trimmed := strings.TrimSpace(result)
-	if trimmed == "" {
-		return "(无输出)", false
-	}
-	lines := strings.Split(trimmed, "\n")
-	truncated := false
-	if len(lines) > 6 {
-		lines = lines[:6]
-		truncated = true
-	}
-	preview := strings.Join(lines, "\n")
-	if len([]rune(preview)) > 300 {
-		preview = string([]rune(preview)[:300])
-		truncated = true
-	}
-	if truncated {
-		preview += "…"
-	}
-	return preview, truncated
 }
 
 func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {
@@ -75,4 +58,56 @@ func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {
 	return nil
 }
 
-func newToolCallID() string { return "tc_" + randomID() }
+func newToolCallID() string { return "tc_" + idgen.Hex() }
+
+func classifyCommandArtifactSource(workspaceRoot, commandArtifactPath string) string {
+	if strings.TrimSpace(commandArtifactPath) == "" {
+		return ""
+	}
+	cleanArtifact := filepath.Clean(commandArtifactPath)
+	cleanWorkspace := strings.TrimSpace(workspaceRoot)
+	if cleanWorkspace != "" {
+		cleanWorkspace = filepath.Clean(cleanWorkspace)
+		if safety.Contains(cleanWorkspace, cleanArtifact) {
+			return "workspace"
+		}
+	}
+	return "custom"
+}
+
+func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, string) {
+	if toolName != "bash" {
+		return "", ""
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
+		return "", ""
+	}
+	command, _ := args["command"].(string)
+	for _, token := range strings.Fields(command) {
+		candidate := strings.Trim(token, "\"'`;,()[]{}")
+		if candidate == "" || !filepath.IsAbs(candidate) {
+			continue
+		}
+		resolved, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		cleanResolved := filepath.Clean(resolved)
+		for _, root := range roots {
+			if root == "" {
+				continue
+			}
+			resolvedRoot, err := filepath.Abs(root)
+			if err != nil {
+				continue
+			}
+			cleanRoot := filepath.Clean(resolvedRoot)
+			if safety.Contains(cleanRoot, cleanResolved) {
+				return cleanResolved, cleanResolved
+			}
+		}
+		return cleanResolved, ""
+	}
+	return "", ""
+}

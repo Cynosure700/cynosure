@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 
+	"nano_cc/internal/textutil"
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
@@ -153,7 +153,7 @@ func displayConversationToolEvents(messages []storage.Message) []toolEventPayloa
 		}
 
 		status, result := parseToolMessageContent(message.Content)
-		preview, truncated := toolResultPreview(result)
+		preview, truncated := textutil.ToolResultPreview(result)
 		name := toolNames[message.ToolCallID]
 		if name == "" {
 			name = "tool"
@@ -167,38 +167,12 @@ func displayConversationToolEvents(messages []storage.Message) []toolEventPayloa
 }
 
 func parseToolMessageContent(content string) (string, string) {
-	var payload struct {
-		Status string `json:"status"`
-		Result string `json:"result"`
-	}
-	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+	status, result, isJSON := textutil.ParseToolResult(content)
+	if !isJSON {
 		return "unknown", content
 	}
-	if payload.Status == "" {
-		payload.Status = "unknown"
+	if status == "" {
+		status = "unknown"
 	}
-	return payload.Status, payload.Result
-}
-
-func toolResultPreview(result string) (string, bool) {
-	trimmed := strings.TrimSpace(result)
-	if trimmed == "" {
-		return "(无输出)", false
-	}
-	lines := strings.Split(trimmed, "\n")
-	truncated := false
-	if len(lines) > 6 {
-		lines = lines[:6]
-		truncated = true
-	}
-	preview := strings.Join(lines, "\n")
-	if utf8.RuneCountInString(preview) > 300 {
-		runes := []rune(preview)
-		preview = string(runes[:300])
-		truncated = true
-	}
-	if truncated {
-		preview += "…"
-	}
-	return preview, truncated
+	return status, result
 }

@@ -4,8 +4,11 @@ import (
 	"sort"
 	"strings"
 
+	"nano_cc/internal/idgen"
 	"nano_cc/internal/web/storage"
 )
+
+func newMessageID() string { return idgen.New("msg") }
 
 func fallbackAssistantContent(content string) string {
 	if strings.TrimSpace(content) == "" {
@@ -28,13 +31,6 @@ func inferConversationTitle(userMessage string) string {
 		return "新对话"
 	}
 	return trimmed
-}
-
-func truncate(text string, max int) string {
-	if len(text) <= max {
-		return text
-	}
-	return text[:max]
 }
 
 func SkillNames(skills []storage.Skill) []string {

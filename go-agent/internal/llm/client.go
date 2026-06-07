@@ -1,4 +1,4 @@
-package config
+package llm
 
 import (
 	"bufio"
@@ -13,13 +13,26 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+// Client is the minimal chat-completion interface the runtime depends on.
+type Client interface {
+	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
+	CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error)
+}
+
+// ChatCompletionStream is a streamed chat-completion response.
+type ChatCompletionStream interface {
+	Recv() (openai.ChatCompletionStreamResponse, error)
+	Close() error
+}
+
 type deepseekClient struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
 }
 
-func newDeepseekClient(baseURL, apiKey string) *deepseekClient {
+// NewDeepseekClient returns a Client backed by the DeepSeek chat-completions API.
+func NewDeepseekClient(baseURL, apiKey string) Client {
 	return &deepseekClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,

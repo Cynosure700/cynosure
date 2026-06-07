@@ -5,17 +5,6 @@ import (
 	"database/sql"
 )
 
-func (s *Store) CreateMessage(ctx context.Context, message Message) error {
-	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO messages (id, conversation_id, user_id, role, content, reasoning_content, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, NOW())
-	`, message.ID, message.ConversationID, message.UserID, message.Role, message.Content, message.ReasoningContent)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 100

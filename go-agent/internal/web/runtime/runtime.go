@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"nano_cc/internal/config"
+	"nano_cc/internal/llm"
 	"nano_cc/internal/sessions"
+	"nano_cc/internal/web/runtime/compression"
 	"nano_cc/internal/web/storage"
 )
 
@@ -13,7 +15,6 @@ type EventWriter interface {
 }
 
 type conversationStore interface {
-	CreateMessage(ctx context.Context, message storage.Message) error
 	UpdateConversationTitle(ctx context.Context, conversationID, title string) error
 	TouchConversationActivity(ctx context.Context, conversationID string) error
 	ListEnabledSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error)
@@ -23,19 +24,26 @@ type conversationStore interface {
 	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
 	CreateToolCall(ctx context.Context, tc storage.ToolCall) error
 	CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error
+	CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error
+	GetPersistedOutputForConversation(ctx context.Context, id, userID, conversationID string) (storage.PersistedOutput, error)
+	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
+	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
+	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
 }
 
 type Service struct {
-	Store         conversationStore
-	Cfg           config.AppConfig
-	Tools         *ToolRegistry
-	BuiltinSkills *sessions.SkillLoader
-	BasePrompt    string
-	Hooks         *HookManager
+	Store             conversationStore
+	Cfg               config.AppConfig
+	LLM               llm.Client
+	Tools             *ToolRegistry
+	BuiltinSkills     *sessions.SkillLoader
+	BasePrompt        string
+	Hooks             *HookManager
+	ContextCompressor *compression.Compressor
 }
 
-func NewService(store *storage.Store, cfg config.AppConfig) *Service {
-	return &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager()}
+func NewService(store *storage.Store, cfg config.AppConfig, client llm.Client) *Service {
+	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager()}
 }
 
 func (s *Service) hookManager() *HookManager {

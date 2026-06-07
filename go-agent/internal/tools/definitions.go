@@ -25,7 +25,7 @@ func toolDef(name, desc string, params any) openai.Tool {
 	}
 }
 
-func strParam(desc string, required bool) map[string]any {
+func strParam(desc string) map[string]any {
 	return map[string]any{
 		"type":        "string",
 		"description": desc,
@@ -43,14 +43,14 @@ var baseToolDefs = []openai.Tool{
 	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the workspace root; absolute paths outside the workspace and dangerous commands are rejected unless explicitly allowed by configuration.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"command": strParam("The shell command to execute", true),
+			"command": strParam("The shell command to execute"),
 		},
 		"required": []string{"command"},
 	}),
 	toolDef("read_file", "Read a file from the filesystem", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":  strParam("Path to the file to read", true),
+			"path":  strParam("Path to the file to read"),
 			"limit": intParam("Maximum number of lines to read"),
 		},
 		"required": []string{"path"},
@@ -58,24 +58,24 @@ var baseToolDefs = []openai.Tool{
 	toolDef("write_file", "Write content to a file", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":    strParam("Path to the file to write", true),
-			"content": strParam("Content to write to the file", true),
+			"path":    strParam("Path to the file to write"),
+			"content": strParam("Content to write to the file"),
 		},
 		"required": []string{"path", "content"},
 	}),
 	toolDef("edit_file", "Replace text in a file by exact match", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":     strParam("Path to the file to edit", true),
-			"old_text": strParam("Exact text to find and replace", true),
-			"new_text": strParam("Text to replace it with", true),
+			"path":     strParam("Path to the file to edit"),
+			"old_text": strParam("Exact text to find and replace"),
+			"new_text": strParam("Text to replace it with"),
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
 	toolDef("load_skill", "Load the full instructions of a skill by exact name before using or following that skill. It first looks up the current user's enabled database skills, then falls back to local builtin skills.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"name": strParam("Name of the skill to load", true),
+			"name": strParam("Name of the skill to load"),
 		},
 		"required": []string{"name"},
 	}),
@@ -102,11 +102,26 @@ var baseToolDefs = []openai.Tool{
 var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared.", true),
-		"cwd":  strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace.", false),
+		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
+		"cwd":  strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace."),
 	},
 	"required": []string{"task"},
 })
 
-var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef)
+// ReadPersistedOutputToolName is exposed automatically alongside context
+// compression so the model can fetch the full content behind a
+// <persisted-output> marker when the inline preview is insufficient.
+const ReadPersistedOutputToolName = "read_persisted_output"
+
+var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a chunk of a persisted tool output by id when a <persisted-output> marker preview is insufficient. Only outputs from the current conversation are accessible.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"id":     strParam("The persisted output id from the <persisted-output> marker, for example po_abc123."),
+		"offset": intParam("Zero-based character offset to start reading from. Defaults to 0."),
+		"limit":  intParam("Maximum characters to return. Defaults to 20000 and is capped by the runtime."),
+	},
+	"required": []string{"id"},
+})
+
+var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, ReadPersistedOutputToolDef)
 var ChildToolDefs = baseToolDefs

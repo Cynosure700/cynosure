@@ -22,6 +22,53 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureSubagentMessagesTable(ctx); err != nil {
 		return fmt.Errorf("migrate subagent messages table: %w", err)
 	}
+	if err := s.ensureContextCompressionTables(ctx); err != nil {
+		return fmt.Errorf("migrate context compression tables: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureContextCompressionTables(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS persisted_outputs (
+			id VARCHAR(64) PRIMARY KEY,
+			conversation_id VARCHAR(64) NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			message_id VARCHAR(64) NOT NULL,
+			tool_call_id VARCHAR(128) NOT NULL DEFAULT '',
+			kind VARCHAR(64) NOT NULL,
+			strategy VARCHAR(128) NOT NULL,
+			original_bytes INT NOT NULL,
+			content_sha256 CHAR(64) NOT NULL,
+			content LONGTEXT NOT NULL,
+			preview TEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			UNIQUE KEY uniq_po_message_hash (conversation_id, user_id, message_id, tool_call_id, strategy, content_sha256),
+			KEY idx_po_conversation (conversation_id, created_at),
+			CONSTRAINT fk_po_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			CONSTRAINT fk_po_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create persisted_outputs: %w", err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS context_summaries (
+			id VARCHAR(64) PRIMARY KEY,
+			conversation_id VARCHAR(64) NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			source_history_sha256 CHAR(64) NOT NULL,
+			strategy VARCHAR(128) NOT NULL,
+			estimated_tokens_before INT NOT NULL,
+			estimated_tokens_after INT NOT NULL,
+			summary LONGTEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			KEY idx_cs_lookup (conversation_id, user_id, source_history_sha256),
+			CONSTRAINT fk_cs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			CONSTRAINT fk_cs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create context_summaries: %w", err)
+	}
 	return nil
 }
 

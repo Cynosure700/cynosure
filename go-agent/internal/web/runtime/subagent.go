@@ -10,7 +10,9 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/idgen"
 	"nano_cc/internal/logger"
+	"nano_cc/internal/safety"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
@@ -47,7 +49,7 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	if err != nil {
 		return "", err
 	}
-	runID := newID("subagent")
+	runID := idgen.New("subagent")
 	parentToolCallID := strings.TrimSpace(parent.ParentToolCallID)
 	if parentToolCallID == "" {
 		parentToolCallID = "spawn_subagent"
@@ -87,7 +89,7 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 			return openai.ChatCompletionMessage{}, err
 		}
 		state.Messages = append(state.Messages, msg)
-		if toolCallsInclude(msg.ToolCalls, todoWriteToolName) {
+		if toolCallsInclude(msg.ToolCalls, agenttools.TodoWriteToolName) {
 			roundsSinceTodoWrite = 0
 		} else {
 			roundsSinceTodoWrite++
@@ -106,7 +108,7 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 				return openai.ChatCompletionMessage{}, err
 			}
 			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, parent, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
-			if toolCtx.Name == todoWriteToolName && toolCtx.Outcome.Status == "success" {
+			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
 			}
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
@@ -139,7 +141,7 @@ func (t *subagentTrace) record(ctx context.Context, msg storage.Message) error {
 		return nil
 	}
 	t.sequenceNo++
-	return t.store.CreateSubagentMessage(ctx, storage.SubagentMessage{ID: newID("submsg"), RunID: t.runID, ParentToolCallID: t.parentToolCallID, ConversationID: t.conversationID, UserID: t.userID, SequenceNo: t.sequenceNo, Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCallID: msg.ToolCallID, ToolCalls: msg.ToolCalls})
+	return t.store.CreateSubagentMessage(ctx, storage.SubagentMessage{ID: idgen.New("submsg"), RunID: t.runID, ParentToolCallID: t.parentToolCallID, ConversationID: t.conversationID, UserID: t.userID, SequenceNo: t.sequenceNo, Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCallID: msg.ToolCallID, ToolCalls: msg.ToolCalls})
 }
 
 func resolveSubagentCWD(workspaceRoot, cwd string) (string, error) {
@@ -160,7 +162,7 @@ func resolveSubagentCWD(workspaceRoot, cwd string) (string, error) {
 		}
 		resolved = filepath.Clean(resolved)
 	}
-	if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+	if !safety.Contains(root, resolved) {
 		return "", fmt.Errorf("subagent cwd escapes workspace: %s", cwd)
 	}
 	info, err := os.Stat(resolved)

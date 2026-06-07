@@ -1,9 +1,11 @@
 package config
 
 import (
-	"context"
-
-	openai "github.com/sashabaranov/go-openai"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -47,17 +49,57 @@ type AppConfig struct {
 	SessionTTLMinutes          int
 }
 
-type LLMClient interface {
-	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
-	CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error)
+func loadConfigFile() (fileConfig, error) {
+	data, err := os.ReadFile(configFilePath())
+	if err != nil {
+		return fileConfig{}, err
+	}
+
+	var cfg fileConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fileConfig{}, fmt.Errorf("failed to parse workspace config.json: %w", err)
+	}
+	return cfg, nil
 }
 
-type ChatCompletionStream interface {
-	Recv() (openai.ChatCompletionStreamResponse, error)
-	Close() error
+func configFilePath() string {
+	if workspaceRoot := strings.TrimSpace(os.Getenv("WORKSPACE_ROOT")); workspaceRoot != "" {
+		if appHome := strings.TrimSpace(os.Getenv("APP_HOME")); appHome != "" && !filepath.IsAbs(workspaceRoot) {
+			workspaceRoot = filepath.Join(appHome, workspaceRoot)
+		}
+		return filepath.Join(workspaceRoot, "config.json")
+	}
+	if appHome := strings.TrimSpace(os.Getenv("APP_HOME")); appHome != "" {
+		return filepath.Join(appHome, "workspace", "config.json")
+	}
+	return filepath.Join("workspace", "config.json")
 }
 
-var (
-	Client  LLMClient
-	ModelID string
-)
+func loadLLMConfig() (Config, error) {
+	cfg := Config{
+		BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		APIKey:  strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		ModelID: strings.TrimSpace(os.Getenv("MODEL_ID")),
+	}
+
+	fileCfg, err := loadConfigFile()
+	if err != nil && !os.IsNotExist(err) {
+		return Config{}, err
+	}
+
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = fileCfg.Config.BaseURL
+	}
+	if cfg.APIKey == "" {
+		cfg.APIKey = fileCfg.Config.APIKey
+	}
+	if cfg.ModelID == "" {
+		cfg.ModelID = fileCfg.Config.ModelID
+	}
+
+	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.ModelID == "" {
+		return Config{}, fmt.Errorf("missing LLM config; set OPENAI_BASE_URL, OPENAI_API_KEY, MODEL_ID or provide WORKSPACE_ROOT/config.json")
+	}
+
+	return cfg, nil
+}
