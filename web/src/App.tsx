@@ -756,6 +756,12 @@ export function App() {
                             placeholder="给我发消息，告诉我你现在想解决什么问题。"
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                                    event.preventDefault();
+                                    event.currentTarget.form?.requestSubmit();
+                                }
+                            }}
                             disabled={!activeConversationId || sending}
                         />
                         <div className="composer-footer">
