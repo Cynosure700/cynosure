@@ -65,7 +65,7 @@ func NewServer() (*Server, error) {
 	if err := store.RunMigrations(ctx); err != nil {
 		return nil, err
 	}
-	if err := logger.InitFileLoggerUnderWorkspaceRoot(cfg.WorkspaceRoot); err != nil {
+	if err := logger.InitFileLoggerAt(cfg.LogsDir); err != nil {
 		logger.Warn(fmt.Sprintf("failed to init file logger: %v", err))
 	} else {
 		logger.Info(fmt.Sprintf("LLM logs -> %s", logger.LogFilePath()))

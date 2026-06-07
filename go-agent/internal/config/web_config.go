@@ -46,6 +46,7 @@ func LoadWebConfig() (AppConfig, error) {
 		CommandScriptDir:           runtimeDirs.commandScriptDir,
 		SystemPromptPath:           runtimeDirs.systemPromptPath,
 		WorkspaceRoot:              runtimeDirs.workspaceRoot,
+		LogsDir:                    runtimeDirs.logsDir,
 		WebAllowedTools:            parseCSVList(getenv("WEB_ALLOWED_TOOLS", firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file,todo_write"))),
 		BashAllowOutsideWorkspace:  getenvBool("BASH_ALLOW_OUTSIDE_WORKSPACE", fileCfg.BashAllowOutsideWorkspace),
 		BashAllowDangerousCommands: getenvBool("BASH_ALLOW_DANGEROUS_COMMANDS", fileCfg.BashAllowDangerousCommands),

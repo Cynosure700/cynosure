@@ -10,18 +10,15 @@ import (
 
 func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `",
-		"builtin_skills_dir": "shared-workspace/skills",
-		"command_bin_dir": "shared-workspace/bin",
-		"command_script_dir": "shared-workspace/cmd",
+		"builtin_skills_dir": "skills",
+		"command_bin_dir": "bin",
+		"command_script_dir": "cmd",
 		"workspace_root": "shared-workspace",
 		"web_allowed_tools": "load_skill,bash"
 	}`
@@ -58,20 +55,23 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	if cfg.AppHome != filepath.Clean(root) {
 		t.Fatalf("expected app home %q, got %q", filepath.Clean(root), cfg.AppHome)
 	}
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "shared-workspace", "skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
 		t.Fatalf("unexpected builtin skills dir: %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "shared-workspace", "bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "bin") {
 		t.Fatalf("unexpected command bin dir: %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "shared-workspace", "cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
 		t.Fatalf("unexpected command script dir: %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "shared-workspace") {
 		t.Fatalf("unexpected workspace root: %q", cfg.WorkspaceRoot)
 	}
-	if cfg.SystemPromptPath != filepath.Join(root, "shared-workspace", "system_prompt.md") {
+	if cfg.SystemPromptPath != filepath.Join(root, "system_prompt.md") {
 		t.Fatalf("unexpected system prompt path: %q", cfg.SystemPromptPath)
+	}
+	if cfg.LogsDir != filepath.Join(root, "logs") {
+		t.Fatalf("unexpected logs dir: %q", cfg.LogsDir)
 	}
 	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "bash"}) {
 		t.Fatalf("unexpected web allowed tools: %#v", cfg.WebAllowedTools)
@@ -83,10 +83,7 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 
 func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "env-workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -116,9 +113,9 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("MODEL_ID", "")
 	t.Setenv("APP_HOME", root)
-	t.Setenv("BUILTIN_SKILLS_DIR", filepath.Join("env-workspace", "skills"))
-	t.Setenv("COMMAND_BIN_DIR", filepath.Join("env-workspace", "bin"))
-	t.Setenv("COMMAND_SCRIPT_DIR", filepath.Join("env-workspace", "cmd"))
+	t.Setenv("BUILTIN_SKILLS_DIR", "skills")
+	t.Setenv("COMMAND_BIN_DIR", "bin")
+	t.Setenv("COMMAND_SCRIPT_DIR", "cmd")
 	t.Setenv("WORKSPACE_ROOT", "env-workspace")
 	t.Setenv("WEB_ALLOWED_TOOLS", "load_skill,edit_file")
 
@@ -127,13 +124,13 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "env-workspace", "skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
 		t.Fatalf("expected env builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "env-workspace", "bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "bin") {
 		t.Fatalf("expected env command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "env-workspace", "cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
 		t.Fatalf("expected env command script dir, got %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "env-workspace") {
@@ -146,10 +143,7 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 
 func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -185,17 +179,14 @@ func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
 	}
-	if cfg.SystemPromptPath != filepath.Join(root, "workspace", "env-prompt.md") {
+	if cfg.SystemPromptPath != filepath.Join(root, "env-prompt.md") {
 		t.Fatalf("expected env system prompt path, got %q", cfg.SystemPromptPath)
 	}
 }
 
 func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -243,10 +234,7 @@ func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
 
 func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -283,13 +271,13 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "workspace", "skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
 		t.Fatalf("expected default builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "workspace", "bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "bin") {
 		t.Fatalf("expected default command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "workspace", "cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
 		t.Fatalf("expected default command script dir, got %q", cfg.CommandScriptDir)
 	}
 	if cfg.WorkspaceRoot != filepath.Join(root, "workspace") {
@@ -303,10 +291,7 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 
 func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -353,23 +338,20 @@ func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t
 	if cfg.WorkspaceRoot != expectedWorkspace {
 		t.Fatalf("expected app home workspace root %q, got %q", expectedWorkspace, cfg.WorkspaceRoot)
 	}
-	if cfg.BuiltinSkillsDir != filepath.Join(expectedWorkspace, "skills") {
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
 		t.Fatalf("expected default builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(expectedWorkspace, "bin") {
+	if cfg.CommandBinDir != filepath.Join(root, "bin") {
 		t.Fatalf("expected default command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
+	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
 		t.Fatalf("expected default command script dir, got %q", cfg.CommandScriptDir)
 	}
 }
 
-func TestLoadWebConfig_ExplicitWorkspaceOverrideDrivesDefaultAssetDirs(t *testing.T) {
+func TestLoadWebConfig_AssetDirsStayUnderAppHomeRegardlessOfWorkspace(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "custom", "runtime-workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
-	}
+	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
@@ -408,25 +390,25 @@ func TestLoadWebConfig_ExplicitWorkspaceOverrideDrivesDefaultAssetDirs(t *testin
 	if cfg.WorkspaceRoot != expectedWorkspace {
 		t.Fatalf("expected explicit workspace root %q, got %q", expectedWorkspace, cfg.WorkspaceRoot)
 	}
-	if cfg.BuiltinSkillsDir != filepath.Join(expectedWorkspace, "skills") {
-		t.Fatalf("expected derived builtin skills dir, got %q", cfg.BuiltinSkillsDir)
+	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
+		t.Fatalf("expected app home builtin skills dir, got %q", cfg.BuiltinSkillsDir)
 	}
-	if cfg.CommandBinDir != filepath.Join(expectedWorkspace, "bin") {
-		t.Fatalf("expected derived command bin dir, got %q", cfg.CommandBinDir)
+	if cfg.CommandBinDir != filepath.Join(root, "bin") {
+		t.Fatalf("expected app home command bin dir, got %q", cfg.CommandBinDir)
 	}
-	if cfg.CommandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
-		t.Fatalf("expected derived command script dir, got %q", cfg.CommandScriptDir)
+	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
+		t.Fatalf("expected app home command script dir, got %q", cfg.CommandScriptDir)
 	}
 }
 
-func TestResolveRuntimePaths_ReturnsCanonicalWorkspaceDerivedDirs(t *testing.T) {
+func TestResolveRuntimePaths_ReturnsCanonicalAppHomeDerivedDirs(t *testing.T) {
 	root := t.TempDir()
 
 	paths, err := resolveRuntimePaths(root, fileConfig{
 		WorkspaceRoot:    "custom/runtime-workspace",
-		BuiltinSkillsDir: filepath.Join("custom", "runtime-workspace", "skills"),
-		CommandBinDir:    filepath.Join("custom", "runtime-workspace", "bin"),
-		CommandScriptDir: filepath.Join("custom", "runtime-workspace", "cmd"),
+		BuiltinSkillsDir: "skills",
+		CommandBinDir:    "bin",
+		CommandScriptDir: "cmd",
 	})
 	if err != nil {
 		t.Fatalf("resolve runtime paths: %v", err)
@@ -436,28 +418,32 @@ func TestResolveRuntimePaths_ReturnsCanonicalWorkspaceDerivedDirs(t *testing.T) 
 	if paths.workspaceRoot != expectedWorkspace {
 		t.Fatalf("expected workspace root %q, got %q", expectedWorkspace, paths.workspaceRoot)
 	}
-	if paths.builtinSkillsDir != filepath.Join(expectedWorkspace, "skills") {
-		t.Fatalf("expected builtin skills dir under workspace root, got %q", paths.builtinSkillsDir)
+	if paths.builtinSkillsDir != filepath.Join(root, "skills") {
+		t.Fatalf("expected builtin skills dir under app home, got %q", paths.builtinSkillsDir)
 	}
-	if paths.commandBinDir != filepath.Join(expectedWorkspace, "bin") {
-		t.Fatalf("expected command bin dir under workspace root, got %q", paths.commandBinDir)
+	if paths.commandBinDir != filepath.Join(root, "bin") {
+		t.Fatalf("expected command bin dir under app home, got %q", paths.commandBinDir)
 	}
-	if paths.commandScriptDir != filepath.Join(expectedWorkspace, "cmd") {
-		t.Fatalf("expected command script dir under workspace root, got %q", paths.commandScriptDir)
+	if paths.commandScriptDir != filepath.Join(root, "cmd") {
+		t.Fatalf("expected command script dir under app home, got %q", paths.commandScriptDir)
+	}
+	if paths.logsDir != filepath.Join(root, "logs") {
+		t.Fatalf("expected logs dir under app home, got %q", paths.logsDir)
 	}
 }
 
-func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T) {
+func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideAppHome(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, "custom", "runtime-workspace", "config.json")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir workspace config dir: %v", err)
+	appHome := filepath.Join(root, "app-home")
+	if err := os.MkdirAll(appHome, 0o755); err != nil {
+		t.Fatalf("mkdir app home: %v", err)
 	}
+	configPath := filepath.Join(appHome, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
 		"api_key": "test-key",
 		"model_id": "test-model",
-		"app_home": "` + root + `"
+		"app_home": "` + appHome + `"
 	}`
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -467,7 +453,7 @@ func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T)
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
-	if err := os.Chdir(root); err != nil {
+	if err := os.Chdir(appHome); err != nil {
 		t.Fatalf("chdir to temp root: %v", err)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
@@ -476,17 +462,17 @@ func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideWorkspaceRoot(t *testing.T)
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("MODEL_ID", "")
 	t.Setenv("APP_HOME", "")
-	t.Setenv("WORKSPACE_ROOT", filepath.Join("custom", "runtime-workspace"))
-	t.Setenv("BUILTIN_SKILLS_DIR", "other-skills")
+	t.Setenv("WORKSPACE_ROOT", "")
+	t.Setenv("BUILTIN_SKILLS_DIR", filepath.Join("..", "other-skills"))
 	t.Setenv("COMMAND_BIN_DIR", "")
 	t.Setenv("COMMAND_SCRIPT_DIR", "")
 	t.Setenv("WEB_ALLOWED_TOOLS", "")
 
 	_, err = LoadWebConfig()
 	if err == nil {
-		t.Fatalf("expected runtime asset override outside workspace root to be rejected")
+		t.Fatalf("expected runtime asset override outside app home to be rejected")
 	}
-	if got := err.Error(); got == "" || !strings.Contains(got, "runtime asset dir must stay under workspace root") {
+	if got := err.Error(); got == "" || !strings.Contains(got, "runtime asset dir must stay under app home") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -495,10 +481,11 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 	root := t.TempDir()
 	cfg := AppConfig{
 		AppHome:          root,
-		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
-		CommandBinDir:    filepath.Join(root, "workspace", "bin"),
-		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
+		BuiltinSkillsDir: filepath.Join(root, "skills"),
+		CommandBinDir:    filepath.Join(root, "bin"),
+		CommandScriptDir: filepath.Join(root, "cmd"),
 		WorkspaceRoot:    filepath.Join(root, "workspace"),
+		LogsDir:          filepath.Join(root, "logs"),
 	}
 
 	if err := EnsureAppLayout(cfg); err != nil {
@@ -507,11 +494,11 @@ func TestEnsureAppLayout_CreatesExpectedDirectories(t *testing.T) {
 
 	paths := []string{
 		root,
-		filepath.Join(root, "workspace", "skills"),
-		filepath.Join(root, "workspace", "bin"),
-		filepath.Join(root, "workspace", "cmd"),
+		filepath.Join(root, "skills"),
+		filepath.Join(root, "bin"),
+		filepath.Join(root, "cmd"),
 		filepath.Join(root, "workspace"),
-		filepath.Join(root, "workspace", "logs"),
+		filepath.Join(root, "logs"),
 	}
 	for _, path := range paths {
 		info, err := os.Stat(path)
@@ -528,10 +515,11 @@ func TestValidateAppLayout_AcceptsPreparedDirectories(t *testing.T) {
 	root := t.TempDir()
 	cfg := AppConfig{
 		AppHome:          root,
-		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
-		CommandBinDir:    filepath.Join(root, "workspace", "bin"),
-		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
+		BuiltinSkillsDir: filepath.Join(root, "skills"),
+		CommandBinDir:    filepath.Join(root, "bin"),
+		CommandScriptDir: filepath.Join(root, "cmd"),
 		WorkspaceRoot:    filepath.Join(root, "workspace"),
+		LogsDir:          filepath.Join(root, "logs"),
 	}
 
 	if err := EnsureAppLayout(cfg); err != nil {
@@ -550,10 +538,11 @@ func TestValidateAppLayout_RejectsFilePath(t *testing.T) {
 	}
 	cfg := AppConfig{
 		AppHome:          root,
-		BuiltinSkillsDir: filepath.Join(root, "workspace", "skills"),
+		BuiltinSkillsDir: filepath.Join(root, "skills"),
 		CommandBinDir:    filePath,
-		CommandScriptDir: filepath.Join(root, "workspace", "cmd"),
+		CommandScriptDir: filepath.Join(root, "cmd"),
 		WorkspaceRoot:    filepath.Join(root, "workspace"),
+		LogsDir:          filepath.Join(root, "logs"),
 	}
 	if err := os.MkdirAll(cfg.BuiltinSkillsDir, 0o755); err != nil {
 		t.Fatalf("mkdir builtin skills dir: %v", err)

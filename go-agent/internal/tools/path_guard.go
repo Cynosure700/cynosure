@@ -76,8 +76,17 @@ func resolvePathFromContext(ctx context.Context, path string) (string, string, e
 	return workspaceRoot, resolvedPath, nil
 }
 
-func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool) error {
+func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool, allowedDirs ...string) error {
 	cleanRoot := filepath.Clean(root)
+	cleanAllowed := make([]string, 0, len(allowedDirs))
+	for _, dir := range allowedDirs {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(dir); err == nil {
+			cleanAllowed = append(cleanAllowed, filepath.Clean(abs))
+		}
+	}
 	for _, token := range splitShellFields(command) {
 		candidate := cleanShellPathToken(token)
 		if candidate == "" || !isShellPathArgument(candidate) {
@@ -94,11 +103,24 @@ func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool) 
 		if allowOutsideWorkspace {
 			continue
 		}
-		if !safety.Contains(cleanRoot, cleanResolved) {
-			return fmt.Errorf("command path escapes workspace: %s", token)
+		if safety.Contains(cleanRoot, cleanResolved) {
+			continue
 		}
+		if isUnderAnyDir(cleanResolved, cleanAllowed) {
+			continue
+		}
+		return fmt.Errorf("command path escapes workspace: %s", token)
 	}
 	return nil
+}
+
+func isUnderAnyDir(target string, dirs []string) bool {
+	for _, dir := range dirs {
+		if safety.Contains(dir, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitShellFields(command string) []string {

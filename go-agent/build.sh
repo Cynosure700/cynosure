@@ -10,9 +10,10 @@ echo "打包 go-agent..."
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/bin"
-mkdir -p "${OUTPUT_DIR}/workspace/skills"
-mkdir -p "${OUTPUT_DIR}/workspace/cmd"
-mkdir -p "${OUTPUT_DIR}/workspace/logs"
+mkdir -p "${OUTPUT_DIR}/skills"
+mkdir -p "${OUTPUT_DIR}/cmd"
+mkdir -p "${OUTPUT_DIR}/logs"
+mkdir -p "${OUTPUT_DIR}/workspace"
 
 (
   cd "${ROOTDIR}"
@@ -26,21 +27,22 @@ if [ -d "${ROOTDIR}/cmd" ]; then
     [ -f "${command_dir}/main.go" ] || continue
     (
       cd "${ROOTDIR}"
-      "${GO_BINARY}" build -o "${OUTPUT_DIR}/workspace/cmd/${command_name}" "./cmd/${command_name}"
+      "${GO_BINARY}" build -o "${OUTPUT_DIR}/bin/${command_name}" "./cmd/${command_name}"
     )
   done
+  cp -R "${ROOTDIR}/cmd/." "${OUTPUT_DIR}/cmd/"
 fi
 
 if [ -f "${ROOTDIR}/config.json" ]; then
-  cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/workspace/config.json"
+  cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/config.json"
 fi
 
 if [ -f "${ROOTDIR}/system_prompt.md" ]; then
-  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/workspace/system_prompt.md"
+  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/system_prompt.md"
 fi
 
 if [ -d "${ROOTDIR}/skills" ]; then
-  cp -R "${ROOTDIR}/skills/." "${OUTPUT_DIR}/workspace/skills/"
+  cp -R "${ROOTDIR}/skills/." "${OUTPUT_DIR}/skills/"
 fi
 
 echo "打包完成：${OUTPUT_DIR}"

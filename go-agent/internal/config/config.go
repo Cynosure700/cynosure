@@ -42,6 +42,7 @@ type AppConfig struct {
 	CommandScriptDir           string
 	SystemPromptPath           string
 	WorkspaceRoot              string
+	LogsDir                    string
 	WebAllowedTools            []string
 	BashAllowOutsideWorkspace  bool
 	BashAllowDangerousCommands bool
@@ -63,16 +64,10 @@ func loadConfigFile() (fileConfig, error) {
 }
 
 func configFilePath() string {
-	if workspaceRoot := strings.TrimSpace(os.Getenv("WORKSPACE_ROOT")); workspaceRoot != "" {
-		if appHome := strings.TrimSpace(os.Getenv("APP_HOME")); appHome != "" && !filepath.IsAbs(workspaceRoot) {
-			workspaceRoot = filepath.Join(appHome, workspaceRoot)
-		}
-		return filepath.Join(workspaceRoot, "config.json")
-	}
 	if appHome := strings.TrimSpace(os.Getenv("APP_HOME")); appHome != "" {
-		return filepath.Join(appHome, "workspace", "config.json")
+		return filepath.Join(appHome, "config.json")
 	}
-	return filepath.Join("workspace", "config.json")
+	return "config.json"
 }
 
 func loadLLMConfig() (Config, error) {
