@@ -677,11 +677,6 @@ p {
     color: #ffffff;
 }
 
-.secondary-actions {
-    margin-top: auto;
-}
-
-.secondary-buttons,
 .panel-actions {
     display: flex;
     gap: 8px;

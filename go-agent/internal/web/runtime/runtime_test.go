@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,8 +27,10 @@ type fakeStore struct {
 	subagentMessages   []storage.SubagentMessage
 	persistedOutputs   []storage.PersistedOutput
 	contextSummaries   []storage.ContextSummary
-	userProfile        storage.UserProfile
-	conversationTopics []storage.ConversationTopics
+	memories           []storage.Memory
+	deletedOldest      [][3]string
+	replacedMemories   []storage.Memory
+	replacedSemantic   []storage.Memory
 	cached             []storage.Message
 	enabledSkills      []storage.Skill
 	enabledSkillSets   [][]storage.Skill
@@ -129,31 +132,75 @@ func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversa
 	return storage.ContextSummary{}, errors.New("context summary not found")
 }
 
-func (f *fakeStore) GetUserProfile(ctx context.Context, userID string) (storage.UserProfile, bool, error) {
-	if f.userProfile.UserID == userID && strings.TrimSpace(f.userProfile.ProfileJSON) != "" {
-		return f.userProfile, true, nil
-	}
-	return storage.UserProfile{}, false, nil
-}
-
-func (f *fakeStore) UpsertUserProfile(ctx context.Context, profile storage.UserProfile) error {
-	f.userProfile = profile
-	return nil
-}
-
-func (f *fakeStore) UpsertConversationTopics(ctx context.Context, topics storage.ConversationTopics) error {
-	f.conversationTopics = append(f.conversationTopics, topics)
-	return nil
-}
-
-func (f *fakeStore) ListRecentTopicsByUser(ctx context.Context, userID, excludeConversationID string, limit int) ([]storage.ConversationTopics, error) {
-	var result []storage.ConversationTopics
-	for _, t := range f.conversationTopics {
-		if t.UserID == userID && t.ConversationID != excludeConversationID {
-			result = append(result, t)
+func (f *fakeStore) ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
+	var result []storage.Memory
+	for _, m := range f.memories {
+		if (m.UserID == userID && (m.Type == MemoryTypeSessionSummary || m.Type == MemoryTypeUserPreference)) ||
+			(m.UserID == "" && m.Type == MemoryTypeSemantic) {
+			result = append(result, m)
 		}
 	}
 	return result, nil
+}
+
+func (f *fakeStore) ListMemoriesByUserAndType(ctx context.Context, userID, memType string) ([]storage.Memory, error) {
+	var result []storage.Memory
+	for _, m := range f.memories {
+		if m.UserID == userID && m.Type == memType {
+			result = append(result, m)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeStore) ListSemanticMemories(ctx context.Context) ([]storage.Memory, error) {
+	var result []storage.Memory
+	for _, m := range f.memories {
+		if m.UserID == "" && m.Type == MemoryTypeSemantic {
+			result = append(result, m)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeStore) InsertMemory(ctx context.Context, m storage.Memory) error {
+	f.memories = append(f.memories, m)
+	return nil
+}
+
+func (f *fakeStore) CountMemoriesByUserAndType(ctx context.Context, userID, memType string) (int, error) {
+	count := 0
+	for _, m := range f.memories {
+		if m.UserID == userID && m.Type == memType {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (f *fakeStore) CountSemanticMemories(ctx context.Context) (int, error) {
+	count := 0
+	for _, m := range f.memories {
+		if m.UserID == "" && m.Type == MemoryTypeSemantic {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (f *fakeStore) DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error {
+	f.deletedOldest = append(f.deletedOldest, [3]string{userID, memType, strconv.Itoa(n)})
+	return nil
+}
+
+func (f *fakeStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
+	f.replacedMemories = append(f.replacedMemories, items...)
+	return nil
+}
+
+func (f *fakeStore) ReplaceSemanticMemories(ctx context.Context, items []storage.Memory) error {
+	f.replacedSemantic = append(f.replacedSemantic, items...)
+	return nil
 }
 
 type fakeLLMClient struct {

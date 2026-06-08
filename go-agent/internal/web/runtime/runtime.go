@@ -29,10 +29,15 @@ type conversationStore interface {
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
 	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
 	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
-	GetUserProfile(ctx context.Context, userID string) (storage.UserProfile, bool, error)
-	UpsertUserProfile(ctx context.Context, profile storage.UserProfile) error
-	UpsertConversationTopics(ctx context.Context, topics storage.ConversationTopics) error
-	ListRecentTopicsByUser(ctx context.Context, userID, excludeConversationID string, limit int) ([]storage.ConversationTopics, error)
+	ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error)
+	ListMemoriesByUserAndType(ctx context.Context, userID, memType string) ([]storage.Memory, error)
+	ListSemanticMemories(ctx context.Context) ([]storage.Memory, error)
+	InsertMemory(ctx context.Context, m storage.Memory) error
+	CountMemoriesByUserAndType(ctx context.Context, userID, memType string) (int, error)
+	CountSemanticMemories(ctx context.Context) (int, error)
+	DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error
+	ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error
+	ReplaceSemanticMemories(ctx context.Context, items []storage.Memory) error
 }
 
 type Service struct {
@@ -44,11 +49,11 @@ type Service struct {
 	BasePrompt        string
 	Hooks             *HookManager
 	ContextCompressor *compression.Compressor
-	EnableTopicMemory bool
+	EnableMemory      bool
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig, client llm.Client) *Service {
-	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager(), EnableTopicMemory: true}
+	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager(), EnableMemory: true}
 }
 
 func (s *Service) hookManager() *HookManager {

@@ -2,26 +2,19 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 
 	"nano_cc/internal/assistant"
-	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/storage"
 )
 
-const (
-	maxProfileInjectionBytes  = 4096
-	recentTopicsConversations = 5
-)
-
-func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot) string {
-	return s.buildSystemPromptWithMemory(user, snapshot, s.buildMemorySection(ctx, conversation, user))
+func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message) string {
+	return s.buildSystemPromptWithMemory(user, snapshot, s.selectRelevantMemories(ctx, user, history))
 }
 
 func (s *Service) buildSystemPromptWithMemory(user storage.User, snapshot *agenttools.SkillSnapshot, memorySection string) string {
@@ -48,68 +41,6 @@ func (s *Service) buildSystemPromptWithMemory(user storage.User, snapshot *agent
 		WorkingDirectory:  strings.TrimSpace(s.Cfg.WorkspaceRoot),
 		ToolNames:         toolNames,
 	})
-}
-
-// buildMemorySection assembles the user profile card and recent conversation
-// topics into a Markdown block for the system prompt. All reads are
-// best-effort: failures degrade to an empty section.
-func (s *Service) buildMemorySection(ctx context.Context, conversation storage.Conversation, user storage.User) string {
-	profileJSON := ""
-	if profile, ok, err := s.Store.GetUserProfile(ctx, user.ID); err != nil {
-		logger.Warn(fmt.Sprintf("memory: load user profile failed: %v", err))
-	} else if ok {
-		profileJSON = strings.TrimSpace(profile.ProfileJSON)
-	}
-
-	var topics []string
-	if recent, err := s.Store.ListRecentTopicsByUser(ctx, user.ID, conversation.ID, recentTopicsConversations); err != nil {
-		logger.Warn(fmt.Sprintf("memory: load recent topics failed: %v", err))
-	} else {
-		topics = aggregateTopics(recent)
-	}
-
-	return renderMemorySection(profileJSON, topics)
-}
-
-func renderMemorySection(profileJSON string, topics []string) string {
-	sections := make([]string, 0, 2)
-	if profileJSON = strings.TrimSpace(profileJSON); profileJSON != "" {
-		if len(profileJSON) > maxProfileInjectionBytes {
-			profileJSON = profileJSON[:maxProfileInjectionBytes] + "\n... (truncated)"
-		}
-		sections = append(sections, "### 用户档案卡\n以下是关于当前用户的已保存信息，回答时请参考，但不要照搬复述：\n```json\n"+profileJSON+"\n```")
-	}
-	if len(topics) > 0 {
-		lines := make([]string, 0, len(topics))
-		for _, topic := range topics {
-			lines = append(lines, "- "+topic)
-		}
-		sections = append(sections, "### 近期聊过的话题\n仅供参考，帮助你理解用户近期关注点；你没有这些对话的原文，如需细节请让用户补充：\n"+strings.Join(lines, "\n"))
-	}
-	return strings.Join(sections, "\n\n")
-}
-
-func aggregateTopics(recent []storage.ConversationTopics) []string {
-	seen := make(map[string]struct{})
-	var result []string
-	for _, item := range recent {
-		var topics []string
-		if err := json.Unmarshal([]byte(item.TopicsJSON), &topics); err != nil {
-			continue
-		}
-		for _, topic := range topics {
-			topic = strings.TrimSpace(topic)
-			if topic == "" {
-				continue
-			}
-			if _, exists := seen[topic]; exists {
-				continue
-			}
-			seen[topic] = struct{}{}
-			result = append(result, topic)
-		}
-	}
-	return result
 }
 
 func (s *Service) buildConversationSkillSnapshot(skills []storage.Skill) *agenttools.SkillSnapshot {

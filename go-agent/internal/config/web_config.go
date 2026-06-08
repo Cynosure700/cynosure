@@ -51,7 +51,7 @@ func LoadWebConfig() (AppConfig, error) {
 		SystemPromptPath:           runtimeDirs.systemPromptPath,
 		WorkspaceRoot:              runtimeDirs.workspaceRoot,
 		LogsDir:                    runtimeDirs.logsDir,
-		WebAllowedTools:            parseCSVList(firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file,todo_write,update_memory")),
+		WebAllowedTools:            parseCSVList(firstNonEmpty(fileCfg.WebAllowedTools, "load_skill,bash,read_file,write_file,edit_file,todo_write")),
 		BashAllowOutsideWorkspace:  fileCfg.BashAllowOutsideWorkspace,
 		BashAllowDangerousCommands: fileCfg.BashAllowDangerousCommands,
 		CookieName:                 firstNonEmpty(fileCfg.SessionCookieName, "nano_cc_session"),

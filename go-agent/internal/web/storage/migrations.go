@@ -28,6 +28,30 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureMemoryTables(ctx); err != nil {
 		return fmt.Errorf("migrate memory tables: %w", err)
 	}
+	if err := s.ensureMemoriesTable(ctx); err != nil {
+		return fmt.Errorf("migrate memories table: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureMemoriesTable(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS memories (
+			id VARCHAR(64) PRIMARY KEY,
+			user_id VARCHAR(64) NULL,
+			type VARCHAR(32) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			description TEXT NOT NULL,
+			body LONGTEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+			KEY idx_memories_user_type (user_id, type, updated_at),
+			KEY idx_memories_type (type, updated_at),
+			CONSTRAINT fk_memories_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create memories: %w", err)
+	}
 	return nil
 }
 

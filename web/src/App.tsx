@@ -662,18 +662,6 @@ export function App() {
                         })}
                     </div>
                 </section>
-
-                <section className="sidebar-section secondary-actions">
-                    <div className="section-title">
-                        <div>
-                            <h2>辅助面板</h2>
-                            <div className="section-subtitle">默认收起，需要时再展开</div>
-                        </div>
-                    </div>
-                    <div className="secondary-buttons">
-                        <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
-                    </div>
-                </section>
             </aside>
 
             <main className={sidePanel ? "main-content with-side-panel" : "main-content"}>
