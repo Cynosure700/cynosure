@@ -10,10 +10,13 @@ type ContentBlock =
     | { type: "code"; language: string; content: string };
 
 function renderInlineContent(text: string) {
-    const segments = text.split(/(`[^`]+`)/g);
+    const segments = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
     return segments.map((segment, index) => {
         if (segment.startsWith("`") && segment.endsWith("`") && segment.length >= 2) {
             return <code key={`inline-${index}`}>{segment.slice(1, -1)}</code>;
+        }
+        if (segment.startsWith("**") && segment.endsWith("**") && segment.length >= 4) {
+            return <strong key={`inline-${index}`}>{segment.slice(2, -2)}</strong>;
         }
         return segment;
     });

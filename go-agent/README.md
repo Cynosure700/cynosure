@@ -95,51 +95,35 @@
 
 ## 运行时路径
 
-运行时以 `WORKSPACE_ROOT` 为核心目录，适合本地和部署环境保持同一套布局：
+所有运行时目录都以 `app_home` 为基准解析（`config.json` 的 `app_home` 字段，默认 `.` 即进程当前目录）；这些路径只读 `config.json`，不读环境变量：
 
-- `APP_HOME` 默认是当前目录
-- `WORKSPACE_ROOT` 未设置时使用 `APP_HOME/workspace`
-- `config.json` 优先从 `WORKSPACE_ROOT/config.json` 读取；当 `WORKSPACE_ROOT` 未设置但设置了 `APP_HOME` 时，读取 `APP_HOME/workspace/config.json`
-- `system_prompt.md` 默认从 `WORKSPACE_ROOT/system_prompt.md` 读取，可通过 `SYSTEM_PROMPT_PATH` 覆盖，但相对路径仍按 `WORKSPACE_ROOT` 解析
-- 日志写入 `WORKSPACE_ROOT/logs/session_*.log`
-- `BUILTIN_SKILLS_DIR` 默认是 `WORKSPACE_ROOT/skills`
-- `COMMAND_BIN_DIR` 默认是 `WORKSPACE_ROOT/bin`
-- `COMMAND_SCRIPT_DIR` 默认是 `WORKSPACE_ROOT/cmd`
+- `config.json` 从进程当前工作目录读取（固定文件名 `config.json`），因此需在包含该文件的目录下启动
+- `workspace_root`：默认 `app_home/workspace`，是工具（`bash`、文件读写、子 Agent）的根目录与越权边界
+- `system_prompt_path`：默认 `app_home/system_prompt.md`
+- `builtin_skills_dir`：默认 `app_home/skills`
+- `command_bin_dir`：默认 `app_home/bin`
+- `command_script_dir`：默认 `app_home/cmd`
+- 日志写入 `app_home/logs/session_*.log`
 
-相关代码：`internal/config/paths.go`。
+注意：除 `app_home` 外，上述目录字段若被显式配置，必须解析到与默认值相同的位置（即仍在 `app_home` 下），否则启动报错。启动时缺失的目录会自动创建。
+
+相关代码：`internal/config/paths.go`、`internal/config/web_config.go`。
 
 ## 通用 system prompt
 
-通用 system prompt 默认从 `WORKSPACE_ROOT/system_prompt.md` 加载；文件不存在时使用内置默认 prompt。调整该文件后会影响 Web 聊天运行时：
+最终 system prompt 在运行时由 `assistant.BuildSystemPrompt` 拼装，由若干 XML 标签段落组成：
 
-```text
-You are nano_cc, a general-purpose agent rather than a chat-only assistant.
+- `<identity>`：基础人设。默认从 `system_prompt_path` 指向的文件加载（默认 `app_home/system_prompt.md`）；文件不存在时使用内置默认 prompt（一个中文「通用智能体」人设）
+- `<workspace>`：surface（`the browser chat experience for user <用户名>`）与 working directory（取 `workspace_root`）
+- `<tools>`：本次会话可用工具列表；当包含 `read_persisted_output` 时追加落盘产物使用说明
+- `<skills>`：当前 Skill snapshot 的技能摘要与 `load_skill` 使用规则
+- `<memory>`：用户档案卡与近期话题（见「记忆系统」）
 
-Help with everyday questions, analysis, planning, writing, coding, file inspection, and end-to-end task execution when the runtime supports it.
-
-Prefer direct, useful answers before optional tool use, but use available skills and tools whenever they help you complete the user's task.
-
-Do not assume shell access, local workspace access, or local file operations unless the runtime explicitly supports them.
-
-You are responding inside {surface}.
-
-Current workspace root: {working_directory}.
-
-Treat that workspace root as your default working directory for runtime file and shell operations unless the runtime tells you otherwise.
-
-Runtime tools available in this conversation: {tool_names}.
-
-Available skills:
-{skill_descriptions}
-
-{memory_section}
-```
-
-其中 `{surface}`、`{working_directory}`、`{tool_names}`、`{skill_descriptions}`、`{memory_section}` 会在运行时按当前用户、会话、工具和 Skill 动态填充；为空的动态段不会写入最终 prompt。
+为空的动态段不会写入最终 prompt。修改 `system_prompt.md` 只会替换 `<identity>` 段，其余段落始终由运行时按当前用户、工具与 Skill 动态生成。
 
 相关代码：
 
-- 默认 prompt：`internal/assistant/prompt.go`
+- 默认 prompt 与拼装逻辑：`internal/assistant/prompt.go`
 - prompt 文件路径解析：`internal/config/paths.go`
 - system prompt 构建：`internal/web/runtime/prompt_builder.go`
 
@@ -175,11 +159,10 @@ Web runtime 的每轮对话按以下流程执行：
 go-agent/
 ├── main.go                  # Web 服务入口
 ├── build.sh                 # 构建发布包脚本
-├── cmd/                     # 可构建到 workspace/cmd 的 runtime 命令资源
-├── config.json              # 根目录配置模板，构建时复制到 output/workspace/config.json
-├── system_prompt.md         # 根目录 prompt 模板，构建时复制到 output/workspace/system_prompt.md
+├── config.json              # 根目录配置模板，构建时复制到 output/config.json
+├── system_prompt.md         # 根目录 prompt 模板，构建时复制到 output/system_prompt.md
 ├── internal/
-│   ├── assistant/           # 默认 system prompt
+│   ├── assistant/           # 默认 system prompt 与拼装
 │   ├── config/              # 配置与 runtime 路径（config.go / web_config.go / env.go / paths.go）
 │   ├── idgen/               # ID 生成
 │   ├── llm/                 # LLM 客户端
@@ -196,9 +179,11 @@ go-agent/
 │       │   └── compression/ # 上下文压缩策略
 │       └── storage/         # MySQL / Redis / Elasticsearch 存储
 ├── skills/                  # 源码内置 Skill
-├── workspace/               # 本地 runtime workspace：config、system prompt、logs、skills、cmd、bin
+├── workspace/               # 本地 runtime workspace
 └── output/                  # build.sh 生成的部署产物
 ```
+
+> `build.sh` 还会构建根目录下可选的 `cmd/` 子命令（目录存在时），当前仓库未包含该目录。
 
 前端位于仓库根目录的 `web/`。
 
@@ -213,16 +198,16 @@ go-agent/
 
 ## 配置
 
-LLM 的 `base_url`、`model_id` 从 `config.json` 读取，`api_key` 从环境变量 `OPENAI_API_KEY` 读取；密钥与密码类敏感信息一律走环境变量，不写入 `config.json`。
+LLM 的 `base_url`、`model_id` 从 `config.json` 读取，`api_key` 从环境变量 `OPENAI_API_KEY` 读取；密钥与密码类敏感信息建议走环境变量，不写入 `config.json`。代码对部分敏感项内置了本地开发用的默认值（如 `OPENAI_API_KEY`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`JWT_SECRET`），生产环境务必用环境变量覆盖。
 
 环境变量清单：
 
 | 变量 | 用途 |
 | --- | --- |
-| `OPENAI_API_KEY` | LLM API Key（必需） |
-| `MYSQL_PASSWORD` | MySQL 密码 |
+| `OPENAI_API_KEY` | LLM API Key（缺省时回落到内置开发用 key） |
+| `MYSQL_PASSWORD` | MySQL 密码（缺省时回落到内置开发值） |
 | `DATABASE_URL` | 直接覆盖 MySQL DSN（设置后忽略 `mysql_*` 字段） |
-| `REDIS_PASSWORD` | Redis 密码 |
+| `REDIS_PASSWORD` | Redis 密码（缺省时回落到内置开发值） |
 | `ES_ADDRESSES` | Elasticsearch 地址，覆盖 `es_addresses` |
 | `ES_USERNAME` / `ES_PASSWORD` | Elasticsearch 用户名 / 密码 |
 | `JWT_SECRET` | JWT 密钥（默认 `nano-cc-local-secret`，生产务必覆盖） |
@@ -244,7 +229,7 @@ JWT_SECRET=replace-with-your-own-secret
 ```json
 {
   "base_url": "https://api.deepseek.com",
-  "model_id": "deepseek-chat",
+  "model_id": "deepseek-v4-flash",
   "app_home": ".",
   "workspace_root": "workspace",
   "system_prompt_path": "system_prompt.md",
@@ -305,12 +290,12 @@ cd go-agent
 ./build.sh
 ```
 
-`build.sh` 会清空并重建 `output/`，编译主程序到 `output/bin/go-agent`，编译 `cmd/` 下各子命令到 `output/bin/`，并把 `config.json`、`system_prompt.md`、`skills/`、`cmd/` 资源复制到对应位置。产物结构：
+`build.sh` 会清空并重建 `output/`，编译主程序到 `output/bin/go-agent`，编译根目录可选 `cmd/` 下各子命令到 `output/bin/`，并把 `config.json`、`system_prompt.md`、`skills/`、`cmd/` 资源复制到对应位置（缺失的源不复制）。产物结构：
 
 ```text
 output/
-├── bin/                 # go-agent 主二进制 + 各 cmd 子命令二进制
-├── cmd/                 # cmd 源码副本
+├── bin/                 # go-agent 主二进制（+ 各 cmd 子命令二进制，若有）
+├── cmd/                 # cmd 源码副本（若有）
 ├── skills/              # 技能文件副本
 ├── logs/                # 空目录
 ├── workspace/           # 空目录
@@ -318,20 +303,20 @@ output/
 └── system_prompt.md
 ```
 
-云端启动示例：
+云端启动示例（运行时目录由 `config.json` 的 `app_home` 决定，默认是进程当前目录，且 `config.json` 从当前目录读取，因此通常在 `output/` 内启动）：
 
 ```bash
-export APP_HOME=/srv/go-agent
-export WORKSPACE_ROOT=${APP_HOME}/workspace
+cd /srv/go-agent/output    # 包含 config.json、bin/、skills/ 等
+
 export OPENAI_API_KEY=your-api-key
 export MYSQL_PASSWORD=your-mysql-password
 export ES_PASSWORD=your-es-password
 export JWT_SECRET=replace-with-production-secret
 
-${APP_HOME}/bin/go-agent
+./bin/go-agent
 ```
 
-部署时建议保留 `output/` 内的 `bin/` 与 `workspace/` 相对布局，并把 `output/config.json`、`output/system_prompt.md` 放入运行时 `WORKSPACE_ROOT`。
+若要在其它工作目录启动，请在 `config.json` 中把 `app_home` 设为绝对路径，让 `workspace_root`、`skills`、`bin`、`cmd`、`logs` 都落在该目录下。
 
 ## API 简表
 
@@ -375,10 +360,10 @@ npm run build
 ## 注意事项
 
 - 运行前确保 MySQL、Redis、Elasticsearch、LLM 服务可用
-- 运行时 `config.json` 和 `system_prompt.md` 默认都在 `WORKSPACE_ROOT` 下，不再从项目根目录直接读取
-- LLM 的 `base_url`、`model_id` 在 `config.json` 配置，`OPENAI_API_KEY` 必须通过环境变量提供
-- 日志默认写入 `WORKSPACE_ROOT/logs`，部署时需确保该目录可写
-- 前端跨域失败时检查 `ALLOWED_ORIGIN`
+- `config.json` 从进程当前目录读取，启动目录需包含该文件；`system_prompt.md`、`skills/`、`logs/` 等默认相对 `app_home` 解析
+- LLM 的 `base_url`、`model_id` 在 `config.json` 配置，`OPENAI_API_KEY` 建议通过环境变量提供
+- 日志默认写入 `app_home/logs`，部署时需确保该目录可写
+- 前端跨域失败时检查 `config.json` 的 `allowed_origin`
 - 登录后仍返回 401 时检查 Cookie 策略
-- 浏览器聊天不是用户本地终端代理；工具运行在服务端 workspace
+- 浏览器聊天不是用户本地终端代理；工具运行在服务端 `workspace_root`
 - 生产环境不建议开启 `bash_allow_outside_workspace` 或 `bash_allow_dangerous_commands`
