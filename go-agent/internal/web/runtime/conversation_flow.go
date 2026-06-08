@@ -39,7 +39,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 	state.SkillSnapshot = snapshot
-	state.SystemPrompt = s.buildSystemPrompt(user, snapshot)
+	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot)
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.History)
 	round := 0
 	roundsSinceTodoWrite := 0
@@ -78,6 +78,9 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
 				return storage.Message{}, err
+			}
+			if s.EnableTopicMemory {
+				s.updateConversationTopics(ctx, conversation, user, append(state.History, stopCtx.AssistantMessage))
 			}
 			return stopCtx.AssistantMessage, nil
 		}

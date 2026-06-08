@@ -3,56 +3,21 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
-func buildDefaultMySQLDSN() string {
-	host := getenv("MYSQL_HOST", "1.12.217.28")
-	port := getenv("MYSQL_PORT", "3306")
-	user := getenv("MYSQL_USER", getenv("DB_USER", "root"))
-	password := getenv("MYSQL_PASSWORD", getenv("DB_PASSWORD", "213140"))
-	database := getenv("MYSQL_DATABASE", getenv("DB_NAME", "vibe_coding"))
+// getenv 仅用于读取不应写入 config.json 的敏感信息（如密钥、密码）。
+func getenv(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
+}
+
+func buildMySQLDSN(fileCfg fileConfig) string {
+	host := firstNonEmpty(fileCfg.MySQLHost, "1.12.217.28")
+	port := firstNonEmpty(fileCfg.MySQLPort, "3306")
+	user := firstNonEmpty(fileCfg.MySQLUser, "root")
+	password := firstNonEmpty(getenv("MYSQL_PASSWORD"), "213140")
+	database := firstNonEmpty(fileCfg.MySQLDatabase, "vibe_coding")
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&multiStatements=true&loc=Local", user, password, host, port, database)
-}
-
-func getenv(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func getenvInt(key string, fallback int) (int, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, err
-	}
-	return parsed, nil
-}
-
-func getenvIntOrDefault(key string, fallback int) int {
-	v, err := getenvInt(key, fallback)
-	if err != nil {
-		return fallback
-	}
-	return v
-}
-
-func getenvBool(key string, fallback bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }
 
 func parseCSVList(value string) []string {
@@ -80,4 +45,11 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func intOrDefault(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }

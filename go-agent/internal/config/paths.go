@@ -18,16 +18,15 @@ type runtimePaths struct {
 
 type runtimeAssetSpec struct {
 	label     string
-	envKey    string
 	fileValue string
 	subdir    string
 }
 
 func resolveAppHome(fileCfg fileConfig) (string, error) {
-	appHome := getenv("APP_HOME", firstNonEmpty(fileCfg.AppHome, "."))
+	appHome := firstNonEmpty(fileCfg.AppHome, ".")
 	resolved, err := filepath.Abs(appHome)
 	if err != nil {
-		return "", fmt.Errorf("resolve APP_HOME: %w", err)
+		return "", fmt.Errorf("resolve app_home: %w", err)
 	}
 	return filepath.Clean(resolved), nil
 }
@@ -55,15 +54,15 @@ func resolveWorkspaceRoot(appHome, configured string) (string, error) {
 }
 
 func resolveSystemPromptPath(appHome string, fileCfg fileConfig) (string, error) {
-	configured := getenv("SYSTEM_PROMPT_PATH", strings.TrimSpace(fileCfg.SystemPromptPath))
-	if strings.TrimSpace(configured) == "" {
+	configured := strings.TrimSpace(fileCfg.SystemPromptPath)
+	if configured == "" {
 		configured = "system_prompt.md"
 	}
 	return resolvePath(appHome, configured)
 }
 
 func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, error) {
-	workspaceRoot, err := resolveWorkspaceRoot(appHome, getenv("WORKSPACE_ROOT", strings.TrimSpace(fileCfg.WorkspaceRoot)))
+	workspaceRoot, err := resolveWorkspaceRoot(appHome, strings.TrimSpace(fileCfg.WorkspaceRoot))
 	if err != nil {
 		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
@@ -77,9 +76,9 @@ func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, erro
 	}
 	paths := runtimePaths{workspaceRoot: workspaceRoot, systemPromptPath: systemPromptPath, logsDir: logsDir}
 	for _, spec := range []runtimeAssetSpec{
-		{label: "builtin skills dir", envKey: "BUILTIN_SKILLS_DIR", fileValue: fileCfg.BuiltinSkillsDir, subdir: "skills"},
-		{label: "command bin dir", envKey: "COMMAND_BIN_DIR", fileValue: fileCfg.CommandBinDir, subdir: "bin"},
-		{label: "command script dir", envKey: "COMMAND_SCRIPT_DIR", fileValue: fileCfg.CommandScriptDir, subdir: "cmd"},
+		{label: "builtin skills dir", fileValue: fileCfg.BuiltinSkillsDir, subdir: "skills"},
+		{label: "command bin dir", fileValue: fileCfg.CommandBinDir, subdir: "bin"},
+		{label: "command script dir", fileValue: fileCfg.CommandScriptDir, subdir: "cmd"},
 	} {
 		resolved, err := resolveRuntimeAssetFromSpec(appHome, spec)
 		if err != nil {
@@ -98,7 +97,7 @@ func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, erro
 }
 
 func resolveRuntimeAssetFromSpec(appHome string, spec runtimeAssetSpec) (string, error) {
-	configured := getenv(spec.envKey, strings.TrimSpace(spec.fileValue))
+	configured := strings.TrimSpace(spec.fileValue)
 	resolved, err := resolveRuntimeAssetDir(appHome, configured, spec.subdir)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", spec.label, err)

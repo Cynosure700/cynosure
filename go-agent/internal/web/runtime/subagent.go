@@ -73,8 +73,8 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 }
 
 func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agenttools.SkillSnapshot) string {
-	base := s.buildSystemPrompt(user, snapshot)
-	return base + "\n\n---\n\n## Child Agent Context\n\nYou are a child agent spawned by `spawn_subagent`.\n\nRules:\n- You cannot see the parent conversation history.\n- Work only from the current task and workspace files.\n- Do not call `spawn_subagent`.\n- When finished, output only a concise summary of what you did, key findings, and unresolved items."
+	base := s.buildSystemPromptWithMemory(user, snapshot, "")
+	return base + "\n\n<subagent>\n你是由 `spawn_subagent` 派生出来的子智能体。\n\n规则：\n- 你看不到父对话的历史记录。\n- 只能依据当前任务和工作区文件来工作。\n- 不要调用 `spawn_subagent`。\n- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。\n</subagent>"
 }
 
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, trace *subagentTrace, maxRounds int) (openai.ChatCompletionMessage, error) {

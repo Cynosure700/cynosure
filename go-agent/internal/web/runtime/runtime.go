@@ -29,6 +29,10 @@ type conversationStore interface {
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
 	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
 	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
+	GetUserProfile(ctx context.Context, userID string) (storage.UserProfile, bool, error)
+	UpsertUserProfile(ctx context.Context, profile storage.UserProfile) error
+	UpsertConversationTopics(ctx context.Context, topics storage.ConversationTopics) error
+	ListRecentTopicsByUser(ctx context.Context, userID, excludeConversationID string, limit int) ([]storage.ConversationTopics, error)
 }
 
 type Service struct {
@@ -40,10 +44,11 @@ type Service struct {
 	BasePrompt        string
 	Hooks             *HookManager
 	ContextCompressor *compression.Compressor
+	EnableTopicMemory bool
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig, client llm.Client) *Service {
-	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager()}
+	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager(), EnableTopicMemory: true}
 }
 
 func (s *Service) hookManager() *HookManager {

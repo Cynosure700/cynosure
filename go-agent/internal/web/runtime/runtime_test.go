@@ -21,18 +21,20 @@ import (
 )
 
 type fakeStore struct {
-	historyUpdates   [][]storage.Message
-	toolCalls        []storage.ToolCall
-	subagentMessages []storage.SubagentMessage
-	persistedOutputs []storage.PersistedOutput
-	contextSummaries []storage.ContextSummary
-	cached           []storage.Message
-	enabledSkills    []storage.Skill
-	enabledSkillSets [][]storage.Skill
-	listEnabledCalls int
-	updatedTitle     string
-	updatedID        string
-	touchedID        string
+	historyUpdates     [][]storage.Message
+	toolCalls          []storage.ToolCall
+	subagentMessages   []storage.SubagentMessage
+	persistedOutputs   []storage.PersistedOutput
+	contextSummaries   []storage.ContextSummary
+	userProfile        storage.UserProfile
+	conversationTopics []storage.ConversationTopics
+	cached             []storage.Message
+	enabledSkills      []storage.Skill
+	enabledSkillSets   [][]storage.Skill
+	listEnabledCalls   int
+	updatedTitle       string
+	updatedID          string
+	touchedID          string
 }
 
 func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
@@ -127,6 +129,33 @@ func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversa
 	return storage.ContextSummary{}, errors.New("context summary not found")
 }
 
+func (f *fakeStore) GetUserProfile(ctx context.Context, userID string) (storage.UserProfile, bool, error) {
+	if f.userProfile.UserID == userID && strings.TrimSpace(f.userProfile.ProfileJSON) != "" {
+		return f.userProfile, true, nil
+	}
+	return storage.UserProfile{}, false, nil
+}
+
+func (f *fakeStore) UpsertUserProfile(ctx context.Context, profile storage.UserProfile) error {
+	f.userProfile = profile
+	return nil
+}
+
+func (f *fakeStore) UpsertConversationTopics(ctx context.Context, topics storage.ConversationTopics) error {
+	f.conversationTopics = append(f.conversationTopics, topics)
+	return nil
+}
+
+func (f *fakeStore) ListRecentTopicsByUser(ctx context.Context, userID, excludeConversationID string, limit int) ([]storage.ConversationTopics, error) {
+	var result []storage.ConversationTopics
+	for _, t := range f.conversationTopics {
+		if t.UserID == userID && t.ConversationID != excludeConversationID {
+			result = append(result, t)
+		}
+	}
+	return result, nil
+}
+
 type fakeLLMClient struct {
 	responses       []openai.ChatCompletionResponse
 	streamChunks    []openai.ChatCompletionStreamResponse
@@ -189,12 +218,13 @@ func TestBuildSubagentSystemPromptAppendsStructuredChildAgentContext(t *testing.
 	prompt := service.buildSubagentSystemPrompt(storage.User{Username: "agent-user"}, nil)
 
 	for _, want := range []string{
-		"## Child Agent Context",
-		"You are a child agent spawned by `spawn_subagent`.",
-		"- You cannot see the parent conversation history.",
-		"- Work only from the current task and workspace files.",
-		"- Do not call `spawn_subagent`.",
-		"- When finished, output only a concise summary of what you did, key findings, and unresolved items.",
+		"<subagent>",
+		"你是由 `spawn_subagent` 派生出来的子智能体。",
+		"- 你看不到父对话的历史记录。",
+		"- 只能依据当前任务和工作区文件来工作。",
+		"- 不要调用 `spawn_subagent`。",
+		"- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。",
+		"</subagent>",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected subagent prompt to contain %q, got %q", want, prompt)
@@ -815,13 +845,13 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 		t.Fatalf("expected shell request to expose bash tool plus read_persisted_output, got %#v", llm.lastReq.Tools)
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Working directory: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected system prompt to include workspace root, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "rather than a chat-only assistant") {
+	if !contains(systemPrompt, "而不是只能聊天的助手") {
 		t.Fatalf("expected system prompt to position the model as a full agent, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "The following tools are available in this conversation:\n\n- bash") {
+	if !contains(systemPrompt, "本次会话可用的工具如下：\n\n- bash") {
 		t.Fatalf("expected system prompt to include available tools, got %q", systemPrompt)
 	}
 	if len(store.historyUpdates) != 1 {
@@ -873,10 +903,10 @@ func TestRespondToConversation_MergesBuiltinAndUserSkillsIntoPrompt(t *testing.T
 		t.Fatalf("expected load_skill tool to be exposed, got %d tools", len(llm.lastReq.Tools))
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Working directory: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected workspace root in prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "The following tools are available in this conversation:\n\n- load_skill") {
+	if !contains(systemPrompt, "本次会话可用的工具如下：\n\n- load_skill") {
 		t.Fatalf("expected load_skill to be listed in prompt, got %q", systemPrompt)
 	}
 	if !contains(systemPrompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
@@ -989,14 +1019,14 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
 
-	prompt := service.buildSystemPrompt(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader))
-	if !contains(prompt, "Workspace root: "+cfg.WorkspaceRoot) {
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader), "")
+	if !contains(prompt, "Working directory: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
-	if !contains(prompt, "rather than a chat-only assistant") {
+	if !contains(prompt, "而不是只能聊天的助手") {
 		t.Fatalf("expected prompt to describe a full agent, got %q", prompt)
 	}
-	if contains(prompt, "The following tools are available in this conversation:") {
+	if contains(prompt, "本次会话可用的工具如下：") {
 		t.Fatalf("expected prompt without tool registry to omit tool list, got %q", prompt)
 	}
 	if !contains(prompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {

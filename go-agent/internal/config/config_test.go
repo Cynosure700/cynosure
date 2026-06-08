@@ -8,12 +8,18 @@ import (
 	"testing"
 )
 
+// TestMain 为依赖 LoadWebConfig 的用例提供默认的敏感信息环境变量；
+// 个别用例可通过 t.Setenv 覆盖。
+func TestMain(m *testing.M) {
+	_ = os.Setenv("OPENAI_API_KEY", "test-key")
+	os.Exit(m.Run())
+}
+
 func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `",
 		"builtin_skills_dir": "skills",
@@ -36,16 +42,6 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	defer func() {
 		_ = os.Chdir(oldWD)
 	}()
-
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
 
 	cfg, err := LoadWebConfig()
 	if err != nil {
@@ -81,18 +77,19 @@ func TestLoadWebConfig_ReadsPathSettingsFromConfigFile(t *testing.T) {
 	}
 }
 
-func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
+func TestLoadWebConfig_ReadsServerAndDatastoreSettingsFromConfigFile(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
-		"builtin_skills_dir": "config-skills",
-		"command_bin_dir": "config-bin",
-		"command_script_dir": "config-cmd",
-		"workspace_root": "config-workspace",
-		"web_allowed_tools": "load_skill,bash"
+		"app_home": "` + root + `",
+		"server_addr": ":9090",
+		"allowed_origin": "http://example.test",
+		"redis_addr": "redis:6379",
+		"redis_db": 3,
+		"session_cookie_name": "custom_cookie",
+		"session_ttl_minutes": 120
 	}`
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -105,48 +102,89 @@ func TestLoadWebConfig_EnvironmentOverridesConfigFilePaths(t *testing.T) {
 	if err := os.Chdir(root); err != nil {
 		t.Fatalf("chdir to temp root: %v", err)
 	}
-	defer func() {
-		_ = os.Chdir(oldWD)
-	}()
+	defer func() { _ = os.Chdir(oldWD) }()
 
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", root)
-	t.Setenv("BUILTIN_SKILLS_DIR", "skills")
-	t.Setenv("COMMAND_BIN_DIR", "bin")
-	t.Setenv("COMMAND_SCRIPT_DIR", "cmd")
-	t.Setenv("WORKSPACE_ROOT", "env-workspace")
-	t.Setenv("WEB_ALLOWED_TOOLS", "load_skill,edit_file")
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("DATABASE_URL", "user:pass@tcp(db:3306)/app")
+	t.Setenv("REDIS_PASSWORD", "redis-secret")
+	t.Setenv("JWT_SECRET", "custom-secret")
 
 	cfg, err := LoadWebConfig()
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
 	}
 
-	if cfg.BuiltinSkillsDir != filepath.Join(root, "skills") {
-		t.Fatalf("expected env builtin skills dir, got %q", cfg.BuiltinSkillsDir)
+	if cfg.ServerAddr != ":9090" {
+		t.Fatalf("unexpected server addr: %q", cfg.ServerAddr)
 	}
-	if cfg.CommandBinDir != filepath.Join(root, "bin") {
-		t.Fatalf("expected env command bin dir, got %q", cfg.CommandBinDir)
+	if cfg.AllowedOrigin != "http://example.test" {
+		t.Fatalf("unexpected allowed origin: %q", cfg.AllowedOrigin)
 	}
-	if cfg.CommandScriptDir != filepath.Join(root, "cmd") {
-		t.Fatalf("expected env command script dir, got %q", cfg.CommandScriptDir)
+	if cfg.DatabaseURL != "user:pass@tcp(db:3306)/app" {
+		t.Fatalf("unexpected database url: %q", cfg.DatabaseURL)
 	}
-	if cfg.WorkspaceRoot != filepath.Join(root, "env-workspace") {
-		t.Fatalf("expected env workspace root, got %q", cfg.WorkspaceRoot)
+	if cfg.RedisAddr != "redis:6379" {
+		t.Fatalf("unexpected redis addr: %q", cfg.RedisAddr)
 	}
-	if !reflect.DeepEqual(cfg.WebAllowedTools, []string{"load_skill", "edit_file"}) {
-		t.Fatalf("expected env web tools, got %#v", cfg.WebAllowedTools)
+	if cfg.RedisPassword != "redis-secret" {
+		t.Fatalf("unexpected redis password: %q", cfg.RedisPassword)
+	}
+	if cfg.RedisDB != 3 {
+		t.Fatalf("unexpected redis db: %d", cfg.RedisDB)
+	}
+	if cfg.JWTSecret != "custom-secret" {
+		t.Fatalf("unexpected jwt secret: %q", cfg.JWTSecret)
+	}
+	if cfg.CookieName != "custom_cookie" {
+		t.Fatalf("unexpected cookie name: %q", cfg.CookieName)
+	}
+	if cfg.SessionTTLMinutes != 120 {
+		t.Fatalf("unexpected session ttl: %d", cfg.SessionTTLMinutes)
 	}
 }
 
-func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
+func TestLoadWebConfig_ReadsSecretsFromEnvAndRejectsMissingAPIKey(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
+		"model_id": "test-model",
+		"app_home": "` + root + `"
+	}`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir to temp root: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+
+	t.Setenv("OPENAI_API_KEY", "")
+
+	if _, err := LoadWebConfig(); err == nil {
+		t.Fatalf("expected missing OPENAI_API_KEY to be rejected")
+	}
+
+	t.Setenv("OPENAI_API_KEY", "env-key")
+	cfg, err := LoadWebConfig()
+	if err != nil {
+		t.Fatalf("load web config: %v", err)
+	}
+	if cfg.LLM.APIKey != "env-key" {
+		t.Fatalf("expected api key from env, got %q", cfg.LLM.APIKey)
+	}
+}
+
+func TestLoadWebConfig_ReadsSystemPromptPathFromConfig(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config.json")
+	configBody := `{
+		"base_url": "https://example.com",
 		"model_id": "test-model",
 		"app_home": "` + root + `",
 		"system_prompt_path": "config-prompt.md"
@@ -164,36 +202,24 @@ func TestLoadWebConfig_ReadsSystemPromptPathFromConfigAndEnv(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("SYSTEM_PROMPT_PATH", "env-prompt.md")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
-
 	cfg, err := LoadWebConfig()
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
 	}
-	if cfg.SystemPromptPath != filepath.Join(root, "env-prompt.md") {
-		t.Fatalf("expected env system prompt path, got %q", cfg.SystemPromptPath)
+	if cfg.SystemPromptPath != filepath.Join(root, "config-prompt.md") {
+		t.Fatalf("expected config system prompt path, got %q", cfg.SystemPromptPath)
 	}
 }
 
-func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
+func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfig(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `",
 		"bash_allow_outside_workspace": true,
-		"bash_allow_dangerous_commands": false
+		"bash_allow_dangerous_commands": true
 	}`
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -208,27 +234,15 @@ func TestLoadWebConfig_ReadsBashSafetyFlagsFromConfigAndEnv(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
-	t.Setenv("BASH_ALLOW_OUTSIDE_WORKSPACE", "false")
-	t.Setenv("BASH_ALLOW_DANGEROUS_COMMANDS", "true")
-
 	cfg, err := LoadWebConfig()
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
 	}
-	if cfg.BashAllowOutsideWorkspace {
-		t.Fatalf("expected env to override outside-workspace allow flag to false")
+	if !cfg.BashAllowOutsideWorkspace {
+		t.Fatalf("expected outside-workspace allow flag to be true")
 	}
 	if !cfg.BashAllowDangerousCommands {
-		t.Fatalf("expected env to override dangerous-command allow flag to true")
+		t.Fatalf("expected dangerous-command allow flag to be true")
 	}
 }
 
@@ -237,7 +251,6 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `"
 	}`
@@ -256,16 +269,6 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 		_ = os.Chdir(oldWD)
 	}()
 
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
-
 	cfg, err := LoadWebConfig()
 	if err != nil {
 		t.Fatalf("load web config: %v", err)
@@ -283,7 +286,7 @@ func TestLoadWebConfig_UsesAppHomeScopedDefaultPaths(t *testing.T) {
 	if cfg.WorkspaceRoot != filepath.Join(root, "workspace") {
 		t.Fatalf("expected default workspace root, got %q", cfg.WorkspaceRoot)
 	}
-	expectedTools := []string{"load_skill", "bash", "read_file", "write_file", "edit_file", "todo_write"}
+	expectedTools := []string{"load_skill", "bash", "read_file", "write_file", "edit_file", "todo_write", "update_memory"}
 	if !reflect.DeepEqual(cfg.WebAllowedTools, expectedTools) {
 		t.Fatalf("expected default web tools %v, got %#v", expectedTools, cfg.WebAllowedTools)
 	}
@@ -294,7 +297,6 @@ func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
 		"app_home": "` + root + `"
 	}`
@@ -318,16 +320,6 @@ func TestLoadWebConfig_DefaultsToAppHomeWorkspaceEvenWhenOutputWorkspaceExists(t
 		t.Fatalf("chdir to temp root: %v", err)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
-
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
 
 	cfg, err := LoadWebConfig()
 	if err != nil {
@@ -354,9 +346,9 @@ func TestLoadWebConfig_AssetDirsStayUnderAppHomeRegardlessOfWorkspace(t *testing
 	configPath := filepath.Join(root, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
-		"app_home": "` + root + `"
+		"app_home": "` + root + `",
+		"workspace_root": "` + filepath.Join("custom", "runtime-workspace") + `"
 	}`
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -370,16 +362,6 @@ func TestLoadWebConfig_AssetDirsStayUnderAppHomeRegardlessOfWorkspace(t *testing
 		t.Fatalf("chdir to temp root: %v", err)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
-
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", "")
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WORKSPACE_ROOT", filepath.Join("custom", "runtime-workspace"))
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
 
 	cfg, err := LoadWebConfig()
 	if err != nil {
@@ -441,9 +423,9 @@ func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideAppHome(t *testing.T) {
 	configPath := filepath.Join(appHome, "config.json")
 	configBody := `{
 		"base_url": "https://example.com",
-		"api_key": "test-key",
 		"model_id": "test-model",
-		"app_home": "` + appHome + `"
+		"app_home": "` + appHome + `",
+		"builtin_skills_dir": "` + filepath.Join("..", "other-skills") + `"
 	}`
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -457,16 +439,6 @@ func TestLoadWebConfig_RejectsRuntimeAssetDirsOutsideAppHome(t *testing.T) {
 		t.Fatalf("chdir to temp root: %v", err)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
-
-	t.Setenv("OPENAI_BASE_URL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("MODEL_ID", "")
-	t.Setenv("APP_HOME", "")
-	t.Setenv("WORKSPACE_ROOT", "")
-	t.Setenv("BUILTIN_SKILLS_DIR", filepath.Join("..", "other-skills"))
-	t.Setenv("COMMAND_BIN_DIR", "")
-	t.Setenv("COMMAND_SCRIPT_DIR", "")
-	t.Setenv("WEB_ALLOWED_TOOLS", "")
 
 	_, err = LoadWebConfig()
 	if err == nil {

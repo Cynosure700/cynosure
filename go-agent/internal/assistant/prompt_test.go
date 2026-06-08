@@ -33,31 +33,33 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 	})
 
 	for _, want := range []string{
-		"# System Instructions",
-		"## Identity",
+		"<identity>",
 		"Custom base prompt.",
-		"---",
-		"## Runtime Context",
+		"</identity>",
+		"<workspace>",
 		"Surface: browser chat",
-		"Workspace root: /workspace",
-		"Use the workspace root as the default working directory for runtime file and shell operations unless the runtime tells you otherwise.",
-		"## Runtime Tools",
-		"The following tools are available in this conversation:",
+		"Working directory: /workspace",
+		"除非运行时另有说明，默认以工作目录作为运行时文件与 Shell 操作的根目录。",
+		"</workspace>",
+		"<tools>",
+		"本次会话可用的工具如下：",
 		"- load_skill",
 		"- bash",
-		"## Skills",
-		"The following skills are available as summaries only.",
-		"Before using or following a skill, call `load_skill` with the exact skill name to load its full instructions.",
-		"Do not infer the full workflow from the summary alone.",
-		"Available skills:\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
-		"## Memory",
+		"</tools>",
+		"<skills>",
+		"以下技能只提供摘要。",
+		"使用或遵循某个技能前，先用 `load_skill` 以精确的技能名加载其完整说明。",
+		"不要仅凭摘要臆测完整的工作流。",
+		"可用技能：\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
+		"<memory>",
 		"Remember user preference.",
+		"</memory>",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, "You are nano_cc, a general-purpose agent") {
+	if strings.Contains(prompt, "你是 nano_cc") {
 		t.Fatalf("expected custom base prompt to replace compiled default, got %q", prompt)
 	}
 }

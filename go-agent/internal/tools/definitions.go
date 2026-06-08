@@ -123,5 +123,18 @@ var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a ch
 	"required": []string{"id"},
 })
 
-var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, ReadPersistedOutputToolDef)
+// UpdateMemoryToolName lets the main agent persist a structured user profile
+// card. It is handled specially in the web runtime (needs Store + user id),
+// not via the stateless Dispatch path.
+const UpdateMemoryToolName = "update_memory"
+
+var UpdateMemoryToolDef = toolDef(UpdateMemoryToolName, "When the user reveals stable, long-term information worth remembering (identity, lasting preferences, ongoing projects, explicit constraints), call this tool to update the user's profile card. Pass the COMPLETE new profile card JSON; it overwrites the previous card entirely. Do not store one-off, temporary, or sensitive private information.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"profile": strParam("The complete profile card as a JSON string. It fully replaces the previous profile card."),
+	},
+	"required": []string{"profile"},
+})
+
+var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, ReadPersistedOutputToolDef, UpdateMemoryToolDef)
 var ChildToolDefs = baseToolDefs

@@ -120,3 +120,16 @@ type SubagentMessage struct {
 	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 }
+
+type UserProfile struct {
+	UserID      string    `json:"user_id"`
+	ProfileJSON string    `json:"profile_json"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ConversationTopics struct {
+	ConversationID string    `json:"conversation_id"`
+	UserID         string    `json:"user_id"`
+	TopicsJSON     string    `json:"topics_json"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}

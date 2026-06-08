@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/elastic/go-elasticsearch/v8"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
 
@@ -16,6 +17,7 @@ import (
 type Store struct {
 	DB    *sql.DB
 	Redis *redis.Client
+	ES    *elasticsearch.Client
 	Cfg   config.AppConfig
 }
 
@@ -39,7 +41,16 @@ func NewStore(cfg config.AppConfig) (*Store, error) {
 		DB:       cfg.RedisDB,
 	})
 
-	return &Store{DB: db, Redis: rdb, Cfg: cfg}, nil
+	es, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: cfg.ESAddresses,
+		Username:  cfg.ESUsername,
+		Password:  cfg.ESPassword,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("new elasticsearch client: %w", err)
+	}
+
+	return &Store{DB: db, Redis: rdb, ES: es, Cfg: cfg}, nil
 }
 
 func (s *Store) HealthCheck(ctx context.Context) error {
@@ -48,6 +59,16 @@ func (s *Store) HealthCheck(ctx context.Context) error {
 	}
 	if err := s.Redis.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("redis ping: %w", err)
+	}
+	if s.ES != nil {
+		res, err := s.ES.Ping(s.ES.Ping.WithContext(ctx))
+		if err != nil {
+			return fmt.Errorf("elasticsearch ping: %w", err)
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			return fmt.Errorf("elasticsearch ping: %s", res.String())
+		}
 	}
 	return nil
 }

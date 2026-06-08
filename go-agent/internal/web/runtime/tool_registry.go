@@ -203,6 +203,16 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
 	}
+	if name == agenttools.UpdateMemoryToolName {
+		if s.Tools == nil || !s.Tools.isAllowed(name) {
+			return toolExecutionOutcome{Status: "rejected", Result: "Error: tool update_memory is not registered for web runtime", Audit: audit}
+		}
+		result, err := s.updateUserProfile(ctx, toolCtx, rawArgs)
+		if err != nil {
+			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+		}
+		return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
+	}
 	execResult, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
