@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"nano_cc/internal/textutil"
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
@@ -62,7 +61,7 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": displayConversationMessages(messages), "tool_events": displayConversationToolEvents(messages)})
+		writeJSON(w, http.StatusOK, map[string]any{"conversation": conversation, "messages": displayConversationMessages(messages)})
 		return
 	}
 
@@ -126,53 +125,4 @@ func displayConversationMessages(messages []storage.Message) []storage.Message {
 		}
 	}
 	return displayMessages
-}
-
-type toolEventPayload struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Result    string `json:"result"`
-	Truncated bool   `json:"truncated,omitempty"`
-}
-
-func displayConversationToolEvents(messages []storage.Message) []toolEventPayload {
-	toolNames := map[string]string{}
-	events := []toolEventPayload{}
-	for _, message := range messages {
-		if message.Role == "assistant" {
-			for _, tc := range message.ToolCalls {
-				if tc.ID != "" {
-					toolNames[tc.ID] = tc.Function.Name
-				}
-			}
-			continue
-		}
-		if message.Role != "tool" {
-			continue
-		}
-
-		status, result := parseToolMessageContent(message.Content)
-		preview, truncated := textutil.ToolResultPreview(result)
-		name := toolNames[message.ToolCallID]
-		if name == "" {
-			name = "tool"
-		}
-		if name == "spawn_subagent" {
-			continue
-		}
-		events = append(events, toolEventPayload{ID: message.ToolCallID, Name: name, Status: status, Result: preview, Truncated: truncated})
-	}
-	return events
-}
-
-func parseToolMessageContent(content string) (string, string) {
-	status, result, isJSON := textutil.ParseToolResult(content)
-	if !isJSON {
-		return "unknown", content
-	}
-	if status == "" {
-		status = "unknown"
-	}
-	return status, result
 }

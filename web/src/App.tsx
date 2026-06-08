@@ -1,8 +1,8 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { api, type ChatMessage, type Conversation, type Skill, type ToolEvent, type User } from "./api";
+import { api, type ChatMessage, type Conversation, type Skill, type User } from "./api";
 
 type AuthMode = "login" | "register";
-type SidePanel = "capabilities" | "details" | null;
+type SidePanel = "capabilities" | null;
 
 type ContentBlock =
     | { type: "paragraph"; lines: string[] }
@@ -153,7 +153,6 @@ export function App() {
     const [activeConversationId, setActiveConversationId] = useState<string>("");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [skills, setSkills] = useState<Skill[]>([]);
-    const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
     const [creatingConversation, setCreatingConversation] = useState(false);
@@ -206,18 +205,15 @@ export function App() {
         resetReasoningState();
         if (!activeConversationId) {
             setMessages([]);
-            setToolEvents([]);
             return;
         }
         const requestConversationId = activeConversationId;
         setMessages([]);
-        setToolEvents([]);
         void api
             .getConversation(requestConversationId)
             .then((result) => {
                 if (activeConversationIdRef.current !== requestConversationId) return;
                 setMessages(Array.isArray(result.messages) ? result.messages : []);
-                setToolEvents(Array.isArray(result.tool_events) ? result.tool_events : []);
             })
             .catch((err) => {
                 if (activeConversationIdRef.current !== requestConversationId) return;
@@ -346,7 +342,6 @@ export function App() {
             setConversations((prev) => [result.conversation, ...prev]);
             setActiveConversationId(result.conversation.id);
             setMessages([]);
-            setToolEvents([]);
             setChatInput("");
             setNewConversationTitle("");
         } catch (err) {
@@ -366,14 +361,9 @@ export function App() {
         const streamingAssistantId = `streaming-${Date.now()}`;
         setChatInput("");
         setMessages((prev) => [...prev, { role: "user", content }, { id: streamingAssistantId, role: "assistant", content: "", reasoning_content: "" }]);
-        setToolEvents([]);
 
         try {
             await api.streamConversation(requestConversationId, content, {
-                onTool: (payload) => {
-                    if (activeConversationIdRef.current !== requestConversationId) return;
-                    setToolEvents((prev) => [...prev, payload]);
-                },
                 onAssistantDelta: (payload) => setMessages((prev) => prev.map((message) => (
                     activeConversationIdRef.current === requestConversationId && message.id === streamingAssistantId ? { ...message, content: message.content + payload.content } : message
                 ))),
@@ -462,7 +452,6 @@ export function App() {
             if (conversationId === activeConversationId) {
                 setActiveConversationId(nextConversations[0]?.id ?? "");
                 setMessages([]);
-                setToolEvents([]);
                 setChatInput("");
             }
         } catch (err) {
@@ -683,7 +672,6 @@ export function App() {
                     </div>
                     <div className="secondary-buttons">
                         <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
-                        <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
                     </div>
                 </section>
             </aside>
@@ -703,7 +691,6 @@ export function App() {
                         </div>
                         <div className="panel-actions">
                             <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
-                            <button className={sidePanel === "details" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "details" ? null : "details")}>工具调用</button>
                         </div>
                     </div>
                     <div className="messages">
@@ -776,76 +763,49 @@ export function App() {
 
                 {sidePanel && (
                     <section className="right-panel">
-                        {sidePanel === "details" ? (
-                            <div className="panel-box">
-                                <div className="section-title">
-                                    <div>
-                                        <h3>工具调用</h3>
-                                        <div className="section-subtitle">仅在需要排查时查看</div>
-                                    </div>
-                                    <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
+                        <div className="panel-box">
+                            <div className="section-title">
+                                <div>
+                                    <h3>我的能力</h3>
+                                    <div className="section-subtitle">常用能力集中管理</div>
                                 </div>
-                                <div className="tool-events">
-                                    {toolEvents.length === 0 ? <div className="muted">当前会话暂无工具调用</div> : toolEvents.map((event, index) => (
-                                        <div key={`${event.id ?? event.name}-${index}`} className="tool-event compact">
-                                            <div className="tool-event-head">
-                                                <strong>{event.name}</strong>
-                                                <span className={`status ${event.status}`}>{event.status}</span>
-                                            </div>
-                                            <p className="tool-event-preview">
-                                                {event.result || "(无输出)"}{event.truncated ? <span className="tool-event-truncated"> 已截断</span> : null}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
+                                <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
                             </div>
-                        ) : (
-                            <>
-                                <div className="panel-box">
-                                    <div className="section-title">
-                                        <div>
-                                            <h3>我的能力</h3>
-                                            <div className="section-subtitle">常用能力集中管理</div>
+                            <div className="skill-list">
+                                {skills.length === 0 ? <div className="muted">你还没有添加任何个人能力</div> : skills.map((skill) => (
+                                    <div key={skill.id} className="skill-card">
+                                        <div className="skill-head">
+                                            <strong>{skill.name}</strong>
+                                            <span className={`status ${skill.status}`}>{skill.status}</span>
                                         </div>
-                                        <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
+                                        <p>{skill.description || "无描述"}</p>
+                                        <div className="actions">
+                                            <button onClick={() => setSkillForm(skill)}>编辑</button>
+                                            <button onClick={() => void toggleSkillStatus(skill)}>{skill.status === "enabled" ? "禁用" : "启用"}</button>
+                                            <button onClick={() => void deleteSkill(skill.id)}>删除</button>
+                                        </div>
                                     </div>
-                                    <div className="skill-list">
-                                        {skills.length === 0 ? <div className="muted">你还没有添加任何个人能力</div> : skills.map((skill) => (
-                                            <div key={skill.id} className="skill-card">
-                                                <div className="skill-head">
-                                                    <strong>{skill.name}</strong>
-                                                    <span className={`status ${skill.status}`}>{skill.status}</span>
-                                                </div>
-                                                <p>{skill.description || "无描述"}</p>
-                                                <div className="actions">
-                                                    <button onClick={() => setSkillForm(skill)}>编辑</button>
-                                                    <button onClick={() => void toggleSkillStatus(skill)}>{skill.status === "enabled" ? "禁用" : "启用"}</button>
-                                                    <button onClick={() => void deleteSkill(skill.id)}>删除</button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                ))}
+                            </div>
+                        </div>
 
-                                <div className="panel-box">
-                                    <div className="panel-box-header">
-                                        <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
-                                        <div className="section-subtitle">能力配置保持在侧边，不打断主聊天流</div>
-                                    </div>
-                                    <form onSubmit={handleSkillSubmit} className="stack">
-                                        <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
-                                        <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
-                                        <select value={skillForm.status} onChange={(e) => setSkillForm((prev) => ({ ...prev, status: e.target.value as Skill["status"] }))}>
-                                            <option value="draft">draft</option>
-                                            <option value="enabled">enabled</option>
-                                            <option value="disabled">disabled</option>
-                                        </select>
-                                        <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
-                                        <button type="submit">{skillForm.id ? "保存能力" : "创建能力"}</button>
-                                    </form>
-                                </div>
-                            </>
-                        )}
+                        <div className="panel-box">
+                            <div className="panel-box-header">
+                                <h3>{skillForm.id ? "编辑能力" : "创建能力"}</h3>
+                                <div className="section-subtitle">能力配置保持在侧边，不打断主聊天流</div>
+                            </div>
+                            <form onSubmit={handleSkillSubmit} className="stack">
+                                <input placeholder="能力名称" value={skillForm.name} onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))} />
+                                <input placeholder="描述" value={skillForm.description} onChange={(e) => setSkillForm((prev) => ({ ...prev, description: e.target.value }))} />
+                                <select value={skillForm.status} onChange={(e) => setSkillForm((prev) => ({ ...prev, status: e.target.value as Skill["status"] }))}>
+                                    <option value="draft">draft</option>
+                                    <option value="enabled">enabled</option>
+                                    <option value="disabled">disabled</option>
+                                </select>
+                                <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
+                                <button type="submit">{skillForm.id ? "保存能力" : "创建能力"}</button>
+                            </form>
+                        </div>
                         {error && <div className="error">{error}</div>}
                     </section>
                 )}

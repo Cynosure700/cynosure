@@ -376,12 +376,8 @@ func TestDefaultToolHooksAuditPersistEmitAndAppendToolMessage(t *testing.T) {
 	if len(store.toolCalls) != 1 || store.toolCalls[0].Status != "success" {
 		t.Fatalf("expected persisted tool call, got %#v", store.toolCalls)
 	}
-	if len(writer.events) != 1 || writer.events[0].name != "tool" {
-		t.Fatalf("expected tool event, got %#v", writer.events)
-	}
-	payload, ok := writer.events[0].data.(map[string]any)
-	if !ok || payload["id"] != "tool_1" || payload["name"] != "bash" || payload["status"] != "success" || payload["truncated"] != true || strings.Contains(payload["result"].(string), "line7") {
-		t.Fatalf("expected compact truncated tool event payload, got %#v", writer.events[0].data)
+	if len(writer.events) != 0 {
+		t.Fatalf("expected no tool event to be emitted, got %#v", writer.events)
 	}
 	if len(state.Messages) != 2 || state.Messages[1].Role != "tool" || state.Messages[1].ToolCallID != "tool_1" {
 		t.Fatalf("expected tool message to be appended, got %#v", state.Messages)
@@ -546,8 +542,8 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	if len(store.toolCalls) != 1 || store.toolCalls[0].ToolName != "bash" || store.toolCalls[0].Status != "success" {
 		t.Fatalf("expected one successful bash tool call, got %#v", store.toolCalls)
 	}
-	if len(writer.events) < 3 || writer.events[0].name != "tool" || writer.events[1].name != "assistant_delta" || writer.events[len(writer.events)-1].name != "assistant" {
-		t.Fatalf("expected tool event followed by streamed final answer, got %#v", writer.events)
+	if len(writer.events) < 2 || writer.events[0].name != "assistant_delta" || writer.events[len(writer.events)-1].name != "assistant" {
+		t.Fatalf("expected streamed final answer after tool call, got %#v", writer.events)
 	}
 }
 

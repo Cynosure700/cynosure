@@ -39,18 +39,6 @@ func persistToolCallHook(ctx context.Context, h *ToolUseContext) error {
 	return nil
 }
 
-func emitToolEventHook(ctx context.Context, h *ToolUseContext) error {
-	if h.State.Writer == nil {
-		return nil
-	}
-	if h.Name == "spawn_subagent" {
-		return nil
-	}
-	preview, truncated := textutil.ToolResultPreview(h.Outcome.Result)
-	_ = h.State.Writer.Event("tool", map[string]any{"id": h.ToolCall.ID, "name": h.Name, "status": h.Outcome.Status, "result": preview, "truncated": truncated})
-	return nil
-}
-
 func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {
 	content := h.Outcome.MessageContent()
 	h.State.Messages = append(h.State.Messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: h.ToolCall.ID, Content: content})

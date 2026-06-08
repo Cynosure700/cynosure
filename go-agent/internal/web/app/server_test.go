@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -363,62 +362,6 @@ func TestHandleConversationByID_ReturnsOnlyDisplayMessages(t *testing.T) {
 	}
 	if body.Messages[0].Role != "user" || body.Messages[1].Role != "assistant" || body.Messages[1].Content != "已经加载完成" {
 		t.Fatalf("unexpected display messages: %#v", body.Messages)
-	}
-}
-
-func TestHandleConversationByID_ReturnsToolEventsFromHistory(t *testing.T) {
-	store := &fakeServerStore{
-		conversationToReturn: storage.Conversation{ID: "conv_1", UserID: "usr_1", Title: "test"},
-		messages: []storage.Message{
-			{ID: "msg_user", ConversationID: "conv_1", UserID: "usr_1", Role: "user", Content: "执行命令"},
-			{ID: "msg_assistant_tool", ConversationID: "conv_1", UserID: "usr_1", Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_1", Type: "function", Function: storage.MessageFunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}}}},
-			{ID: "msg_tool", ConversationID: "conv_1", UserID: "usr_1", Role: "tool", ToolCallID: "tool_1", Content: `{"status":"success","result":"/Users/bytedance/golang_pro/nano_cc\n"}`},
-			{ID: "msg_assistant", ConversationID: "conv_1", UserID: "usr_1", Role: "assistant", Content: "执行完成"},
-		},
-	}
-	server := &Server{store: store}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/conversations/conv_1", nil)
-	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, storage.User{ID: "usr_1"}))
-	resp := httptest.NewRecorder()
-
-	server.handleConversationByID(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
-	}
-	var body struct {
-		ToolEvents []toolEventPayload `json:"tool_events"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if len(body.ToolEvents) != 1 {
-		t.Fatalf("expected one tool event, got %#v", body.ToolEvents)
-	}
-	if body.ToolEvents[0].ID != "tool_1" || body.ToolEvents[0].Name != "bash" || body.ToolEvents[0].Status != "success" || body.ToolEvents[0].Result != "/Users/bytedance/golang_pro/nano_cc" {
-		t.Fatalf("unexpected tool event: %#v", body.ToolEvents[0])
-	}
-}
-
-func TestDisplayConversationToolEvents_TruncatesLongResultsAndHandlesInvalidJSON(t *testing.T) {
-	longResult := strings.Join([]string{"line1", "line2", "line3", "line4", "line5", "line6", "line7"}, "\n")
-	messages := []storage.Message{
-		{Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: "tool_long", Function: storage.MessageFunctionCall{Name: "bash"}}, {ID: "tool_bad", Function: storage.MessageFunctionCall{Name: "read"}}}},
-		{Role: "tool", ToolCallID: "tool_long", Content: `{"status":"success","result":` + strconv.Quote(longResult) + `}`},
-		{Role: "tool", ToolCallID: "tool_bad", Content: `not json`},
-	}
-
-	events := displayConversationToolEvents(messages)
-
-	if len(events) != 2 {
-		t.Fatalf("expected two tool events, got %#v", events)
-	}
-	if events[0].Name != "bash" || events[0].Status != "success" || !events[0].Truncated || strings.Contains(events[0].Result, "line7") {
-		t.Fatalf("expected long result preview to be truncated, got %#v", events[0])
-	}
-	if events[1].Name != "read" || events[1].Status != "unknown" || events[1].Result != "not json" {
-		t.Fatalf("expected invalid JSON fallback event, got %#v", events[1])
 	}
 }
 

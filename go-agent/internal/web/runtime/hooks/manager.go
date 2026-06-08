@@ -6,7 +6,7 @@ func NewDefaultHookManager() *HookManager {
 	return &HookManager{
 		UserPromptSubmit: []UserPromptSubmitHook{appendUserMessageHook, conversationActivityHook},
 		PreToolUse:       []PreToolUseHook{toolAuditPreHook},
-		PostToolUse:      []PostToolUseHook{toolAuditPostHook, persistToolCallHook, emitToolEventHook, appendToolMessageHook},
+		PostToolUse:      []PostToolUseHook{toolAuditPostHook, persistToolCallHook, appendToolMessageHook},
 		Stop:             []StopHook{persistAssistantStopHook, emitAssistantStopHook},
 	}
 }
