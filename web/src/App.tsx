@@ -152,8 +152,8 @@ function formatElapsed(ms?: number): string | null {
 
 function formatTokens(tokens?: number): string | null {
     if (typeof tokens !== "number" || tokens < 0) return null;
-    if (tokens < 1000) return `${tokens}`;
-    return `${(tokens / 1000).toFixed(1)}K`;
+    if (tokens < 1024) return `${tokens}`;
+    return `${(tokens / 1024).toFixed(1)}K`;
 }
 
 function formatContextLabel(message?: ChatMessage | null): string | null {
