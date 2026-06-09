@@ -12,8 +12,9 @@ import (
 )
 
 type fakeStore struct {
-	persistedOutputs []storage.PersistedOutput
-	contextSummaries []storage.ContextSummary
+	persistedOutputs     []storage.PersistedOutput
+	contextSummaries     []storage.ContextSummary
+	conversationMemories []storage.ConversationMemory
 }
 
 func (f *fakeStore) CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error {
@@ -42,6 +43,16 @@ func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversa
 		}
 	}
 	return storage.ContextSummary{}, errors.New("context summary not found")
+}
+
+func (f *fakeStore) ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error) {
+	var result []storage.ConversationMemory
+	for _, m := range f.conversationMemories {
+		if m.ConversationID == conversationID {
+			result = append(result, m)
+		}
+	}
+	return result, nil
 }
 
 func toolMsg(id, status, result string) storage.Message {

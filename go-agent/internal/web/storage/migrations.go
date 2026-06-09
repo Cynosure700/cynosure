@@ -31,6 +31,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureMemoriesTable(ctx); err != nil {
 		return fmt.Errorf("migrate memories table: %w", err)
 	}
+	if err := s.ensureConversationMemoriesTable(ctx); err != nil {
+		return fmt.Errorf("migrate conversation memories table: %w", err)
+	}
 	return nil
 }
 
@@ -51,6 +54,27 @@ func (s *Store) ensureMemoriesTable(ctx context.Context) error {
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 	`); err != nil {
 		return fmt.Errorf("create memories: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureConversationMemoriesTable(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS conversation_memories (
+			id VARCHAR(64) PRIMARY KEY,
+			conversation_id VARCHAR(64) NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			description TEXT NOT NULL,
+			body LONGTEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+			KEY idx_cm_conversation (conversation_id, updated_at),
+			CONSTRAINT fk_cm_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			CONSTRAINT fk_cm_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create conversation_memories: %w", err)
 	}
 	return nil
 }

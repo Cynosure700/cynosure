@@ -86,6 +86,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			}
 			if s.EnableMemory {
 				s.extractMemories(ctx, user, append(state.History, stopCtx.AssistantMessage))
+				s.updateConversationMemory(ctx, conversation, user, append(state.History, stopCtx.AssistantMessage))
 			}
 			return stopCtx.AssistantMessage, nil
 		}

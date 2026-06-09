@@ -61,9 +61,9 @@ type Message struct {
 
 // MessageMeta 记录助手回复的元信息，仅对最终 assistant 消息填充。
 type MessageMeta struct {
-	ToolCallCount int `json:"tool_call_count"`           // 调用工具次数（0 也需序列化，保证历史展示一致）
-	ContextTokens int `json:"context_tokens,omitempty"`  // 当前上下文估算 token
-	ContextBudget int `json:"context_budget,omitempty"`  // 上下文预算（用于算占比）
+	ToolCallCount int `json:"tool_call_count"`          // 调用工具次数（0 也需序列化，保证历史展示一致）
+	ContextTokens int `json:"context_tokens,omitempty"` // 当前上下文估算 token
+	ContextBudget int `json:"context_budget,omitempty"` // 上下文预算（用于算占比）
 }
 
 type MessageToolCall struct {
@@ -151,4 +151,17 @@ type Memory struct {
 	Body        string    `json:"body"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ConversationMemory 是单个会话维度、随每轮对话增量维护的“当前会话主干信息”
+// 条目。它不注入 system prompt，仅在上下文压缩触发全量摘要时作为替代品使用。
+type ConversationMemory struct {
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversation_id"`
+	UserID         string    `json:"user_id"`
+	Name           string    `json:"name"`
+	Description    string    `json:"description"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }

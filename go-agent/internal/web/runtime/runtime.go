@@ -38,6 +38,8 @@ type conversationStore interface {
 	DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error
 	ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error
 	ReplaceSemanticMemories(ctx context.Context, items []storage.Memory) error
+	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
+	ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error
 }
 
 type Service struct {

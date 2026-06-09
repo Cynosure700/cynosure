@@ -22,22 +22,24 @@ import (
 )
 
 type fakeStore struct {
-	historyUpdates     [][]storage.Message
-	toolCalls          []storage.ToolCall
-	subagentMessages   []storage.SubagentMessage
-	persistedOutputs   []storage.PersistedOutput
-	contextSummaries   []storage.ContextSummary
-	memories           []storage.Memory
-	deletedOldest      [][3]string
-	replacedMemories   []storage.Memory
-	replacedSemantic   []storage.Memory
-	cached             []storage.Message
-	enabledSkills      []storage.Skill
-	enabledSkillSets   [][]storage.Skill
-	listEnabledCalls   int
-	updatedTitle       string
-	updatedID          string
-	touchedID          string
+	historyUpdates       [][]storage.Message
+	toolCalls            []storage.ToolCall
+	subagentMessages     []storage.SubagentMessage
+	persistedOutputs     []storage.PersistedOutput
+	contextSummaries     []storage.ContextSummary
+	memories             []storage.Memory
+	conversationMemories []storage.ConversationMemory
+	replacedConvMemories []storage.ConversationMemory
+	deletedOldest        [][3]string
+	replacedMemories     []storage.Memory
+	replacedSemantic     []storage.Memory
+	cached               []storage.Message
+	enabledSkills        []storage.Skill
+	enabledSkillSets     [][]storage.Skill
+	listEnabledCalls     int
+	updatedTitle         string
+	updatedID            string
+	touchedID            string
 }
 
 func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
@@ -200,6 +202,21 @@ func (f *fakeStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, me
 
 func (f *fakeStore) ReplaceSemanticMemories(ctx context.Context, items []storage.Memory) error {
 	f.replacedSemantic = append(f.replacedSemantic, items...)
+	return nil
+}
+
+func (f *fakeStore) ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error) {
+	var result []storage.ConversationMemory
+	for _, m := range f.conversationMemories {
+		if m.ConversationID == conversationID {
+			result = append(result, m)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeStore) ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error {
+	f.replacedConvMemories = append(f.replacedConvMemories, items...)
 	return nil
 }
 

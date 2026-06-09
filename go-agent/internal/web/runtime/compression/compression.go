@@ -47,6 +47,7 @@ type Store interface {
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
 	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
 	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
+	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 }
 
 // Strategy applies one compression layer to RequestHistory.
@@ -65,6 +66,7 @@ func NewDefaultCompressor() *Compressor {
 		&ToolResultCompressionStrategy{},
 		&MessageWindowCompressionStrategy{},
 		&RecentToolResultRetentionStrategy{},
+		&ConversationMemoryStrategy{},
 		&FullHistorySummarizationStrategy{},
 	}}
 }
