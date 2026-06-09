@@ -113,6 +113,13 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
+			// 会话结束：把本轮模型最终回复纳入上下文后重算，得到会话结束时的最终 token 用量，
+			// 覆盖请求前的估算值，确保存储与下发的都是最终用量。
+			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
+			finalHistoryForEstimate := append(cloneMessages(lastRequestHistory), finalAssistant)
+			finalEstimator := compression.DefaultTokenEstimator{}
+			state.LastContextTokens = finalEstimator.EstimateRequestTokens(state.SystemPrompt, finalHistoryForEstimate, s.Tools.Definitions())
+			state.LastContextBudget = finalEstimator.ContextTokenBudget()
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
 				return storage.Message{}, err
