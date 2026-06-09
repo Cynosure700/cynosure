@@ -315,15 +315,18 @@ func TestFullHistorySummarization_NoopUnderBudget(t *testing.T) {
 func TestFullHistorySummarization_SummarizesOverBudgetAndCaches(t *testing.T) {
 	store := &fakeStore{}
 	calls := 0
+	var lastInput []storage.Message
 	summarizer := func(ctx context.Context, r SummaryRequest) (SummaryResult, error) {
 		calls++
+		lastInput = r.History
 		return SummaryResult{Summary: "STRUCTURED SUMMARY"}, nil
 	}
 	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 600*1024)}
+	last := storage.Message{Role: "user", Content: "the latest message"}
 	mkReq := func() *Request {
 		return &Request{
 			User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
-			RequestHistory: []storage.Message{huge},
+			RequestHistory: []storage.Message{huge, last},
 			Store:          store,
 			Estimator:      DefaultTokenEstimator{},
 			Summarizer:     summarizer,
@@ -336,8 +339,17 @@ func TestFullHistorySummarization_SummarizesOverBudgetAndCaches(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("expected summarizer called once, got %d", calls)
 	}
+	// Summarizer must only receive the history before the last message.
+	if len(lastInput) != 1 || lastInput[0].Content != huge.Content {
+		t.Fatalf("expected summarizer input to exclude the last message, got %#v", lastInput)
+	}
 	if len(req.RequestHistory) < 2 || req.RequestHistory[1].Role != "user" || !strings.Contains(req.RequestHistory[1].Content, "STRUCTURED SUMMARY") {
 		t.Fatalf("expected summary injected as request context, got %#v", req.RequestHistory)
+	}
+	// The last message must be preserved verbatim as the final entry.
+	final := req.RequestHistory[len(req.RequestHistory)-1]
+	if final.Content != last.Content {
+		t.Fatalf("expected last message preserved verbatim, got %#v", final)
 	}
 	if len(store.contextSummaries) != 1 {
 		t.Fatalf("expected summary cached once")
@@ -349,5 +361,70 @@ func TestFullHistorySummarization_SummarizesOverBudgetAndCaches(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected cache hit to avoid second summarizer call, got %d", calls)
+	}
+}
+
+func TestFullHistorySummarization_NoopWithSingleMessage(t *testing.T) {
+	store := &fakeStore{}
+	called := false
+	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 600*1024)}
+	req := &Request{
+		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
+		RequestHistory: []storage.Message{huge},
+		Store:          store,
+		Estimator:      DefaultTokenEstimator{},
+		Summarizer: func(ctx context.Context, r SummaryRequest) (SummaryResult, error) {
+			called = true
+			return SummaryResult{Summary: "s"}, nil
+		},
+	}
+	if err := (&FullHistorySummarizationStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if called {
+		t.Fatalf("expected no summarization with a single message")
+	}
+	if len(req.RequestHistory) != 1 || req.RequestHistory[0].Content != huge.Content {
+		t.Fatalf("expected single message left untouched, got %#v", req.RequestHistory)
+	}
+}
+
+func TestFullHistorySummarization_PreservesLastToolMessageWithPairedCall(t *testing.T) {
+	store := &fakeStore{}
+	summarizer := func(ctx context.Context, r SummaryRequest) (SummaryResult, error) {
+		return SummaryResult{Summary: "S"}, nil
+	}
+	// Earlier huge history forces summarization; the latest turn is an
+	// assistant tool_call followed by a large tool result as the last message.
+	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 600*1024)}
+	callMsg := assistantToolCallMsg("call_latest")
+	lastTool := toolMsg("call_latest", "success", strings.Repeat("r", 600*1024))
+	req := &Request{
+		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
+		RequestHistory: []storage.Message{huge, callMsg, lastTool},
+		Store:          store,
+		Estimator:      DefaultTokenEstimator{},
+		Summarizer:     summarizer,
+	}
+	if err := (&FullHistorySummarizationStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	final := req.RequestHistory[len(req.RequestHistory)-1]
+	if final.Role != "tool" || final.ToolCallID != "call_latest" {
+		t.Fatalf("expected last tool message preserved, got %#v", final)
+	}
+	// Its paired assistant tool_call must also be present to keep the request valid.
+	foundCall := false
+	for _, msg := range req.RequestHistory {
+		if msg.Role == "assistant" {
+			for _, c := range msg.ToolCalls {
+				if c.ID == "call_latest" {
+					foundCall = true
+				}
+			}
+		}
+	}
+	if !foundCall {
+		t.Fatalf("expected paired assistant tool_call kept for the last tool message")
 	}
 }

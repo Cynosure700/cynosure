@@ -51,8 +51,15 @@ func (s *FullHistorySummarizationStrategy) Apply(ctx context.Context, req *Reque
 	if before <= budget {
 		return nil
 	}
+	// The last message is always preserved verbatim; only the earlier history
+	// is summarized. With a single message there is nothing to summarize.
+	if len(req.RequestHistory) < 2 {
+		return nil
+	}
 
-	sourceHash := historyHash(req.RequestHistory)
+	lastMessage := req.RequestHistory[len(req.RequestHistory)-1]
+	summarizable := req.RequestHistory[:len(req.RequestHistory)-1]
+	sourceHash := historyHash(summarizable)
 
 	// Try cache first.
 	summary := ""
@@ -62,7 +69,7 @@ func (s *FullHistorySummarizationStrategy) Apply(ctx context.Context, req *Reque
 		result, err := req.Summarizer(ctx, SummaryRequest{
 			Conversation: req.Conversation,
 			User:         req.User,
-			History:      req.RequestHistory,
+			History:      summarizable,
 			TargetTokens: summaryTargetTokens,
 		})
 		if err != nil {
@@ -82,15 +89,18 @@ func (s *FullHistorySummarizationStrategy) Apply(ctx context.Context, req *Reque
 		})
 	}
 
-	tail := selectRecentTail(req, summary, budget)
-	req.RequestHistory = buildSummaryHistory(summary, tail)
+	tail := selectRecentTail(req, summarizable, summary, budget)
+	// Tail plus the always-kept last message are repaired together so the last
+	// message is never dropped as an orphan tool result.
+	kept := repairToolCallBoundaries(append(append([]storage.Message{}, tail...), lastMessage))
+	req.RequestHistory = buildSummaryHistory(summary, kept)
 	return nil
 }
 
-// selectRecentTail picks messages from the end of the history within the budget
-// remaining after reserving space for the summary, then repairs tool boundaries.
-func selectRecentTail(req *Request, summary string, budget int) []storage.Message {
-	history := req.RequestHistory
+// selectRecentTail picks messages from the end of the summarizable history
+// within the budget remaining after reserving space for the summary. The
+// always-kept last message is handled separately by the caller.
+func selectRecentTail(req *Request, summarizable []storage.Message, summary string, budget int) []storage.Message {
 	summaryTokens := req.Estimator.EstimateRequestTokens(req.SystemPrompt, buildSummaryHistory(summary, nil), req.Tools)
 	tailBudget := budget - summaryTokens
 	if tailBudget > recentTailMinTokens {
@@ -103,15 +113,15 @@ func selectRecentTail(req *Request, summary string, budget int) []storage.Messag
 
 	var selected []storage.Message
 	used := 0
-	for i := len(history) - 1; i >= 0; i-- {
-		msgTokens := estimateTokensFromBytes(messageBytes(history[i]))
+	for i := len(summarizable) - 1; i >= 0; i-- {
+		msgTokens := estimateTokensFromBytes(messageBytes(summarizable[i]))
 		if used+msgTokens > tailBudget {
 			break
 		}
 		used += msgTokens
-		selected = append([]storage.Message{history[i]}, selected...)
+		selected = append([]storage.Message{summarizable[i]}, selected...)
 	}
-	return repairToolCallBoundaries(selected)
+	return selected
 }
 
 func buildSummaryHistory(summary string, tail []storage.Message) []storage.Message {

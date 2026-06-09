@@ -53,6 +53,10 @@ type LoopState struct {
 	Messages      []openai.ChatCompletionMessage
 	Todos         []agenttools.TodoItem
 
+	ToolCallCount     int // 累计工具调用次数
+	LastContextTokens int // 最近一轮发送给模型的上下文 token
+	LastContextBudget int // 上下文 token 预算
+
 	Writer EventWriter
 }
 

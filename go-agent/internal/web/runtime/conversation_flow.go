@@ -11,6 +11,7 @@ import (
 
 	"nano_cc/internal/logger"
 	agenttools "nano_cc/internal/tools"
+	"nano_cc/internal/web/runtime/compression"
 	"nano_cc/internal/web/storage"
 )
 
@@ -53,6 +54,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 		state.Messages = buildOpenAIMessages(state.SystemPrompt, requestHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
+		estimator := compression.DefaultTokenEstimator{}
+		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, requestHistory, s.Tools.Definitions())
+		state.LastContextBudget = estimator.ContextTokenBudget()
+		emitMeta(state)
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
 			Messages: state.Messages,
@@ -98,8 +103,22 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
+			state.ToolCallCount++
+			emitMeta(state)
 		}
 	}
+}
+
+// emitMeta 通过 SSE 实时下发当前累计的回复元信息。
+func emitMeta(state *LoopState) {
+	if state == nil || state.Writer == nil {
+		return
+	}
+	_ = state.Writer.Event("meta", map[string]any{
+		"tool_call_count": state.ToolCallCount,
+		"context_tokens":  state.LastContextTokens,
+		"context_budget":  state.LastContextBudget,
+	})
 }
 
 func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {

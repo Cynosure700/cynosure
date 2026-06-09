@@ -248,6 +248,18 @@ func (w *captureEventWriter) Event(name string, data any) error {
 	return nil
 }
 
+// nonMetaEvents 返回除去 meta 事件的事件序列，便于断言主流事件顺序。
+func (w *captureEventWriter) nonMetaEvents() []capturedEvent {
+	out := make([]capturedEvent, 0, len(w.events))
+	for _, e := range w.events {
+		if e.name == "meta" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func testAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
 	return config.AppConfig{
@@ -494,11 +506,12 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 	if message.Content != "你好" {
 		t.Fatalf("expected streamed content to be persisted, got %q", message.Content)
 	}
-	if len(writer.events) != 3 {
-		t.Fatalf("expected 2 deltas and final assistant, got %#v", writer.events)
+	events := writer.nonMetaEvents()
+	if len(events) != 3 {
+		t.Fatalf("expected 2 deltas and final assistant, got %#v", events)
 	}
-	if writer.events[0].name != "assistant_delta" || writer.events[1].name != "assistant_delta" || writer.events[2].name != "assistant" {
-		t.Fatalf("unexpected events: %#v", writer.events)
+	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
+		t.Fatalf("unexpected events: %#v", events)
 	}
 }
 
@@ -524,12 +537,13 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 	if got := store.historyUpdates[0][1].ReasoningContent; got != "内部推理过程" {
 		t.Fatalf("expected history reasoning content, got %q", got)
 	}
-	if len(writer.events) != 3 || writer.events[2].name != "assistant" {
-		t.Fatalf("expected streamed deltas and final assistant event, got %#v", writer.events)
+	events := writer.nonMetaEvents()
+	if len(events) != 3 || events[2].name != "assistant" {
+		t.Fatalf("expected streamed deltas and final assistant event, got %#v", events)
 	}
-	payload, ok := writer.events[2].data.(map[string]any)
+	payload, ok := events[2].data.(map[string]any)
 	if !ok || payload["reasoning_content"] != "内部推理过程" {
-		t.Fatalf("expected assistant event to include reasoning_content, got %#v", writer.events[0].data)
+		t.Fatalf("expected assistant event to include reasoning_content, got %#v", events[2].data)
 	}
 }
 
@@ -550,15 +564,16 @@ func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
 	if message.Content != "答案" || message.ReasoningContent != "先思考" {
 		t.Fatalf("expected streamed reasoning and content, got %#v", message)
 	}
-	if len(writer.events) != 3 {
-		t.Fatalf("expected reasoning delta, content delta and final assistant, got %#v", writer.events)
+	events := writer.nonMetaEvents()
+	if len(events) != 3 {
+		t.Fatalf("expected reasoning delta, content delta and final assistant, got %#v", events)
 	}
-	if writer.events[0].name != "reasoning_delta" || writer.events[1].name != "assistant_delta" || writer.events[2].name != "assistant" {
-		t.Fatalf("unexpected events: %#v", writer.events)
+	if events[0].name != "reasoning_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
+		t.Fatalf("unexpected events: %#v", events)
 	}
-	payload, ok := writer.events[2].data.(map[string]any)
+	payload, ok := events[2].data.(map[string]any)
 	if !ok || payload["message_id"] == "" || payload["final"] != true || payload["reasoning_content"] != "先思考" {
-		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", writer.events[2].data)
+		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", events[2].data)
 	}
 }
 
@@ -589,8 +604,33 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	if len(store.toolCalls) != 1 || store.toolCalls[0].ToolName != "bash" || store.toolCalls[0].Status != "success" {
 		t.Fatalf("expected one successful bash tool call, got %#v", store.toolCalls)
 	}
-	if len(writer.events) < 2 || writer.events[0].name != "assistant_delta" || writer.events[len(writer.events)-1].name != "assistant" {
-		t.Fatalf("expected streamed final answer after tool call, got %#v", writer.events)
+	events := writer.nonMetaEvents()
+	if len(events) < 2 || events[0].name != "assistant_delta" || events[len(events)-1].name != "assistant" {
+		t.Fatalf("expected streamed final answer after tool call, got %#v", events)
+	}
+	finalPayload, ok := events[len(events)-1].data.(map[string]any)
+	if !ok || finalPayload["tool_call_count"] != 1 {
+		t.Fatalf("expected final assistant event to report 1 tool call, got %#v", events[len(events)-1].data)
+	}
+	if tokens, _ := finalPayload["context_tokens"].(int); tokens <= 0 {
+		t.Fatalf("expected positive context_tokens in final assistant event, got %#v", finalPayload["context_tokens"])
+	}
+	if len(store.historyUpdates) == 0 {
+		t.Fatalf("expected history to be persisted")
+	}
+	lastUpdate := store.historyUpdates[len(store.historyUpdates)-1]
+	finalMsg := lastUpdate[len(lastUpdate)-1]
+	if finalMsg.Meta == nil || finalMsg.Meta.ToolCallCount != 1 || finalMsg.Meta.ContextTokens <= 0 {
+		t.Fatalf("expected persisted assistant message meta with tool count and tokens, got %#v", finalMsg.Meta)
+	}
+	var metaEvents int
+	for _, e := range writer.events {
+		if e.name == "meta" {
+			metaEvents++
+		}
+	}
+	if metaEvents == 0 {
+		t.Fatalf("expected at least one meta event to be emitted during streaming")
 	}
 }
 

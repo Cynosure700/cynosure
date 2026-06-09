@@ -18,7 +18,7 @@
 6. 只保留最近 3 条 `role=tool` 消息的完整 `result`，更早的替换为占位符 `[Earlier result compacted. Re-run if needed]`。
 7. 保持消息格式兼容：`tool` 消息仍是 `{"status":"...","result":"..."}` JSON，只替换其中 `result` 字符串。
 8. 被落库压缩的完整内容可由模型按需读取：模型看到 `<persisted-output>` 后调用运行时工具从数据库取回原文。
-9. 三层请求态压缩后仍超 token 限定值时，触发一次 LLM 全量摘要，把请求态 history 转换为“摘要 + 最近工作窗口”。
+9. 三层请求态压缩后仍超 token 限定值时，触发一次 LLM 全量摘要，把请求态 history 转换为“摘要 + 最近工作窗口 + 原样保留的最后一条消息”。**全量摘要只对历史消息（最后一条之前）做一次摘要，最后一条消息始终原样保留、不参与摘要、不因预算被裁掉。**
 
 ## 核心原则：展示历史与请求历史分离
 
@@ -146,7 +146,7 @@ ContextTokenBudget = ModelContextLimit - MaxResponseTokens - SafetyMarginTokens
 
 **token 估算**（第一版保守，无 tokenizer 依赖）：`estimatedTokens = ceil(utf8Bytes / 3)`，覆盖 system prompt、每条消息 JSON、tool definitions JSON。未来可只替换 `TokenEstimator` 实现。
 
-**摘要输入**：三层压缩后的 `RequestHistory`。摘要 prompt 要求输出结构化 Markdown，至少含：当前用户目标、已完成操作与关键结论、重要文件/函数/命令/错误、工具调用结论（遇 `<persisted-output>` 必须保留 ID 和读取方式）、未完成事项与下一步、被占位压缩需重新运行的信息。
+**摘要输入**：三层压缩后的 `RequestHistory` 中**除最后一条消息以外的全部历史消息**（即 `history[:len-1]`）。最后一条消息（通常是最新一轮的用户消息或最新 tool_result）不参与摘要、原样保留。当历史只有一条消息时（无可摘要的历史），直接 no-op，不触发摘要。摘要 prompt 要求输出结构化 Markdown，至少含：当前用户目标、已完成操作与关键结论、重要文件/函数/命令/错误、工具调用结论（遇 `<persisted-output>` 必须保留 ID 和读取方式）、未完成事项与下一步、被占位压缩需重新运行的信息。
 
 **请求态上下文构造**：
 
@@ -154,15 +154,18 @@ ContextTokenBudget = ModelContextLimit - MaxResponseTokens - SafetyMarginTokens
 [
   system: "以下是为满足上下文窗口限制生成的会话摘要，仅用于本次推理，不是用户真实消息...",
   user:   "<conversation-summary>...摘要...</conversation-summary>",
-  ...recentTailMessages
+  ...recentTailMessages,   // 从“历史消息（最后一条之前）”尾部按预算向前选取
+  lastMessage,             // 最后一条消息，始终原样保留、不参与摘要、不因预算被裁掉
 ]
 ```
 
-`recentTailMessages` 从三层压缩后 history 尾部按 token 预算向前选取（预留摘要 `SummaryTargetTokens` 默认 8k，最近消息 `RecentTailMinTokens` 默认 16k 或预算 25% 取小），选完再做一次 tool 边界修复。仍超限则缩小重试一次，再失败则返回错误中止本轮调用。
+`recentTailMessages` 从“被摘要的历史消息（即 `history[:len-1]`）”尾部按 token 预算向前选取（预留摘要 `SummaryTargetTokens` 默认 8k，最近消息 `RecentTailMinTokens` 默认 16k 或预算 25% 取小），选完连同最后一条消息一起做一次 tool 边界修复。即使预算耗尽，最后一条消息也必须保留在请求态上下文中。
+
+> 边界修复注意：tail 与 `lastMessage` 必须作为整体一起做 tool 边界修复，避免最后一条 `role=tool` 消息因其前置 assistant tool_call 落在被摘要区而被当作孤儿删除；若出现这种情况，应保证最后一条消息的合法性（保留其配对的 assistant tool_call，或在不破坏 API 合法性的前提下原样保留）。
 
 **摘要 LLM 调用约束**：用同一 `config.Client` 但 `Tools` 为空、专用 summary system prompt 禁止调用工具、日志只记大小/hash/token 不记原文、失败返回错误且不修改 `state.History`。
 
-**缓存**：以三层压缩后 `RequestHistory` 规范化 JSON 的 `source_history_sha256` 为幂等键，命中 `context_summaries` 则复用，不重复调用摘要 LLM。
+**缓存**：以“被摘要的历史消息（即 `history[:len-1]`）”规范化 JSON 的 `source_history_sha256` 为幂等键，命中 `context_summaries` 则复用，不重复调用摘要 LLM。
 
 ## 按需读取：read_persisted_output
 
@@ -280,7 +283,7 @@ CREATE TABLE IF NOT EXISTS context_summaries (
 - 窗口：`<=50` no-op；`51` 裁中间 1 条；切口孤儿 tool 删除；assistant 缺 result 清空 ToolCalls。
 - 大 tool_result：`<=200KB` no-op；超限降序压缩到 ≤200KB；单超大项落库 + marker + 2000 预览；已 marker 不重复落库；非法 JSON 整体替换；最新 user 之前的 tool 不统计；落库失败不部分替换；同一结果多轮复用同一记录。
 - 占位：tool 数 `<=3` no-op；`>3` 仅保留最近 3 条完整；保持 status 只换 result；非法 JSON 替换为纯占位符；已压缩不重复处理。
-- 摘要：估算 `<=budget` no-op；`>budget` 调摘要返回 `summary + tail`；缓存命中不重复调用；摘要请求不带 tools；失败中止不改 history；超预算缩小重试。
+- 摘要：估算 `<=budget` no-op；`>budget` 调摘要返回 `summary + tail + 最后一条消息`；最后一条消息始终原样保留、不参与摘要、不因预算被裁掉；只有一条历史时 no-op；缓存命中不重复调用；摘要请求不带 tools；失败中止不改 history。
 - 分离：四层均不改 `state.History`，最终 `SetConversationHistory` 仍为真实历史；`read_persisted_output` 正常分段读取 + 权限校验 + limit 上限。
 
 ## 待确认点

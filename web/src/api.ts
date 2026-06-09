@@ -27,6 +27,16 @@ export type ChatMessage = {
     role: "user" | "assistant";
     content: string;
     reasoning_content?: string;
+    elapsed_ms?: number; // 前端流式计时专用，不来自后端，会话结束后清除
+    tool_call_count?: number;
+    context_tokens?: number;
+    context_budget?: number;
+};
+
+export type AssistantMeta = {
+    tool_call_count?: number;
+    context_tokens?: number;
+    context_budget?: number;
 };
 
 function conversationTitlePayload(title?: string): { title?: string } {
@@ -94,8 +104,20 @@ export const api = {
     deleteConversation: (conversationId: string) =>
         request<{ ok: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
     getConversation: async (conversationId: string) => {
-        const result = await request<{ conversation: Conversation; messages: ChatMessage[] | null }>(`/api/conversations/${conversationId}`);
-        return { ...result, messages: normalizeArray(result.messages) };
+        type RawMessage = ChatMessage & { meta?: AssistantMeta | null };
+        const result = await request<{ conversation: Conversation; messages: RawMessage[] | null }>(`/api/conversations/${conversationId}`);
+        const messages = normalizeArray(result.messages).map((message) => {
+            const { meta, ...rest } = message;
+            return meta
+                ? {
+                      ...rest,
+                      tool_call_count: meta.tool_call_count,
+                      context_tokens: meta.context_tokens,
+                      context_budget: meta.context_budget,
+                  }
+                : rest;
+        });
+        return { ...result, messages };
     },
     streamConversation: async (
         conversationId: string,
@@ -103,7 +125,8 @@ export const api = {
         handlers: {
             onAssistantDelta: (payload: { content: string }) => void;
             onReasoningDelta: (payload: { content: string }) => void;
-            onAssistant: (payload: { message_id?: string; content: string; reasoning_content?: string; final?: boolean }) => void;
+            onMeta: (payload: AssistantMeta) => void;
+            onAssistant: (payload: { message_id?: string; content: string; reasoning_content?: string; final?: boolean } & AssistantMeta) => void;
             onError: (message: string) => void;
             onDone: () => void;
         },
@@ -144,6 +167,7 @@ export const api = {
                 const payload = JSON.parse(dataLines.map((line) => line.replace("data:", "").trim()).join("\n"));
                 if (event === "assistant_delta") handlers.onAssistantDelta(payload);
                 if (event === "reasoning_delta") handlers.onReasoningDelta(payload);
+                if (event === "meta") handlers.onMeta(payload);
                 if (event === "assistant") handlers.onAssistant(payload);
                 if (event === "error") handlers.onError(payload.message);
                 if (event === "done") handlers.onDone();

@@ -1,6 +1,9 @@
 package storage
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConversationHistoryJSONRoundTrip(t *testing.T) {
 	messages := []Message{
@@ -33,5 +36,27 @@ func TestDecodeConversationHistoryRejectsInvalidJSON(t *testing.T) {
 	_, err := DecodeConversationHistory(`{"messages":`)
 	if err == nil {
 		t.Fatalf("expected invalid history json to return an error")
+	}
+}
+
+func TestMessageMetaToolCallCountZeroIsSerialized(t *testing.T) {
+	messages := []Message{
+		{ID: "msg_assistant", Role: "assistant", Content: "纯文本回复", Meta: &MessageMeta{ToolCallCount: 0, ContextTokens: 50, ContextBudget: 100}},
+	}
+
+	encoded, err := EncodeConversationHistory(messages)
+	if err != nil {
+		t.Fatalf("encode conversation history: %v", err)
+	}
+	if !strings.Contains(encoded, `"tool_call_count":0`) {
+		t.Fatalf("expected tool_call_count to be serialized even when zero, got %s", encoded)
+	}
+
+	decoded, err := DecodeConversationHistory(encoded)
+	if err != nil {
+		t.Fatalf("decode conversation history: %v", err)
+	}
+	if decoded[0].Meta == nil || decoded[0].Meta.ToolCallCount != 0 {
+		t.Fatalf("expected decoded meta with zero tool call count, got %#v", decoded[0].Meta)
 	}
 }

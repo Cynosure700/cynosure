@@ -144,6 +144,43 @@ function renderAssistantContent(content: string) {
     });
 }
 
+function formatElapsed(ms?: number): string | null {
+    if (typeof ms !== "number" || ms < 0) return null;
+    if (ms < 1000) return `${ms} ms`;
+    return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function formatTokens(tokens?: number): string | null {
+    if (typeof tokens !== "number" || tokens < 0) return null;
+    if (tokens < 1000) return `${tokens}`;
+    return `${(tokens / 1000).toFixed(1)}K`;
+}
+
+function formatContextLabel(message?: ChatMessage | null): string | null {
+    if (!message) return null;
+    const tokens = formatTokens(message.context_tokens);
+    if (!tokens) return null;
+    const budget = message.context_budget;
+    if (typeof budget === "number" && budget > 0 && typeof message.context_tokens === "number") {
+        const percent = Math.round((message.context_tokens / budget) * 100);
+        return `上下文 ${tokens} / ${formatTokens(budget)} (${percent}%)`;
+    }
+    return `上下文 ${tokens} tokens`;
+}
+
+function renderMessageMeta(message: ChatMessage) {
+    const elapsed = formatElapsed(message.elapsed_ms);
+    const hasTools = typeof message.tool_call_count === "number";
+    if (!elapsed && !hasTools) return null;
+
+    return (
+        <div className="message-meta">
+            {elapsed && <span>耗时 {elapsed}</span>}
+            {hasTools && <span>工具 {message.tool_call_count} 次</span>}
+        </div>
+    );
+}
+
 export function App() {
     const [authMode, setAuthMode] = useState<AuthMode>("login");
     const [user, setUser] = useState<User | null>(null);
@@ -170,6 +207,7 @@ export function App() {
     const activeConversationIdRef = useRef("");
     const expandedReasoningIdsRef = useRef<Set<string>>(new Set());
     const manualClosedReasoningIdsRef = useRef<Set<string>>(new Set());
+    const elapsedTimerRef = useRef<number | null>(null);
 
     const activeConversation = useMemo(
         () => (Array.isArray(conversations) ? conversations : []).find((item) => item.id === activeConversationId) ?? null,
@@ -185,6 +223,25 @@ export function App() {
         () => skills.filter((skill) => skill.status === "enabled").length,
         [skills],
     );
+
+    const conversationContextLabel = useMemo(() => {
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+            const message = messages[index];
+            if (message.role === "assistant" && typeof message.context_tokens === "number") {
+                return formatContextLabel(message);
+            }
+        }
+        return null;
+    }, [messages]);
+
+    useEffect(() => {
+        return () => {
+            if (elapsedTimerRef.current !== null) {
+                window.clearInterval(elapsedTimerRef.current);
+                elapsedTimerRef.current = null;
+            }
+        };
+    }, []);
 
     useEffect(() => {
         api.me()
@@ -362,6 +419,27 @@ export function App() {
         setChatInput("");
         setMessages((prev) => [...prev, { role: "user", content }, { id: streamingAssistantId, role: "assistant", content: "", reasoning_content: "" }]);
 
+        const startedAt = Date.now();
+        const stopElapsedTimer = () => {
+            if (elapsedTimerRef.current !== null) {
+                window.clearInterval(elapsedTimerRef.current);
+                elapsedTimerRef.current = null;
+            }
+        };
+        const clearStreamingElapsed = () => {
+            stopElapsedTimer();
+            setMessages((prev) => prev.map((message) => (
+                message.id === streamingAssistantId ? { ...message, elapsed_ms: undefined } : message
+            )));
+        };
+        stopElapsedTimer();
+        elapsedTimerRef.current = window.setInterval(() => {
+            if (activeConversationIdRef.current !== requestConversationId) return;
+            setMessages((prev) => prev.map((message) => (
+                message.id === streamingAssistantId ? { ...message, elapsed_ms: Date.now() - startedAt } : message
+            )));
+        }, 200);
+
         try {
             await api.streamConversation(requestConversationId, content, {
                 onAssistantDelta: (payload) => setMessages((prev) => prev.map((message) => (
@@ -376,21 +454,33 @@ export function App() {
                         message.id === streamingAssistantId ? { ...message, reasoning_content: `${message.reasoning_content ?? ""}${payload.content}` } : message
                     )));
                 },
-                onAssistant: (payload) => setMessages((prev) => {
-                    if (activeConversationIdRef.current !== requestConversationId) return prev;
-                    migrateReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, streamingAssistantId, payload.message_id);
-                    migrateReasoningSetValue(manualClosedReasoningIdsRef, setManualClosedReasoningIds, streamingAssistantId, payload.message_id);
-                    const hasStreamingMessage = prev.some((message) => message.id === streamingAssistantId);
-                    if (!hasStreamingMessage) {
-                        return [...prev, { id: payload.message_id, role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content }];
-                    }
-                    return prev.map((message) => (
+                onMeta: (payload) => {
+                    if (activeConversationIdRef.current !== requestConversationId) return;
+                    setMessages((prev) => prev.map((message) => (
                         message.id === streamingAssistantId
-                            ? { ...message, id: payload.message_id ?? message.id, content: payload.content, reasoning_content: payload.reasoning_content ?? message.reasoning_content }
+                            ? { ...message, tool_call_count: payload.tool_call_count, context_tokens: payload.context_tokens, context_budget: payload.context_budget }
                             : message
-                    ));
-                }),
+                    )));
+                },
+                onAssistant: (payload) => {
+                    stopElapsedTimer();
+                    setMessages((prev) => {
+                        if (activeConversationIdRef.current !== requestConversationId) return prev;
+                        migrateReasoningSetValue(expandedReasoningIdsRef, setExpandedReasoningIds, streamingAssistantId, payload.message_id);
+                        migrateReasoningSetValue(manualClosedReasoningIdsRef, setManualClosedReasoningIds, streamingAssistantId, payload.message_id);
+                        const hasStreamingMessage = prev.some((message) => message.id === streamingAssistantId);
+                        if (!hasStreamingMessage) {
+                            return [...prev, { id: payload.message_id, role: "assistant", content: payload.content, reasoning_content: payload.reasoning_content, tool_call_count: payload.tool_call_count, context_tokens: payload.context_tokens, context_budget: payload.context_budget }];
+                        }
+                        return prev.map((message) => (
+                            message.id === streamingAssistantId
+                                ? { ...message, id: payload.message_id ?? message.id, content: payload.content, reasoning_content: payload.reasoning_content ?? message.reasoning_content, elapsed_ms: undefined, tool_call_count: payload.tool_call_count, context_tokens: payload.context_tokens, context_budget: payload.context_budget }
+                                : message
+                        ));
+                    });
+                },
                 onError: (message) => {
+                    clearStreamingElapsed();
                     if (activeConversationIdRef.current !== requestConversationId) {
                         setSending(false);
                         return;
@@ -399,10 +489,14 @@ export function App() {
                     setMessages((prev) => prev.filter((item) => item.id !== streamingAssistantId || item.content.trim() || item.reasoning_content?.trim()));
                     setSending(false);
                 },
-                onDone: () => setSending(false),
+                onDone: () => {
+                    stopElapsedTimer();
+                    setSending(false);
+                },
             });
             await refreshAll();
         } catch (err) {
+            clearStreamingElapsed();
             if (activeConversationIdRef.current !== requestConversationId) {
                 setSending(false);
                 return;
@@ -670,7 +764,7 @@ export function App() {
                         <div className="panel-header-copy">
                             <span className="eyebrow">assistant-first chat</span>
                             <h2>{activeConversation?.title ?? "开始一段新对话"}</h2>
-                            <p className="muted">像与通用聊天助手对话一样提问，我会优先直接回答。</p>
+                            <p className="muted">{conversationContextLabel ?? "当前会话暂无上下文信息"}</p>
                         </div>
                         <div className="agent-orbit" aria-hidden="true">
                             <span />
@@ -707,7 +801,10 @@ export function App() {
                             const reasoningKey = message.id ?? `${message.role}-${index}`;
                             return (
                                 <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-                                    <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
+                                    <div className="message-header">
+                                        <span className="message-role">{message.role === "user" ? "你" : "助手"}</span>
+                                        {message.role === "assistant" && renderMessageMeta(message)}
+                                    </div>
                                     {message.role === "assistant" && message.reasoning_content?.trim() && (
                                         <details
                                             className="message-reasoning"

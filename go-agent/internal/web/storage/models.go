@@ -55,7 +55,15 @@ type Message struct {
 	ReasoningContent string            `json:"reasoning_content,omitempty"`
 	ToolCallID       string            `json:"tool_call_id,omitempty"`
 	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
+	Meta             *MessageMeta      `json:"meta,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
+}
+
+// MessageMeta 记录助手回复的元信息，仅对最终 assistant 消息填充。
+type MessageMeta struct {
+	ToolCallCount int `json:"tool_call_count"`           // 调用工具次数（0 也需序列化，保证历史展示一致）
+	ContextTokens int `json:"context_tokens,omitempty"`  // 当前上下文估算 token
+	ContextBudget int `json:"context_budget,omitempty"`  // 上下文预算（用于算占比）
 }
 
 type MessageToolCall struct {
