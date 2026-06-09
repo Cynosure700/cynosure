@@ -9,6 +9,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/idgen"
 	"nano_cc/internal/logger"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/runtime/compression"
@@ -26,6 +27,35 @@ type bufferedModelDelta struct {
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
+	// 入口获取会话锁：上一轮收尾未完成时阻塞等待，直到拿到锁或等待超时。
+	// 获取失败（Redis 异常 / 等待超时）则降级放行，跳过本轮收尾。
+	var lockToken string
+	var stopRenew func()
+	handedOff := false
+	if s.EnableMemory {
+		token := idgen.New("lock")
+		ok, err := s.Store.AcquireConversationLock(ctx, conversation.ID, token, s.Cfg.ConversationLockTTL, s.Cfg.ConversationLockWaitTimeout)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("conversation lock: acquire failed conversation=%s: %v", conversation.ID, err))
+		} else if !ok {
+			logger.Warn(fmt.Sprintf("conversation lock: acquire timed out conversation=%s", conversation.ID))
+		} else {
+			lockToken = token
+			stopRenew = s.startLockRenewer(conversation.ID, token)
+		}
+	}
+	// defer 兜底：任何提前 return（出错路径）都停止续期并释放锁；
+	// 正常走到异步收尾时通过 handedOff 转交所有权，避免被误释放。
+	defer func() {
+		if handedOff || lockToken == "" {
+			return
+		}
+		if stopRenew != nil {
+			stopRenew()
+		}
+		_ = s.Store.ReleaseConversationLock(context.Background(), conversation.ID, lockToken)
+	}()
+
 	history, err := s.loadConversationMessages(ctx, conversation.ID)
 	if err != nil {
 		return storage.Message{}, err
@@ -85,8 +115,8 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 				return storage.Message{}, err
 			}
 			if s.EnableMemory {
-				s.extractMemories(ctx, user, append(state.History, stopCtx.AssistantMessage))
-				s.updateConversationMemory(ctx, conversation, user, append(state.History, stopCtx.AssistantMessage))
+				finalHistory := append(state.History, stopCtx.AssistantMessage)
+				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, lockToken, stopRenew)
 			}
 			return stopCtx.AssistantMessage, nil
 		}

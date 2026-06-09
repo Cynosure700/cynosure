@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 )
 
 func LoadWebConfig() (AppConfig, error) {
@@ -56,5 +57,8 @@ func LoadWebConfig() (AppConfig, error) {
 		BashAllowDangerousCommands: fileCfg.BashAllowDangerousCommands,
 		CookieName:                 firstNonEmpty(fileCfg.SessionCookieName, "nano_cc_session"),
 		SessionTTLMinutes:          intOrDefault(fileCfg.SessionTTLMinutes, 60*24*7),
+		ConversationLockTTL:         time.Duration(intOrDefault(fileCfg.ConversationLockTTLSeconds, 30)) * time.Second,
+		MemoryWorkTimeout:           time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
+		ConversationLockWaitTimeout: time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
 	}, nil
 }

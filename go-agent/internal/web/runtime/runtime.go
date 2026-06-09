@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"time"
 
 	"nano_cc/internal/config"
 	"nano_cc/internal/llm"
@@ -40,6 +41,9 @@ type conversationStore interface {
 	ReplaceSemanticMemories(ctx context.Context, items []storage.Memory) error
 	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 	ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error
+	AcquireConversationLock(ctx context.Context, conversationID, token string, ttl, waitTimeout time.Duration) (bool, error)
+	RenewConversationLock(ctx context.Context, conversationID, token string, ttl time.Duration) (bool, error)
+	ReleaseConversationLock(ctx context.Context, conversationID, token string) error
 }
 
 type Service struct {

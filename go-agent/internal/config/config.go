@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -36,6 +37,9 @@ type fileConfig struct {
 	ESUsername                 string `json:"es_username"`
 	SessionCookieName          string `json:"session_cookie_name"`
 	SessionTTLMinutes          int    `json:"session_ttl_minutes"`
+	ConversationLockTTLSeconds         int `json:"conversation_lock_ttl_seconds"`
+	MemoryWorkTimeoutSeconds           int `json:"memory_work_timeout_seconds"`
+	ConversationLockWaitTimeoutSeconds int `json:"conversation_lock_wait_timeout_seconds"`
 }
 
 type AppConfig struct {
@@ -62,6 +66,9 @@ type AppConfig struct {
 	BashAllowDangerousCommands bool
 	CookieName                 string
 	SessionTTLMinutes          int
+	ConversationLockTTL         time.Duration
+	MemoryWorkTimeout           time.Duration
+	ConversationLockWaitTimeout time.Duration
 }
 
 func loadConfigFile() (fileConfig, error) {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -116,4 +118,70 @@ func buildConversationMemoryUserPrompt(existing []storage.ConversationMemory, di
 	b.WriteString("\n\nLatest dialogue:\n")
 	b.WriteString(dialogue)
 	return b.String()
+}
+
+// scheduleMemoryWork 在一轮对话结束后异步执行收尾操作（记忆提取 + 会话记忆更新）。
+// 它接管入口持有的会话锁（token）：在独立的 background context 中执行，期间持续
+// 续期，完成后停止续期并释放锁。返回 true 表示已接管锁所有权（调用方应跳过 defer
+// 释放）；返回 false 表示未持锁（已降级），调用方按原逻辑处理。
+func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.User, history []storage.Message, token string, stopRenew func()) bool {
+	if token == "" {
+		// 入口未持锁（已降级）→ 跳过收尾，不接管锁。
+		return false
+	}
+	// 停止请求期看门狗，收尾 goroutine 内重新启动一个。
+	if stopRenew != nil {
+		stopRenew()
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Warn(fmt.Sprintf("memory work: panic recovered conversation=%s: %v", conv.ID, r))
+			}
+		}()
+		defer s.Store.ReleaseConversationLock(context.Background(), conv.ID, token)
+		stop := s.startLockRenewer(conv.ID, token)
+		defer stop()
+
+		ctx, cancel := context.WithTimeout(context.Background(), s.Cfg.MemoryWorkTimeout)
+		defer cancel()
+		s.extractMemories(ctx, user, history)
+		s.updateConversationMemory(ctx, conv, user, history)
+	}()
+	return true
+}
+
+// startLockRenewer 启动一个后台看门狗，按 TTL/3 周期为会话锁续期，返回的 stop
+// 函数用于停止续期（幂等）。续期失败（锁已不属于当前 token）时记录告警并停止。
+func (s *Service) startLockRenewer(conversationID, token string) func() {
+	ttl := s.Cfg.ConversationLockTTL
+	interval := ttl / 3
+	if interval <= 0 {
+		interval = ttl
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				ok, err := s.Store.RenewConversationLock(context.Background(), conversationID, token, ttl)
+				if err != nil {
+					logger.Warn(fmt.Sprintf("conversation lock: renew failed conversation=%s: %v", conversationID, err))
+					return
+				}
+				if !ok {
+					logger.Warn(fmt.Sprintf("conversation lock: renew lost ownership conversation=%s", conversationID))
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() { close(done) })
+	}
 }

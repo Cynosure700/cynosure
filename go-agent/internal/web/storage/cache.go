@@ -38,3 +38,7 @@ func sessionRedisKey(sessionID string) string {
 func conversationCacheKey(conversationID string) string {
 	return "conversation-cache:" + conversationID
 }
+
+func conversationLockKey(conversationID string) string {
+	return "conversation-lock:" + conversationID
+}

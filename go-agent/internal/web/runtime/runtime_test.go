@@ -220,6 +220,18 @@ func (f *fakeStore) ReplaceConversationMemories(ctx context.Context, conversatio
 	return nil
 }
 
+func (f *fakeStore) AcquireConversationLock(ctx context.Context, conversationID, token string, ttl, waitTimeout time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (f *fakeStore) RenewConversationLock(ctx context.Context, conversationID, token string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (f *fakeStore) ReleaseConversationLock(ctx context.Context, conversationID, token string) error {
+	return nil
+}
+
 type fakeLLMClient struct {
 	responses       []openai.ChatCompletionResponse
 	streamChunks    []openai.ChatCompletionStreamResponse
