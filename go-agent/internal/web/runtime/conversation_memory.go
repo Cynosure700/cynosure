@@ -120,11 +120,12 @@ func buildConversationMemoryUserPrompt(existing []storage.ConversationMemory, di
 	return b.String()
 }
 
-// scheduleMemoryWork 在一轮对话结束后异步执行收尾操作（记忆提取 + 会话记忆更新）。
+// scheduleMemoryWork 在一轮对话结束后异步执行收尾操作（模型历史持久化 + 记忆提取
+// + 会话记忆更新）。
 // 它接管入口持有的会话锁（token）：在独立的 background context 中执行，期间持续
 // 续期，完成后停止续期并释放锁。返回 true 表示已接管锁所有权（调用方应跳过 defer
 // 释放）；返回 false 表示未持锁（已降级），调用方按原逻辑处理。
-func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.User, history []storage.Message, token string, stopRenew func()) bool {
+func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.User, history []storage.Message, modelHistory []storage.Message, token string, stopRenew func()) bool {
 	if token == "" {
 		// 入口未持锁（已降级）→ 跳过收尾，不接管锁。
 		return false
@@ -145,6 +146,12 @@ func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.Use
 
 		ctx, cancel := context.WithTimeout(context.Background(), s.Cfg.MemoryWorkTimeout)
 		defer cancel()
+		// 先落库模型历史：即使后续记忆相关的 LLM 调用超时，也不丢失本轮压缩成果。
+		if len(modelHistory) > 0 {
+			if err := s.Store.UpsertConversationModelHistory(ctx, conv.ID, user.ID, modelHistory); err != nil {
+				logger.Warn(fmt.Sprintf("model history: persist failed conversation=%s: %v", conv.ID, err))
+			}
+		}
 		s.extractMemories(ctx, user, history)
 		s.updateConversationMemory(ctx, conv, user, history)
 	}()

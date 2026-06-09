@@ -34,6 +34,28 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureConversationMemoriesTable(ctx); err != nil {
 		return fmt.Errorf("migrate conversation memories table: %w", err)
 	}
+	if err := s.ensureConversationModelHistoryTable(ctx); err != nil {
+		return fmt.Errorf("migrate conversation model history table: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureConversationModelHistoryTable(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS conversation_model_histories (
+			conversation_id VARCHAR(64) PRIMARY KEY,
+			user_id VARCHAR(64) NOT NULL,
+			history_json LONGTEXT NOT NULL,
+			estimated_tokens INT NOT NULL DEFAULT 0,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+			KEY idx_cmh_user (user_id, updated_at),
+			CONSTRAINT fk_cmh_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+			CONSTRAINT fk_cmh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create conversation_model_histories: %w", err)
+	}
 	return nil
 }
 

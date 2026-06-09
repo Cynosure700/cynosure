@@ -10,6 +10,7 @@ func appendUserMessageHook(ctx context.Context, h *UserPromptSubmitContext) erro
 	state := h.State
 	state.UserMessage = storage.Message{ID: state.NextMessageID(), ConversationID: state.Conversation.ID, UserID: state.User.ID, Role: "user", Content: state.UserInput}
 	state.History = append(state.History, state.UserMessage)
+	state.ModelHistory = append(state.ModelHistory, state.UserMessage)
 	return nil
 }
 

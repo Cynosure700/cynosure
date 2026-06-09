@@ -56,7 +56,7 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	}
 	trace := &subagentTrace{store: s.Store, runID: runID, parentToolCallID: parentToolCallID, conversationID: parent.Conversation.ID, userID: parent.User.ID}
 	childTools := NewChildToolRegistry(s.Cfg, resolvedCWD)
-	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil)
+	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, nil)
 	childState.SkillSnapshot = parent.Skills
 	childState.SystemPrompt = s.buildSubagentSystemPrompt(parent.User, parent.Skills)
 	childState.Messages = []openai.ChatCompletionMessage{{Role: "system", Content: childState.SystemPrompt}, {Role: "user", Content: task}}

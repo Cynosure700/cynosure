@@ -30,6 +30,10 @@ type fakeStore struct {
 	memories             []storage.Memory
 	conversationMemories []storage.ConversationMemory
 	replacedConvMemories []storage.ConversationMemory
+	modelHistory         []storage.Message
+	modelHistoryExists   bool
+	modelHistoryErr      error
+	upsertedModelHistory [][]storage.Message
 	deletedOldest        [][3]string
 	replacedMemories     []storage.Memory
 	replacedSemantic     []storage.Memory
@@ -217,6 +221,23 @@ func (f *fakeStore) ListConversationMemories(ctx context.Context, conversationID
 
 func (f *fakeStore) ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error {
 	f.replacedConvMemories = append(f.replacedConvMemories, items...)
+	return nil
+}
+
+func (f *fakeStore) GetConversationModelHistory(ctx context.Context, conversationID string) ([]storage.Message, bool, error) {
+	if f.modelHistoryErr != nil {
+		return nil, false, f.modelHistoryErr
+	}
+	if !f.modelHistoryExists {
+		return nil, false, nil
+	}
+	return f.modelHistory, true, nil
+}
+
+func (f *fakeStore) UpsertConversationModelHistory(ctx context.Context, conversationID, userID string, messages []storage.Message) error {
+	f.upsertedModelHistory = append(f.upsertedModelHistory, append([]storage.Message(nil), messages...))
+	f.modelHistory = append([]storage.Message(nil), messages...)
+	f.modelHistoryExists = true
 	return nil
 }
 
@@ -1977,7 +1998,7 @@ func executeToolCallWithDefaultHooks(t *testing.T, service *Service, name, rawAr
 		service.Hooks = NewDefaultHookManager()
 	}
 	ctx := &ToolUseContext{
-		State:    service.newLoopState(storage.Conversation{ID: "conv_audit"}, storage.User{ID: "usr_audit"}, "", nil, nil),
+		State:    service.newLoopState(storage.Conversation{ID: "conv_audit"}, storage.User{ID: "usr_audit"}, "", nil, nil, nil),
 		ToolCall: openai.ToolCall{ID: "tool_audit", Function: openai.FunctionCall{Name: name, Arguments: rawArgs}},
 		Name:     name,
 		RawArgs:  rawArgs,

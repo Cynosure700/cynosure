@@ -60,7 +60,8 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	if err != nil {
 		return storage.Message{}, err
 	}
-	state := s.newLoopState(conversation, user, userMessage, history, writer)
+	modelHistory := s.loadModelHistory(ctx, conversation.ID, history)
+	state := s.newLoopState(conversation, user, userMessage, history, modelHistory, writer)
 	if err := s.hookManager().RunUserPromptSubmit(ctx, &UserPromptSubmitContext{State: state}); err != nil {
 		return storage.Message{}, err
 	}
@@ -71,10 +72,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	}
 	state.SkillSnapshot = snapshot
 	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot, state.History)
-	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.History)
+	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
 	round := 0
 	roundsSinceTodoWrite := 0
 	var cumulativeReasoning strings.Builder
+	var lastRequestHistory []storage.Message
 
 	for {
 		round++
@@ -82,6 +84,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		if err != nil {
 			return storage.Message{}, err
 		}
+		lastRequestHistory = requestHistory
 		state.Messages = buildOpenAIMessages(state.SystemPrompt, requestHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 		estimator := compression.DefaultTokenEstimator{}
@@ -116,11 +119,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			}
 			if s.EnableMemory {
 				finalHistory := append(state.History, stopCtx.AssistantMessage)
-				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, lockToken, stopRenew)
+				finalModelHistory := append(cloneMessages(lastRequestHistory), stopCtx.AssistantMessage)
+				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, finalModelHistory, lockToken, stopRenew)
 			}
 			return stopCtx.AssistantMessage, nil
 		}
-		state.History = append(state.History, storage.Message{ID: state.NextMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)})
+		assistantMessage := storage.Message{ID: state.NextMessageID(), ConversationID: conversation.ID, UserID: user.ID, Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
+		state.History = append(state.History, assistantMessage)
+		state.ModelHistory = append(state.ModelHistory, assistantMessage)
 
 		for _, tc := range msg.ToolCalls {
 			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}

@@ -20,7 +20,7 @@ func NewDefaultHookManager() *HookManager {
 	return runtimehooks.NewDefaultHookManager()
 }
 
-func (s *Service) newLoopState(conversation storage.Conversation, user storage.User, userInput string, history []storage.Message, writer EventWriter) *LoopState {
+func (s *Service) newLoopState(conversation storage.Conversation, user storage.User, userInput string, history []storage.Message, modelHistory []storage.Message, writer EventWriter) *LoopState {
 	return &LoopState{
 		Store:                        s.Store,
 		NewMessageID:                 newMessageID,
@@ -31,6 +31,7 @@ func (s *Service) newLoopState(conversation storage.Conversation, user storage.U
 		User:                         user,
 		UserInput:                    userInput,
 		History:                      history,
+		ModelHistory:                 modelHistory,
 		Writer:                       writer,
 	}
 }

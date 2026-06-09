@@ -48,6 +48,14 @@ type LoopState struct {
 	History     []storage.Message
 	UserMessage storage.Message
 
+	// ModelHistory is the "model line": the history actually fed to the
+	// compression pipeline / model. It starts from the previous turn's
+	// compressed request history (loaded from storage) and is appended in
+	// lockstep with History during the loop. History stays full and verbatim
+	// for display/persistence; ModelHistory may already carry compression
+	// artifacts (summary preamble, placeholders, trimmed messages).
+	ModelHistory []storage.Message
+
 	SkillSnapshot *agenttools.SkillSnapshot
 	SystemPrompt  string
 	Messages      []openai.ChatCompletionMessage

@@ -2,16 +2,33 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 
+	"nano_cc/internal/logger"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/runtime/compression"
 	"nano_cc/internal/web/storage"
 )
 
-// compressContextBeforeLLM deep-copies the display history and runs the
+// loadModelHistory returns the reusable "model history" persisted from the
+// previous turn's compressed request history. When no row exists, decoding
+// fails, or the store errors, it falls back to a clone of the full display
+// history (current behavior).
+func (s *Service) loadModelHistory(ctx context.Context, conversationID string, displayHistory []storage.Message) []storage.Message {
+	modelHistory, ok, err := s.Store.GetConversationModelHistory(ctx, conversationID)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("model history: load failed conversation=%s: %v", conversationID, err))
+	}
+	if !ok || len(modelHistory) == 0 {
+		return cloneMessages(displayHistory)
+	}
+	return modelHistory
+}
+
+// compressContextBeforeLLM deep-copies the model history and runs the
 // compression pipeline, returning the request-only history for this round.
 func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState) ([]storage.Message, error) {
-	requestHistory := cloneMessages(state.History)
+	requestHistory := cloneMessages(state.ModelHistory)
 	store, ok := s.Store.(compression.Store)
 	if !ok {
 		// Store does not support compression artifacts; skip silently.
