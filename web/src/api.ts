@@ -2,6 +2,7 @@ export type User = {
     id: string;
     email: string;
     username: string;
+    memory_enabled: boolean;
 };
 
 export type Skill = {
@@ -79,6 +80,8 @@ export const api = {
         request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) }),
     logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
     me: () => request<{ user: User }>("/api/me"),
+    updateMemoryPreference: (enabled: boolean) =>
+        request<{ memory_enabled: boolean }>("/api/me/memory", { method: "PATCH", body: JSON.stringify({ enabled }) }),
     listSkills: async () => {
         const result = await request<{ skills: Skill[] | null }>("/api/skills");
         return { ...result, skills: normalizeArray(result.skills) };

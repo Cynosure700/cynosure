@@ -27,6 +27,9 @@ type bufferedModelDelta struct {
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
+	// 记忆业务开关：系统级能力开启 且 用户个人偏好开启 时才注入/提取记忆。
+	// 注意：它只控制记忆注入与提取，不控制会话锁与模型历史持久化。
+	memoryOn := s.EnableMemory && user.MemoryEnabled
 	// 入口获取会话锁：上一轮收尾未完成时阻塞等待，直到拿到锁或等待超时。
 	// 获取失败（Redis 异常 / 等待超时）则降级放行，跳过本轮收尾。
 	var lockToken string
@@ -71,7 +74,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 	state.SkillSnapshot = snapshot
-	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot, state.History)
+	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot, state.History, memoryOn)
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
 	round := 0
 	roundsSinceTodoWrite := 0
@@ -127,7 +130,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if s.EnableMemory {
 				finalHistory := append(state.History, stopCtx.AssistantMessage)
 				finalModelHistory := append(cloneMessages(lastRequestHistory), stopCtx.AssistantMessage)
-				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, finalModelHistory, lockToken, stopRenew)
+				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, finalModelHistory, lockToken, stopRenew, memoryOn)
 			}
 			return stopCtx.AssistantMessage, nil
 		}

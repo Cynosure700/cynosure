@@ -67,3 +67,23 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
+
+func (s *Server) handleUpdateMemoryPreference(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		methodNotAllowed(w)
+		return
+	}
+	user, _ := auth.UserFromContext(r.Context())
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		badRequest(w, err)
+		return
+	}
+	if err := s.store.UpdateUserMemoryEnabled(r.Context(), user.ID, body.Enabled); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"memory_enabled": body.Enabled})
+}

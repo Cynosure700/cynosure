@@ -37,6 +37,23 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureConversationModelHistoryTable(ctx); err != nil {
 		return fmt.Errorf("migrate conversation model history table: %w", err)
 	}
+	if err := s.ensureUsersMemoryEnabledColumn(ctx); err != nil {
+		return fmt.Errorf("migrate users memory_enabled column: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureUsersMemoryEnabledColumn(ctx context.Context) error {
+	hasColumn, err := s.columnExists(ctx, "users", "memory_enabled")
+	if err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := s.DB.ExecContext(ctx, `ALTER TABLE users ADD COLUMN memory_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER password_hash`); err != nil {
+		return fmt.Errorf("add memory_enabled: %w", err)
+	}
 	return nil
 }
 

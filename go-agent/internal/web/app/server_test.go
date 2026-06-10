@@ -35,6 +35,10 @@ func (f *fakeServerStore) HealthCheck(ctx context.Context) error { return nil }
 
 func (f *fakeServerStore) RunMigrations(ctx context.Context) error { return nil }
 
+func (f *fakeServerStore) UpdateUserMemoryEnabled(ctx context.Context, userID string, enabled bool) error {
+	return nil
+}
+
 func (f *fakeServerStore) ListSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error) {
 	return f.skills, nil
 }

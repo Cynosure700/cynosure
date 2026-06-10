@@ -19,6 +19,7 @@ import (
 type serverStore interface {
 	HealthCheck(ctx context.Context) error
 	RunMigrations(ctx context.Context) error
+	UpdateUserMemoryEnabled(ctx context.Context, userID string, enabled bool) error
 	ListSkillsByUser(ctx context.Context, userID string) ([]storage.Skill, error)
 	CreateSkill(ctx context.Context, skill storage.Skill) error
 	GetSkillByID(ctx context.Context, skillID string) (storage.Skill, error)

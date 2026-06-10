@@ -192,6 +192,7 @@ export function App() {
     const [skills, setSkills] = useState<Skill[]>([]);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
+    const [updatingMemory, setUpdatingMemory] = useState(false);
     const [creatingConversation, setCreatingConversation] = useState(false);
     const [newConversationTitle, setNewConversationTitle] = useState("");
     const [renamingConversationId, setRenamingConversationId] = useState("");
@@ -389,6 +390,22 @@ export function App() {
         setSkills([]);
         setMessages([]);
         setActiveConversationId("");
+    }
+
+    async function handleToggleMemory() {
+        if (!user || updatingMemory) return;
+        const nextEnabled = !user.memory_enabled;
+        setUpdatingMemory(true);
+        setError("");
+        setUser((prev) => (prev ? { ...prev, memory_enabled: nextEnabled } : prev));
+        try {
+            await api.updateMemoryPreference(nextEnabled);
+        } catch (err) {
+            setUser((prev) => (prev ? { ...prev, memory_enabled: !nextEnabled } : prev));
+            setError(err instanceof Error ? err.message : "更新记忆设置失败");
+        } finally {
+            setUpdatingMemory(false);
+        }
     }
 
     async function handleCreateConversation() {
@@ -661,6 +678,23 @@ export function App() {
                             <div className="muted">{user.email}</div>
                         </div>
                         <button onClick={() => void handleLogout()}>退出</button>
+                    </div>
+                    <div className="memory-toggle-row">
+                        <div className="memory-toggle-copy">
+                            <strong>记忆功能</strong>
+                            <span className="muted">{user.memory_enabled ? "已开启，自动记住并复用上下文" : "已关闭，不注入也不提取记忆"}</span>
+                        </div>
+                        <button
+                            type="button"
+                            className={user.memory_enabled ? "memory-switch on" : "memory-switch"}
+                            role="switch"
+                            aria-checked={user.memory_enabled}
+                            aria-label="切换记忆功能"
+                            disabled={updatingMemory}
+                            onClick={() => void handleToggleMemory()}
+                        >
+                            <span className="memory-switch-thumb" />
+                        </button>
                     </div>
                     <div className="sidebar-insights">
                         <div>

@@ -13,8 +13,12 @@ import (
 	"nano_cc/internal/web/storage"
 )
 
-func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message) string {
-	return s.buildSystemPromptWithMemory(user, snapshot, s.selectRelevantMemories(ctx, user, history))
+func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message, memoryOn bool) string {
+	memorySection := ""
+	if memoryOn {
+		memorySection = s.selectRelevantMemories(ctx, user, history)
+	}
+	return s.buildSystemPromptWithMemory(user, snapshot, memorySection)
 }
 
 func (s *Service) buildSystemPromptWithMemory(user storage.User, snapshot *agenttools.SkillSnapshot, memorySection string) string {

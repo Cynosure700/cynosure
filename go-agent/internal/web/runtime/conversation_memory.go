@@ -125,7 +125,8 @@ func buildConversationMemoryUserPrompt(existing []storage.ConversationMemory, di
 // 它接管入口持有的会话锁（token）：在独立的 background context 中执行，期间持续
 // 续期，完成后停止续期并释放锁。返回 true 表示已接管锁所有权（调用方应跳过 defer
 // 释放）；返回 false 表示未持锁（已降级），调用方按原逻辑处理。
-func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.User, history []storage.Message, modelHistory []storage.Message, token string, stopRenew func()) bool {
+// memoryOn 仅控制记忆提取与会话记忆更新；锁释放与模型历史持久化始终执行。
+func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.User, history []storage.Message, modelHistory []storage.Message, token string, stopRenew func(), memoryOn bool) bool {
 	if token == "" {
 		// 入口未持锁（已降级）→ 跳过收尾，不接管锁。
 		return false
@@ -152,8 +153,10 @@ func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.Use
 				logger.Warn(fmt.Sprintf("model history: persist failed conversation=%s: %v", conv.ID, err))
 			}
 		}
-		s.extractMemories(ctx, user, history)
-		s.updateConversationMemory(ctx, conv, user, history)
+		if memoryOn {
+			s.extractMemories(ctx, user, history)
+			s.updateConversationMemory(ctx, conv, user, history)
+		}
 	}()
 	return true
 }

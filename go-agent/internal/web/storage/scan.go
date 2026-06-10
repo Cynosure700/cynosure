@@ -4,7 +4,7 @@ import "database/sql"
 
 func scanUser(row interface{ Scan(dest ...any) error }) (User, error) {
 	var user User
-	if err := row.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt); err != nil {
+	if err := row.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.MemoryEnabled, &user.CreatedAt, &user.UpdatedAt); err != nil {
 		return User{}, err
 	}
 	return user, nil
