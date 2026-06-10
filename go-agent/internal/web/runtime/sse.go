@@ -6,6 +6,9 @@ import (
 	"net/http"
 )
 
+// FallbackErrorMessage 是用户可见的统一兜底文案，避免泄露内部错误细节。
+const FallbackErrorMessage = "系统运行出错，请稍后重试"
+
 type SSEWriter struct {
 	W http.ResponseWriter
 }

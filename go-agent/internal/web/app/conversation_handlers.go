@@ -1,12 +1,15 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"nano_cc/internal/logger"
 	"nano_cc/internal/web/auth"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
@@ -105,9 +108,21 @@ func (s *Server) handleConversationByID(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Connection", "keep-alive")
 		writer := runtime.SSEWriter{W: w}
 		_ = writer.Event("conversation", map[string]any{"id": conversation.ID, "title": conversation.Title})
+		// panic 兜底：任意未捕获 panic 也下发统一兜底文案，避免连接异常断开导致前端无提示。
+		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error(fmt.Sprintf("conversation stream panic conversation=%s: %v", conversation.ID, rec))
+				_ = writer.Event("error", map[string]any{"message": runtime.FallbackErrorMessage})
+			}
+		}()
 		assistant, err := s.runtime.RespondToConversation(r.Context(), conversation, user, body.Content, writer)
 		if err != nil {
-			_ = writer.Event("error", map[string]any{"message": err.Error()})
+			// 原始错误仅记录日志，便于排查；对用户统一下发兜底文案。
+			logger.Warn(fmt.Sprintf("conversation stream failed conversation=%s user=%s: %v", conversation.ID, user.ID, err))
+			// 客户端主动断开（context.Canceled）属正常现象，连接已断，不下发 error 事件。
+			if !errors.Is(err, context.Canceled) {
+				_ = writer.Event("error", map[string]any{"message": runtime.FallbackErrorMessage})
+			}
 			return
 		}
 		_ = writer.Event("done", map[string]any{"message_id": assistant.ID})

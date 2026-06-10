@@ -19,6 +19,7 @@ import (
 const (
 	assistantDeltaEvent = "assistant_delta"
 	reasoningDeltaEvent = "reasoning_delta"
+	maxRound = 50
 )
 
 type bufferedModelDelta struct {
@@ -84,6 +85,9 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 
 	for {
 		round++
+		if round > maxRound {
+			return storage.Message{}, fmt.Errorf("conversation round limit %d exceeded", maxRound)
+		}
 		requestHistory, err := s.compressContextBeforeLLM(ctx, state)
 		if err != nil {
 			return storage.Message{}, err
