@@ -21,6 +21,32 @@ export type Conversation = {
     title: string;
 };
 
+export type MCPTransport = "stdio" | "sse" | "streamable";
+
+export type MCPServer = {
+    id: string;
+    user_id: string;
+    name: string;
+    transport: MCPTransport;
+    command: string;
+    args: string[] | null;
+    env: Record<string, string> | null;
+    url: string;
+    headers: Record<string, string> | null;
+    enabled: boolean;
+};
+
+export type MCPServerPayload = {
+    name: string;
+    transport: MCPTransport;
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+    url: string;
+    headers: Record<string, string>;
+    enabled: boolean;
+};
+
 export type ChatMessage = {
     id?: string;
     conversation_id?: string;
@@ -93,6 +119,19 @@ export const api = {
     patchSkillStatus: (skillId: string, status: Skill["status"]) =>
         request<{ skill: Skill }>(`/api/skills/${skillId}`, { method: "PATCH", body: JSON.stringify({ status }) }),
     deleteSkill: (skillId: string) => request<{ ok: boolean }>(`/api/skills/${skillId}`, { method: "DELETE" }),
+    listMCPServers: async () => {
+        const result = await request<{ mcp_servers: MCPServer[] | null }>("/api/mcp-servers");
+        return { ...result, mcp_servers: normalizeArray(result.mcp_servers) };
+    },
+    createMCPServer: (payload: MCPServerPayload) =>
+        request<{ mcp_server: MCPServer }>("/api/mcp-servers", { method: "POST", body: JSON.stringify(payload) }),
+    updateMCPServer: (id: string, payload: MCPServerPayload) =>
+        request<{ mcp_server: MCPServer }>(`/api/mcp-servers/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+    patchMCPServerEnabled: (id: string, enabled: boolean) =>
+        request<{ mcp_server: MCPServer }>(`/api/mcp-servers/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+    deleteMCPServer: (id: string) => request<{ ok: boolean }>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
+    testMCPServer: (id: string) =>
+        request<{ ok: boolean; tools?: string[]; error?: string }>(`/api/mcp-servers/${id}/test`, { method: "POST" }),
     listConversations: async () => {
         const result = await request<{ conversations: Conversation[] | null }>("/api/conversations");
         return { ...result, conversations: normalizeArray(result.conversations) };

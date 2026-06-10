@@ -76,6 +76,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	state.SkillSnapshot = snapshot
 	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot, state.History, memoryOn)
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
+	toolDefs := s.toolDefinitionsForUser(ctx, user.ID)
 	round := 0
 	roundsSinceTodoWrite := 0
 	var cumulativeReasoning strings.Builder
@@ -91,13 +92,13 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		state.Messages = buildOpenAIMessages(state.SystemPrompt, requestHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 		estimator := compression.DefaultTokenEstimator{}
-		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, requestHistory, s.Tools.Definitions())
+		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, requestHistory, toolDefs)
 		state.LastContextBudget = estimator.ContextTokenBudget()
 		emitMeta(state)
 		req := openai.ChatCompletionRequest{
 			Model:    s.Cfg.LLM.ModelID,
 			Messages: state.Messages,
-			Tools:    s.Tools.Definitions(),
+			Tools:    toolDefs,
 		}
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundStream(ctx, state, req)
@@ -121,7 +122,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
 			finalHistoryForEstimate := append(cloneMessages(lastRequestHistory), finalAssistant)
 			finalEstimator := compression.DefaultTokenEstimator{}
-			state.LastContextTokens = finalEstimator.EstimateRequestTokens(state.SystemPrompt, finalHistoryForEstimate, s.Tools.Definitions())
+			state.LastContextTokens = finalEstimator.EstimateRequestTokens(state.SystemPrompt, finalHistoryForEstimate, toolDefs)
 			state.LastContextBudget = finalEstimator.ContextTokenBudget()
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {

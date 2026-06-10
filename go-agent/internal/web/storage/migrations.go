@@ -40,6 +40,34 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureUsersMemoryEnabledColumn(ctx); err != nil {
 		return fmt.Errorf("migrate users memory_enabled column: %w", err)
 	}
+	if err := s.ensureMCPServersTable(ctx); err != nil {
+		return fmt.Errorf("migrate mcp servers table: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ensureMCPServersTable(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS mcp_servers (
+			id VARCHAR(64) PRIMARY KEY,
+			user_id VARCHAR(64) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			transport VARCHAR(32) NOT NULL,
+			command VARCHAR(1024) NOT NULL DEFAULT '',
+			args_json TEXT NOT NULL,
+			env_json TEXT NOT NULL,
+			url VARCHAR(1024) NOT NULL DEFAULT '',
+			headers_json TEXT NOT NULL,
+			enabled TINYINT(1) NOT NULL DEFAULT 1,
+			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+			updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+			UNIQUE KEY uniq_mcp_user_name (user_id, name),
+			KEY idx_mcp_user_id (user_id),
+			CONSTRAINT fk_mcp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`); err != nil {
+		return fmt.Errorf("create mcp_servers: %w", err)
+	}
 	return nil
 }
 

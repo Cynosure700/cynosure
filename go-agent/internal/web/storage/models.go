@@ -36,6 +36,23 @@ type Skill struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// MCPServer 是用户配置的一个 MCP 服务器连接。Transport 取值 stdio/sse/streamable。
+// Args/Env/Headers 在数据库中以 JSON 文本存储，在 Go 侧以强类型表示。
+type MCPServer struct {
+	ID        string            `json:"id"`
+	UserID    string            `json:"user_id"`
+	Name      string            `json:"name"`
+	Transport string            `json:"transport"`
+	Command   string            `json:"command"`
+	Args      []string          `json:"args"`
+	Env       map[string]string `json:"env"`
+	URL       string            `json:"url"`
+	Headers   map[string]string `json:"headers"`
+	Enabled   bool              `json:"enabled"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
 type Conversation struct {
 	ID            string    `json:"id"`
 	UserID        string    `json:"user_id"`

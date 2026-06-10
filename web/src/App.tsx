@@ -1,8 +1,22 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { api, type ChatMessage, type Conversation, type Skill, type User } from "./api";
+import { api, type ChatMessage, type Conversation, type MCPServer, type MCPTransport, type Skill, type User } from "./api";
 
 type AuthMode = "login" | "register";
-type SidePanel = "capabilities" | null;
+type SidePanel = "capabilities" | "mcp" | null;
+
+type MCPForm = {
+    id: string;
+    name: string;
+    transport: MCPTransport;
+    command: string;
+    args: string;
+    env: string;
+    url: string;
+    headers: string;
+    enabled: boolean;
+};
+
+const emptyMCPForm: MCPForm = { id: "", name: "", transport: "stdio", command: "", args: "", env: "", url: "", headers: "", enabled: true };
 
 type ContentBlock =
     | { type: "paragraph"; lines: string[] }
@@ -248,6 +262,9 @@ export function App() {
     const [activeConversationId, setActiveConversationId] = useState<string>("");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [skills, setSkills] = useState<Skill[]>([]);
+    const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
+    const [mcpForm, setMcpForm] = useState<MCPForm>(emptyMCPForm);
+    const [mcpTestResult, setMcpTestResult] = useState<{ id: string; ok: boolean; message: string } | null>(null);
     const [chatInput, setChatInput] = useState("");
     const [sending, setSending] = useState(false);
     const [updatingMemory, setUpdatingMemory] = useState(false);
@@ -416,12 +433,13 @@ export function App() {
     }
 
     async function refreshAll() {
-        const [conversationResult, skillResult] = await Promise.all([api.listConversations(), api.listSkills()]);
+        const [conversationResult, skillResult, mcpResult] = await Promise.all([api.listConversations(), api.listSkills(), api.listMCPServers()]);
         const nextConversations = Array.isArray(conversationResult.conversations) ? conversationResult.conversations : [];
         const nextSkills = Array.isArray(skillResult.skills) ? skillResult.skills : [];
 
         setConversations(nextConversations);
         setSkills(nextSkills);
+        setMcpServers(Array.isArray(mcpResult.mcp_servers) ? mcpResult.mcp_servers : []);
         if (!activeConversationId && nextConversations.length > 0) {
             setActiveConversationId(nextConversations[0].id);
         }
@@ -608,6 +626,92 @@ export function App() {
     async function deleteSkill(skillId: string) {
         await api.deleteSkill(skillId);
         setSkills((prev) => prev.filter((item) => item.id !== skillId));
+    }
+
+    function parseLines(value: string): string[] {
+        return value.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+    }
+
+    function parseKeyValues(value: string): Record<string, string> {
+        const result: Record<string, string> = {};
+        for (const line of parseLines(value)) {
+            const idx = line.indexOf("=");
+            if (idx <= 0) continue;
+            result[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+        return result;
+    }
+
+    function formatKeyValues(record: Record<string, string> | null | undefined): string {
+        if (!record) return "";
+        return Object.entries(record).map(([k, v]) => `${k}=${v}`).join("\n");
+    }
+
+    async function handleMCPSubmit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        setError("");
+        const payload = {
+            name: mcpForm.name,
+            transport: mcpForm.transport,
+            command: mcpForm.command,
+            args: parseLines(mcpForm.args),
+            env: parseKeyValues(mcpForm.env),
+            url: mcpForm.url,
+            headers: parseKeyValues(mcpForm.headers),
+            enabled: mcpForm.enabled,
+        };
+        try {
+            if (mcpForm.id) {
+                await api.updateMCPServer(mcpForm.id, payload);
+            } else {
+                await api.createMCPServer(payload);
+            }
+            setMcpForm(emptyMCPForm);
+            const result = await api.listMCPServers();
+            setMcpServers(Array.isArray(result.mcp_servers) ? result.mcp_servers : []);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "保存 MCP 服务器失败");
+        }
+    }
+
+    function editMCPServer(server: MCPServer) {
+        setMcpForm({
+            id: server.id,
+            name: server.name,
+            transport: server.transport,
+            command: server.command,
+            args: (server.args ?? []).join("\n"),
+            env: formatKeyValues(server.env),
+            url: server.url,
+            headers: formatKeyValues(server.headers),
+            enabled: server.enabled,
+        });
+        setMcpTestResult(null);
+    }
+
+    async function toggleMCPServer(server: MCPServer) {
+        const result = await api.patchMCPServerEnabled(server.id, !server.enabled);
+        setMcpServers((prev) => prev.map((item) => (item.id === server.id ? result.mcp_server : item)));
+    }
+
+    async function deleteMCPServer(id: string) {
+        await api.deleteMCPServer(id);
+        setMcpServers((prev) => prev.filter((item) => item.id !== id));
+        if (mcpForm.id === id) setMcpForm(emptyMCPForm);
+    }
+
+    async function testMCPServer(id: string) {
+        setMcpTestResult(null);
+        try {
+            const result = await api.testMCPServer(id);
+            setMcpTestResult({
+                id,
+                ok: result.ok,
+                message: result.ok ? `发现 ${result.tools?.length ?? 0} 个工具：${(result.tools ?? []).join(", ")}` : result.error ?? "连接失败",
+            });
+        } catch (err) {
+            setMcpTestResult({ id, ok: false, message: err instanceof Error ? err.message : "测试失败" });
+        }
     }
 
     async function handleDeleteConversation(conversationId: string) {
@@ -865,6 +969,7 @@ export function App() {
                         </div>
                         <div className="panel-actions">
                             <button className={sidePanel === "capabilities" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "capabilities" ? null : "capabilities")}>能力</button>
+                            <button className={sidePanel === "mcp" ? "secondary-toggle active" : "secondary-toggle"} onClick={() => setSidePanel((current) => current === "mcp" ? null : "mcp")}>MCP</button>
                         </div>
                     </div>
                     <div className="messages">
@@ -938,7 +1043,7 @@ export function App() {
                     </form>
                 </section>
 
-                {sidePanel && (
+                {sidePanel === "capabilities" && (
                     <section className="right-panel">
                         <div className="panel-box">
                             <div className="section-title">
@@ -981,6 +1086,74 @@ export function App() {
                                 </select>
                                 <textarea placeholder="能力内容（Markdown / Prompt）" value={skillForm.content} onChange={(e) => setSkillForm((prev) => ({ ...prev, content: e.target.value }))} rows={10} />
                                 <button type="submit">{skillForm.id ? "保存能力" : "创建能力"}</button>
+                            </form>
+                        </div>
+                        {error && <div className="error">{error}</div>}
+                    </section>
+                )}
+
+                {sidePanel === "mcp" && (
+                    <section className="right-panel">
+                        <div className="panel-box">
+                            <div className="section-title">
+                                <div>
+                                    <h3>MCP 服务器</h3>
+                                    <div className="section-subtitle">连接 MCP 服务器以扩展工具能力</div>
+                                </div>
+                                <button className="secondary-toggle" onClick={() => setSidePanel(null)}>收起</button>
+                            </div>
+                            <div className="skill-list">
+                                {mcpServers.length === 0 ? <div className="muted">你还没有配置任何 MCP 服务器</div> : mcpServers.map((server) => (
+                                    <div key={server.id} className="skill-card">
+                                        <div className="skill-head">
+                                            <strong>{server.name}</strong>
+                                            <span className={`status ${server.enabled ? "enabled" : "disabled"}`}>{server.transport}</span>
+                                        </div>
+                                        <p>{server.transport === "stdio" ? (server.command || "无命令") : (server.url || "无地址")}</p>
+                                        <div className="actions">
+                                            <button onClick={() => editMCPServer(server)}>编辑</button>
+                                            <button onClick={() => void toggleMCPServer(server)}>{server.enabled ? "禁用" : "启用"}</button>
+                                            <button onClick={() => void testMCPServer(server.id)}>测试连接</button>
+                                            <button onClick={() => void deleteMCPServer(server.id)}>删除</button>
+                                        </div>
+                                        {mcpTestResult?.id === server.id && (
+                                            <div className={mcpTestResult.ok ? "muted" : "error"}>{mcpTestResult.message}</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="panel-box">
+                            <div className="panel-box-header">
+                                <h3>{mcpForm.id ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h3>
+                                <div className="section-subtitle">支持 stdio / sse / streamable 三种连接方式</div>
+                            </div>
+                            <form onSubmit={handleMCPSubmit} className="stack">
+                                <input placeholder="名称（用于工具命名空间）" value={mcpForm.name} onChange={(e) => setMcpForm((prev) => ({ ...prev, name: e.target.value }))} />
+                                <select value={mcpForm.transport} onChange={(e) => setMcpForm((prev) => ({ ...prev, transport: e.target.value as MCPTransport }))}>
+                                    <option value="stdio">stdio</option>
+                                    <option value="sse">sse</option>
+                                    <option value="streamable">streamable</option>
+                                </select>
+                                {mcpForm.transport === "stdio" ? (
+                                    <>
+                                        <input placeholder="可执行命令（如 npx）" value={mcpForm.command} onChange={(e) => setMcpForm((prev) => ({ ...prev, command: e.target.value }))} />
+                                        <textarea placeholder="参数（每行一个）" value={mcpForm.args} onChange={(e) => setMcpForm((prev) => ({ ...prev, args: e.target.value }))} rows={4} />
+                                        <textarea placeholder="环境变量（每行 KEY=VALUE）" value={mcpForm.env} onChange={(e) => setMcpForm((prev) => ({ ...prev, env: e.target.value }))} rows={3} />
+                                    </>
+                                ) : (
+                                    <>
+                                        <input placeholder="服务地址 URL" value={mcpForm.url} onChange={(e) => setMcpForm((prev) => ({ ...prev, url: e.target.value }))} />
+                                        <textarea placeholder="请求头（每行 KEY=VALUE）" value={mcpForm.headers} onChange={(e) => setMcpForm((prev) => ({ ...prev, headers: e.target.value }))} rows={3} />
+                                    </>
+                                )}
+                                <label className="mcp-enabled-row">
+                                    <input type="checkbox" checked={mcpForm.enabled} onChange={(e) => setMcpForm((prev) => ({ ...prev, enabled: e.target.checked }))} />
+                                    <span>启用</span>
+                                </label>
+                                <button type="submit">{mcpForm.id ? "保存" : "添加"}</button>
+                                {mcpForm.id && <button type="button" onClick={() => setMcpForm(emptyMCPForm)}>取消编辑</button>}
                             </form>
                         </div>
                         {error && <div className="error">{error}</div>}

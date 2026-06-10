@@ -12,6 +12,7 @@ import (
 	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
 	"nano_cc/internal/web/auth"
+	"nano_cc/internal/web/mcp"
 	"nano_cc/internal/web/runtime"
 	"nano_cc/internal/web/storage"
 )
@@ -25,6 +26,11 @@ type serverStore interface {
 	GetSkillByID(ctx context.Context, skillID string) (storage.Skill, error)
 	UpdateSkill(ctx context.Context, skill storage.Skill) error
 	DeleteSkill(ctx context.Context, skillID string) error
+	ListMCPServersByUser(ctx context.Context, userID string) ([]storage.MCPServer, error)
+	CreateMCPServer(ctx context.Context, server storage.MCPServer) error
+	GetMCPServerByID(ctx context.Context, id string) (storage.MCPServer, error)
+	UpdateMCPServer(ctx context.Context, server storage.MCPServer) error
+	DeleteMCPServer(ctx context.Context, id string) error
 	ListConversationsByUser(ctx context.Context, userID string) ([]storage.Conversation, error)
 	CreateConversation(ctx context.Context, conversation storage.Conversation) error
 	GetConversationByID(ctx context.Context, conversationID string) (storage.Conversation, error)
@@ -39,6 +45,7 @@ type Server struct {
 	authService   *auth.Service
 	runtime       *runtime.Service
 	builtinSkills *sessions.SkillLoader
+	mcpManager    *mcp.Manager
 	mux           *http.ServeMux
 }
 
@@ -82,12 +89,15 @@ func NewServer() (*Server, error) {
 	runtimeService := runtime.NewService(store, cfg, llmClient)
 	runtimeService.SetBuiltinSkills(builtinSkills)
 	runtimeService.SetBasePrompt(basePrompt)
+	mcpManager := mcp.NewManager(store)
+	runtimeService.SetMCPManager(mcpManager)
 	server := &Server{
 		cfg:           cfg,
 		store:         store,
 		authService:   auth.NewService(store, cfg),
 		runtime:       runtimeService,
 		builtinSkills: builtinSkills,
+		mcpManager:    mcpManager,
 		mux:           http.NewServeMux(),
 	}
 	server.routes()

@@ -71,6 +71,20 @@ func (r *ToolRegistry) Definitions() []openai.Tool {
 	return append([]openai.Tool(nil), r.definitions...)
 }
 
+// toolDefinitionsForUser 返回内置工具定义，并在 MCP 启用时合并该用户已连接 MCP 服务器的工具。
+func (s *Service) toolDefinitionsForUser(ctx context.Context, userID string) []openai.Tool {
+	defs := s.Tools.Definitions()
+	if s.MCP == nil {
+		return defs
+	}
+	s.MCP.EnsureUserSessions(ctx, userID)
+	mcpTools := s.MCP.ToolsForUser(userID)
+	if len(mcpTools) == 0 {
+		return defs
+	}
+	return append(defs, mcpTools...)
+}
+
 func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name string, rawArgs string) (ToolExecutionResult, error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
@@ -189,6 +203,16 @@ func RegisteredTools(cfg config.AppConfig) []string {
 }
 
 func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name string, rawArgs string, audit toolExecutionAudit) toolExecutionOutcome {
+	if strings.HasPrefix(name, "mcp__") {
+		if s.MCP == nil {
+			return toolExecutionOutcome{Status: "rejected", Result: "Error: MCP is not enabled", Audit: audit}
+		}
+		output, err := s.MCP.CallTool(ctx, toolCtx.User.ID, name, rawArgs)
+		if err != nil {
+			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+		}
+		return toolExecutionOutcome{Status: "success", Result: output, Audit: audit}
+	}
 	if name == "spawn_subagent" {
 		if s.Tools == nil || !s.Tools.isAllowed(name) {
 			return toolExecutionOutcome{Status: "rejected", Result: "Error: tool spawn_subagent is not registered for web runtime", Audit: audit}

@@ -7,6 +7,7 @@ import (
 	"nano_cc/internal/config"
 	"nano_cc/internal/llm"
 	"nano_cc/internal/sessions"
+	"nano_cc/internal/web/mcp"
 	"nano_cc/internal/web/runtime/compression"
 	"nano_cc/internal/web/storage"
 )
@@ -58,6 +59,7 @@ type Service struct {
 	Hooks             *HookManager
 	ContextCompressor *compression.Compressor
 	EnableMemory      bool
+	MCP               *mcp.Manager
 }
 
 func NewService(store *storage.Store, cfg config.AppConfig, client llm.Client) *Service {
@@ -77,4 +79,8 @@ func (s *Service) SetBuiltinSkills(loader *sessions.SkillLoader) {
 
 func (s *Service) SetBasePrompt(prompt string) {
 	s.BasePrompt = prompt
+}
+
+func (s *Service) SetMCPManager(manager *mcp.Manager) {
+	s.MCP = manager
 }

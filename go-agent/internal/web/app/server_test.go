@@ -66,6 +66,26 @@ func (f *fakeServerStore) DeleteSkill(ctx context.Context, skillID string) error
 	return nil
 }
 
+func (f *fakeServerStore) ListMCPServersByUser(ctx context.Context, userID string) ([]storage.MCPServer, error) {
+	return nil, nil
+}
+
+func (f *fakeServerStore) CreateMCPServer(ctx context.Context, server storage.MCPServer) error {
+	return nil
+}
+
+func (f *fakeServerStore) GetMCPServerByID(ctx context.Context, id string) (storage.MCPServer, error) {
+	return storage.MCPServer{}, nil
+}
+
+func (f *fakeServerStore) UpdateMCPServer(ctx context.Context, server storage.MCPServer) error {
+	return nil
+}
+
+func (f *fakeServerStore) DeleteMCPServer(ctx context.Context, id string) error {
+	return nil
+}
+
 func (f *fakeServerStore) ListConversationsByUser(ctx context.Context, userID string) ([]storage.Conversation, error) {
 	return nil, nil
 }

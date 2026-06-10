@@ -15,6 +15,8 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/me/memory", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleUpdateMemoryPreference)))
 	s.mux.Handle("/api/skills", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleSkills)))
 	s.mux.Handle("/api/skills/", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleSkillByID)))
+	s.mux.Handle("/api/mcp-servers", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleMCPServers)))
+	s.mux.Handle("/api/mcp-servers/", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleMCPServerByID)))
 	s.mux.Handle("/api/conversations", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleConversations)))
 	s.mux.Handle("/api/conversations/", s.authService.AuthenticateRequest(http.HandlerFunc(s.handleConversationByID)))
 }
