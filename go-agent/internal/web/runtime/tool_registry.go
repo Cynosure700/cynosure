@@ -93,6 +93,11 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	if !r.isAllowed(name) {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s is not registered for web runtime", name)
 	}
+	if def, ok := r.lookupDefinition(name); ok && def.Function != nil {
+		if err := agenttools.ValidateToolArgs(name, agenttools.RawSchemaFromParameters(def.Function.Parameters), args); err != nil {
+			return ToolExecutionResult{}, err
+		}
+	}
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	ctx = agenttools.WithSkillSnapshot(ctx, toolCtx.Skills)
 	if toolCtx.PersistedOutputReader != nil {
@@ -141,6 +146,15 @@ func (r *ToolRegistry) isAllowed(name string) bool {
 		}
 	}
 	return false
+}
+
+func (r *ToolRegistry) lookupDefinition(name string) (openai.Tool, bool) {
+	for _, tool := range r.definitions {
+		if tool.Function != nil && tool.Function.Name == name {
+			return tool, true
+		}
+	}
+	return openai.Tool{}, false
 }
 
 func loadAllowedToolNames(cfg config.AppConfig) []string {
@@ -216,6 +230,15 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 	if name == "spawn_subagent" {
 		if s.Tools == nil || !s.Tools.isAllowed(name) {
 			return toolExecutionOutcome{Status: "rejected", Result: "Error: tool spawn_subagent is not registered for web runtime", Audit: audit}
+		}
+		var rawMap map[string]any
+		if err := json.Unmarshal([]byte(rawArgs), &rawMap); err != nil {
+			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: invalid spawn_subagent arguments: %v", err), Audit: audit}
+		}
+		if def, ok := s.Tools.lookupDefinition(name); ok && def.Function != nil {
+			if err := agenttools.ValidateToolArgs(name, agenttools.RawSchemaFromParameters(def.Function.Parameters), rawMap); err != nil {
+				return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+			}
 		}
 		var args spawnSubagentArgs
 		if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
