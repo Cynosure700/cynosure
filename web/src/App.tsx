@@ -7,7 +7,23 @@ type SidePanel = "capabilities" | null;
 type ContentBlock =
     | { type: "paragraph"; lines: string[] }
     | { type: "list"; ordered: boolean; items: string[] }
-    | { type: "code"; language: string; content: string };
+    | { type: "code"; language: string; content: string }
+    | { type: "table"; header: string[]; rows: string[][] };
+
+function isTableRow(line: string): boolean {
+    return /^\s*\|.*\|\s*$/.test(line);
+}
+
+function isTableSeparator(line: string): boolean {
+    return /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function parseTableRow(line: string): string[] {
+    let trimmed = line.trim();
+    if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+    return trimmed.split("|").map((cell) => cell.trim());
+}
 
 function renderInlineContent(text: string) {
     const segments = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
@@ -53,7 +69,8 @@ function parseMessageContent(content: string): ContentBlock[] {
         codeLanguage = "";
     };
 
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
         const codeFence = line.match(/^```\s*(.*)$/);
         if (codeFence) {
             flushParagraph();
@@ -70,6 +87,22 @@ function parseMessageContent(content: string): ContentBlock[] {
 
         if (inCodeBlock) {
             codeLines.push(line);
+            continue;
+        }
+
+        const nextLine = lines[index + 1];
+        if (isTableRow(line) && nextLine !== undefined && isTableSeparator(nextLine)) {
+            flushParagraph();
+            flushList();
+            const header = parseTableRow(line);
+            const rows: string[][] = [];
+            index += 2;
+            while (index < lines.length && isTableRow(lines[index]) && !isTableSeparator(lines[index])) {
+                rows.push(parseTableRow(lines[index]));
+                index += 1;
+            }
+            index -= 1;
+            blocks.push({ type: "table", header, rows });
             continue;
         }
 
@@ -128,6 +161,31 @@ function renderAssistantContent(content: string) {
                         <li key={`item-${index}-${itemIndex}`}>{renderInlineContent(item)}</li>
                     ))}
                 </ListTag>
+            );
+        }
+
+        if (block.type === "table") {
+            return (
+                <div key={`table-${index}`} className="message-table-wrapper">
+                    <table className="message-table">
+                        <thead>
+                            <tr>
+                                {block.header.map((cell, cellIndex) => (
+                                    <th key={`th-${index}-${cellIndex}`}>{renderInlineContent(cell)}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {block.rows.map((row, rowIndex) => (
+                                <tr key={`tr-${index}-${rowIndex}`}>
+                                    {block.header.map((_, cellIndex) => (
+                                        <td key={`td-${index}-${rowIndex}-${cellIndex}`}>{renderInlineContent(row[cellIndex] ?? "")}</td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             );
         }
 

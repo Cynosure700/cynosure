@@ -950,6 +950,43 @@ p {
     margin-top: 6px;
 }
 
+.message-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+}
+
+.message-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    color: #efefef;
+}
+
+.message-table th,
+.message-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    border-right: 1px solid rgba(148, 163, 184, 0.10);
+    vertical-align: top;
+    word-break: break-word;
+}
+
+.message-table th:last-child,
+.message-table td:last-child {
+    border-right: 0;
+}
+
+.message-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.message-table thead th {
+    background: rgba(15, 23, 42, 0.6);
+    font-weight: 600;
+}
+
 .message-code-block {
     display: flex;
     flex-direction: column;
