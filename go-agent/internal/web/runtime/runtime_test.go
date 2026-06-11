@@ -141,7 +141,7 @@ func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversa
 func (f *fakeStore) ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
 	var result []storage.Memory
 	for _, m := range f.memories {
-		if (m.UserID == userID && (m.Type == MemoryTypeSessionSummary || m.Type == MemoryTypeUserPreference)) ||
+		if (m.UserID == userID && (m.Type == MemoryTypeEpisodicMemory || m.Type == MemoryTypeUserPreference)) ||
 			(m.UserID == "" && m.Type == MemoryTypeSemantic) {
 			result = append(result, m)
 		}

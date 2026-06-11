@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	MemoryTypeSessionSummary = "session_summary"
+	MemoryTypeEpisodicMemory = "episodic_memory"
 	MemoryTypeUserPreference = "user_preference"
 	MemoryTypeSemantic       = "semantic"
 )
@@ -33,7 +33,7 @@ const (
 
 func validMemoryType(t string) bool {
 	switch t {
-	case MemoryTypeSessionSummary, MemoryTypeUserPreference, MemoryTypeSemantic:
+	case MemoryTypeEpisodicMemory, MemoryTypeUserPreference, MemoryTypeSemantic:
 		return true
 	}
 	return false
@@ -41,7 +41,7 @@ func validMemoryType(t string) bool {
 
 const memoryExtractionSystemPrompt = `You are a long-term memory extraction engine for a personal assistant named Link.
 From the dialogue, extract durable memories worth keeping. Use the "type" field for three kinds:
-- "session_summary": a concrete event/experience the user went through. Preserve factual integrity and temporal order; summarize what happened, not raw messages.
+- "episodic_memory": an episodic memory — a concrete event/experience the user went through. Preserve factual integrity and temporal order; summarize what happened, not raw messages.
 - "user_preference": a stable preference, constraint, or recurring habit of this user.
 - "semantic": an abstract, reusable fact or general knowledge NOT tied to this specific user. It will be shared across users, so it must be de-identified and generally applicable.
 
@@ -130,7 +130,7 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 		switch it.Type {
 		case MemoryTypeUserPreference:
 			touchedPref = true
-		case MemoryTypeSessionSummary:
+		case MemoryTypeEpisodicMemory:
 			touchedSession = true
 		case MemoryTypeSemantic:
 			touchedSemantic = true
@@ -176,11 +176,11 @@ func (s *Service) maybeConsolidateSemantic(ctx context.Context) {
 }
 
 func (s *Service) maybePruneSessionSummaries(ctx context.Context, userID string) {
-	n, err := s.Store.CountMemoriesByUserAndType(ctx, userID, MemoryTypeSessionSummary)
+	n, err := s.Store.CountMemoriesByUserAndType(ctx, userID, MemoryTypeEpisodicMemory)
 	if err != nil || n < maxSessionSummaries {
 		return
 	}
-	if err := s.Store.DeleteOldestMemories(ctx, userID, MemoryTypeSessionSummary, sessionSummaryPruneCount); err != nil {
+	if err := s.Store.DeleteOldestMemories(ctx, userID, MemoryTypeEpisodicMemory, sessionSummaryPruneCount); err != nil {
 		logger.Warn(fmt.Sprintf("memory: prune session summaries failed: %v", err))
 	}
 }
@@ -331,7 +331,7 @@ func renderMemorySection(memories []storage.Memory) string {
 		switch m.Type {
 		case MemoryTypeUserPreference:
 			userLines = append(userLines, "- (喜好) "+memoryLine(m))
-		case MemoryTypeSessionSummary:
+		case MemoryTypeEpisodicMemory:
 			userLines = append(userLines, "- (经历) "+memoryLine(m))
 		case MemoryTypeSemantic:
 			semanticLines = append(semanticLines, "- "+memoryLine(m))

@@ -31,13 +31,13 @@ func nullableUserID(userID string) any {
 	return userID
 }
 
-// ListRelevantMemories returns the user's own memories (session_summary and
+// ListRelevantMemories returns the user's own memories (episodic_memory and
 // user_preference) together with all system-level semantic memories.
 func (s *Store) ListRelevantMemories(ctx context.Context, userID string) ([]Memory, error) {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT `+memoryColumns+`
 		FROM memories
-		WHERE (user_id = ? AND type IN ('session_summary', 'user_preference'))
+		WHERE (user_id = ? AND type IN ('episodic_memory', 'user_preference'))
 		   OR (user_id IS NULL AND type = 'semantic')
 		ORDER BY updated_at DESC
 	`, userID)

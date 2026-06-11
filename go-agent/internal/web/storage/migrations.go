@@ -31,6 +31,9 @@ func (s *Store) RunMigrations(ctx context.Context) error {
 	if err := s.ensureMemoriesTable(ctx); err != nil {
 		return fmt.Errorf("migrate memories table: %w", err)
 	}
+	if err := s.migrateSessionSummaryToEpisodicMemory(ctx); err != nil {
+		return fmt.Errorf("migrate session_summary memory type: %w", err)
+	}
 	if err := s.ensureConversationMemoriesTable(ctx); err != nil {
 		return fmt.Errorf("migrate conversation memories table: %w", err)
 	}
@@ -121,6 +124,15 @@ func (s *Store) ensureMemoriesTable(ctx context.Context) error {
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 	`); err != nil {
 		return fmt.Errorf("create memories: %w", err)
+	}
+	return nil
+}
+
+// migrateSessionSummaryToEpisodicMemory renames the legacy memory type
+// "session_summary" to "episodic_memory" for existing rows.
+func (s *Store) migrateSessionSummaryToEpisodicMemory(ctx context.Context) error {
+	if _, err := s.DB.ExecContext(ctx, `UPDATE memories SET type = 'episodic_memory' WHERE type = 'session_summary'`); err != nil {
+		return fmt.Errorf("update memories type: %w", err)
 	}
 	return nil
 }

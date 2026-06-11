@@ -92,7 +92,7 @@ func TestRenderMemorySection_EmptyWhenNoData(t *testing.T) {
 func TestRenderMemorySection_GroupsByTypeWithNameAndDesc(t *testing.T) {
 	got := renderMemorySection([]storage.Memory{
 		{Type: MemoryTypeUserPreference, Name: "简洁", Description: "简洁中文", Body: "不应出现的body"},
-		{Type: MemoryTypeSessionSummary, Name: "迁移", Description: "迁移资源"},
+		{Type: MemoryTypeEpisodicMemory, Name: "迁移", Description: "迁移资源"},
 		{Type: MemoryTypeSemantic, Name: "知识", Description: "通用"},
 	})
 	for _, want := range []string{"关于用户的长期记忆", "(喜好) 简洁：简洁中文", "(经历) 迁移：迁移资源", "通用知识", "- 知识：通用"} {
@@ -147,17 +147,17 @@ func TestSelectRelevantMemories_PicksAndRenders(t *testing.T) {
 func TestExtractMemories_PrunesSessionSummariesOverThreshold(t *testing.T) {
 	store := &fakeStore{}
 	for i := 0; i < maxSessionSummaries; i++ {
-		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeSessionSummary, Name: "s", Body: "b"})
+		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeEpisodicMemory, Name: "s", Body: "b"})
 	}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新经历","type":"session_summary","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新经历","type":"episodic_memory","description":"d","body":"b"}]`}}}},
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
 	service.extractMemories(context.Background(), storage.User{ID: "u1"}, []storage.Message{{Role: "user", Content: "hi"}})
 	if len(store.deletedOldest) != 1 {
 		t.Fatalf("expected one prune call, got %d", len(store.deletedOldest))
 	}
-	if store.deletedOldest[0][1] != MemoryTypeSessionSummary || store.deletedOldest[0][2] != "10" {
+	if store.deletedOldest[0][1] != MemoryTypeEpisodicMemory || store.deletedOldest[0][2] != "10" {
 		t.Fatalf("unexpected prune args: %v", store.deletedOldest[0])
 	}
 }
