@@ -20,6 +20,8 @@ const emptyMCPForm: MCPForm = { id: "", name: "", transport: "sse", command: "",
 
 type ContentBlock =
     | { type: "paragraph"; lines: string[] }
+    | { type: "heading"; level: number; text: string }
+    | { type: "divider" }
     | { type: "list"; ordered: boolean; items: string[] }
     | { type: "code"; language: string; content: string }
     | { type: "table"; header: string[]; rows: string[][] };
@@ -37,6 +39,18 @@ function parseTableRow(line: string): string[] {
     if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
     if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
     return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function isTabbedTableRow(line: string): boolean {
+    return line.includes("\t") && line.split("\t").filter((cell) => cell.trim().length > 0).length >= 2;
+}
+
+function parseTabbedTableRow(line: string): string[] {
+    return line.split("\t").map((cell) => cell.trim());
+}
+
+function isDivider(line: string): boolean {
+    return /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line);
 }
 
 function renderInlineContent(text: string) {
@@ -120,6 +134,36 @@ function parseMessageContent(content: string): ContentBlock[] {
             continue;
         }
 
+        if (isTabbedTableRow(line) && nextLine !== undefined && isTabbedTableRow(nextLine)) {
+            flushParagraph();
+            flushList();
+            const header = parseTabbedTableRow(line);
+            const rows: string[][] = [];
+            index += 1;
+            while (index < lines.length && isTabbedTableRow(lines[index])) {
+                rows.push(parseTabbedTableRow(lines[index]));
+                index += 1;
+            }
+            index -= 1;
+            blocks.push({ type: "table", header, rows });
+            continue;
+        }
+
+        const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+        if (headingMatch) {
+            flushParagraph();
+            flushList();
+            blocks.push({ type: "heading", level: headingMatch[1].length, text: headingMatch[2].trim() });
+            continue;
+        }
+
+        if (isDivider(line)) {
+            flushParagraph();
+            flushList();
+            blocks.push({ type: "divider" });
+            continue;
+        }
+
         const orderedMatch = line.match(/^\s*\d+\.\s+(.*)$/);
         const unorderedMatch = line.match(/^\s*[-*+]\s+(.*)$/);
 
@@ -156,6 +200,19 @@ function parseMessageContent(content: string): ContentBlock[] {
 
 function renderAssistantContent(content: string) {
     return parseMessageContent(content).map((block, index) => {
+        if (block.type === "heading") {
+            const HeadingTag = `h${Math.min(Math.max(block.level, 2), 4)}` as "h2" | "h3" | "h4";
+            return (
+                <HeadingTag key={`heading-${index}`} className={`message-heading level-${block.level}`}>
+                    {renderInlineContent(block.text)}
+                </HeadingTag>
+            );
+        }
+
+        if (block.type === "divider") {
+            return <hr key={`divider-${index}`} className="message-divider" />;
+        }
+
         if (block.type === "code") {
             return (
                 <div key={`code-${index}`} className="message-code-block">
