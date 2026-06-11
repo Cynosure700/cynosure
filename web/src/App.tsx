@@ -788,8 +788,36 @@ export function App() {
                     <div className="auth-visual-card">
                         <div className="visual-glass-panel">
                             <span className="eyebrow">Link Agent</span>
-                            <strong>Reason · Act · Remember</strong>
+                            <strong>Reason<span className="visual-dot">·</span>Act<span className="visual-dot">·</span>Remember</strong>
                             <p>统一编排多轮对话、Skill 能力与受控工具调用，构建可审计、可扩展的智能协作入口。</p>
+                        </div>
+                        <ul className="visual-features">
+                            <li>
+                                <span className="visual-feature-tag">Reason</span>
+                                <div>
+                                    <strong>多轮推理</strong>
+                                    <span>顺着上下文逐步拆解问题，给出可追溯的思考过程。</span>
+                                </div>
+                            </li>
+                            <li>
+                                <span className="visual-feature-tag">Act</span>
+                                <div>
+                                    <strong>受控执行</strong>
+                                    <span>编排 Skill 与 MCP 工具调用，每一步都在可审计的边界内。</span>
+                                </div>
+                            </li>
+                            <li>
+                                <span className="visual-feature-tag">Remember</span>
+                                <div>
+                                    <strong>沉淀记忆</strong>
+                                    <span>自动记住关键上下文，让下一次对话从已有进度继续。</span>
+                                </div>
+                            </li>
+                        </ul>
+                        <div className="visual-footnote">
+                            <span>可审计</span>
+                            <span>可扩展</span>
+                            <span>团队协作</span>
                         </div>
                     </div>
                 </div>
