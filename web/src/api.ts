@@ -21,7 +21,7 @@ export type Conversation = {
     title: string;
 };
 
-export type MCPTransport = "stdio" | "sse" | "streamable";
+export type MCPTransport = "sse" | "streamable";
 
 export type MCPServer = {
     id: string;

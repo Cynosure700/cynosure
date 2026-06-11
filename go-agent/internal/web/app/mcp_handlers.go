@@ -27,7 +27,7 @@ type mcpServerBody struct {
 
 func normalizeTransport(transport string) string {
 	switch transport {
-	case "stdio", "sse", "streamable":
+	case "sse", "streamable":
 		return transport
 	default:
 		return ""
@@ -39,13 +39,9 @@ func validateMCPServer(server storage.MCPServer) error {
 		return fmt.Errorf("mcp server name is required")
 	}
 	if server.Transport == "" {
-		return fmt.Errorf("transport must be one of stdio/sse/streamable")
+		return fmt.Errorf("transport must be one of sse/streamable")
 	}
 	switch server.Transport {
-	case "stdio":
-		if strings.TrimSpace(server.Command) == "" {
-			return fmt.Errorf("command is required for stdio transport")
-		}
 	case "sse", "streamable":
 		if strings.TrimSpace(server.URL) == "" {
 			return fmt.Errorf("url is required for %s transport", server.Transport)

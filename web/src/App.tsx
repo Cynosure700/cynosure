@@ -16,7 +16,7 @@ type MCPForm = {
     enabled: boolean;
 };
 
-const emptyMCPForm: MCPForm = { id: "", name: "", transport: "stdio", command: "", args: "", env: "", url: "", headers: "", enabled: true };
+const emptyMCPForm: MCPForm = { id: "", name: "", transport: "sse", command: "", args: "", env: "", url: "", headers: "", enabled: true };
 
 type ContentBlock =
     | { type: "paragraph"; lines: string[] }
@@ -1109,7 +1109,7 @@ export function App() {
                                             <strong>{server.name}</strong>
                                             <span className={`status ${server.enabled ? "enabled" : "disabled"}`}>{server.transport}</span>
                                         </div>
-                                        <p>{server.transport === "stdio" ? (server.command || "无命令") : (server.url || "无地址")}</p>
+                                        <p>{server.url || "无地址"}</p>
                                         <div className="actions">
                                             <button onClick={() => editMCPServer(server)}>编辑</button>
                                             <button onClick={() => void toggleMCPServer(server)}>{server.enabled ? "禁用" : "启用"}</button>
@@ -1127,27 +1127,16 @@ export function App() {
                         <div className="panel-box">
                             <div className="panel-box-header">
                                 <h3>{mcpForm.id ? "编辑 MCP 服务器" : "添加 MCP 服务器"}</h3>
-                                <div className="section-subtitle">支持 stdio / sse / streamable 三种连接方式</div>
+                                <div className="section-subtitle">支持 sse / streamable 两种连接方式</div>
                             </div>
                             <form onSubmit={handleMCPSubmit} className="stack">
                                 <input placeholder="名称（用于工具命名空间）" value={mcpForm.name} onChange={(e) => setMcpForm((prev) => ({ ...prev, name: e.target.value }))} />
                                 <select value={mcpForm.transport} onChange={(e) => setMcpForm((prev) => ({ ...prev, transport: e.target.value as MCPTransport }))}>
-                                    <option value="stdio">stdio</option>
                                     <option value="sse">sse</option>
                                     <option value="streamable">streamable</option>
                                 </select>
-                                {mcpForm.transport === "stdio" ? (
-                                    <>
-                                        <input placeholder="可执行命令（如 npx）" value={mcpForm.command} onChange={(e) => setMcpForm((prev) => ({ ...prev, command: e.target.value }))} />
-                                        <textarea placeholder="参数（每行一个）" value={mcpForm.args} onChange={(e) => setMcpForm((prev) => ({ ...prev, args: e.target.value }))} rows={4} />
-                                        <textarea placeholder="环境变量（每行 KEY=VALUE）" value={mcpForm.env} onChange={(e) => setMcpForm((prev) => ({ ...prev, env: e.target.value }))} rows={3} />
-                                    </>
-                                ) : (
-                                    <>
-                                        <input placeholder="服务地址 URL" value={mcpForm.url} onChange={(e) => setMcpForm((prev) => ({ ...prev, url: e.target.value }))} />
-                                        <textarea placeholder="请求头（每行 KEY=VALUE）" value={mcpForm.headers} onChange={(e) => setMcpForm((prev) => ({ ...prev, headers: e.target.value }))} rows={3} />
-                                    </>
-                                )}
+                                <input placeholder="服务地址 URL" value={mcpForm.url} onChange={(e) => setMcpForm((prev) => ({ ...prev, url: e.target.value }))} />
+                                <textarea placeholder="请求头（每行 KEY=VALUE）" value={mcpForm.headers} onChange={(e) => setMcpForm((prev) => ({ ...prev, headers: e.target.value }))} rows={3} />
                                 <label className="mcp-enabled-row">
                                     <input type="checkbox" checked={mcpForm.enabled} onChange={(e) => setMcpForm((prev) => ({ ...prev, enabled: e.target.checked }))} />
                                     <span>启用</span>

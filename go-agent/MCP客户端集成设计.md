@@ -4,8 +4,7 @@
 
 为 go-agent（nano_cc）新增 MCP（Model Context Protocol）配置能力：
 
-- 用户可在前端自行配置 MCP 服务器，支持三种连接方式：
-  - **stdio**：本地子进程，通过标准输入输出通信（配置 command + args + env）。
+- 用户可在前端自行配置 MCP 服务器，支持两种连接方式：
   - **sse**：基于 HTTP Server-Sent Events 的远程连接（配置 url + headers）。
   - **streamable**：Streamable HTTP 传输（配置 url + headers）。
 - 后台服务为每个启用的 MCP 配置创建 MCP client，建立与 MCP 服务器的连接。
@@ -80,11 +79,12 @@ MySQL（主存储）+ Redis（锁/缓存）+ ES（检索）。MCP 配置只需�
 
 ### 3.1 依赖选型
 
-引入官方 Go SDK：`github.com/modelcontextprotocol/go-sdk/mcp`（Apache-2.0，Google 联合维护）。该 SDK 内置三种 transport：
+引入官方 Go SDK：`github.com/modelcontextprotocol/go-sdk/mcp`（Apache-2.0，Google 联合维护）。本项目使用其中两种 transport：
 
-- `CommandTransport` → stdio（启动子进程）
 - `SSEClientTransport` → sse
 - `StreamableClientTransport` → streamable HTTP
+
+> SDK 同时内置 `CommandTransport`（stdio，启动子进程），本项目出于安全与部署考虑不启用该选型。
 
 > go.mod 当前为 `go 1.26.1`，满足官方 SDK 的 Go 版本要求。新增依赖为纯增量，不影响现有依赖。
 
@@ -97,10 +97,10 @@ MySQL（主存储）+ Redis（锁/缓存）+ ES（检索）。MCP 配置只需�
 | `id` | VARCHAR(64) PK | `newID("mcp")` |
 | `user_id` | VARCHAR(64) | 外键 → users(id) ON DELETE CASCADE |
 | `name` | VARCHAR(255) | 显示名称（用于工具命名空间前缀） |
-| `transport` | VARCHAR(32) | `stdio` / `sse` / `streamable` |
-| `command` | VARCHAR(1024) | stdio：可执行命令 |
-| `args` | JSON/TEXT | stdio：参数数组（JSON 序列化） |
-| `env` | JSON/TEXT | stdio：环境变量 map（JSON 序列化） |
+| `transport` | VARCHAR(32) | `sse` / `streamable` |
+| `command` | VARCHAR(1024) | 保留列（历史 stdio 字段，当前不使用） |
+| `args` | JSON/TEXT | 保留列（历史 stdio 字段，当前不使用） |
+| `env` | JSON/TEXT | 保留列（历史 stdio 字段，当前不使用） |
 | `url` | VARCHAR(1024) | sse/streamable：服务地址 |
 | `headers` | JSON/TEXT | sse/streamable：自定义请求头（JSON 序列化） |
 | `enabled` | TINYINT(1) | 是否启用 |
@@ -197,7 +197,7 @@ if strings.HasPrefix(name, "mcp__") {
 | DELETE | `/api/mcp-servers/{id}` | 删除 |
 | POST | `/api/mcp-servers/{id}/test` | 测试连接（返回发现到的工具数/错误） |
 
-- 校验：`transport` 必须为三枚举之一；stdio 必填 `command`；sse/streamable 必填 `url`。
+- 校验：`transport` 必须为两枚举之一；sse/streamable 必填 `url`。
 - 任何写操作成功后调用 `mcpManager.Invalidate(userID)` 使缓存失效。
 - `serverStore` 接口（`app/server.go:19`）新增 5+1 个方法签名（CRUD + GetByID）。
 
@@ -223,8 +223,8 @@ func (s *Store) DeleteMCPServer(ctx, id) error
 `web/src/App.tsx`：
 - `SidePanel` 类型增加 `"mcp"`，在能力面板旁新增"MCP 服务器"入口按钮。
 - 复刻 skill 面板的「列表卡片 + 创建/编辑表单」：
-  - `transport` 用 `<select>`（stdio/sse/streamable）。
-  - 按 `transport` **条件渲染**字段：stdio 显示 command/args/env；sse、streamable 显示 url/headers。
+  - `transport` 用 `<select>`（sse/streamable）。
+  - 按 `transport` 渲染 url/headers 字段。
   - 每张卡：启用/禁用、编辑、删除、测试连接（显示发现的工具数或错误）。
 - `refreshAll` 中并行加载 MCP 配置列表。
 
@@ -239,7 +239,7 @@ func (s *Store) DeleteMCPServer(ctx, id) error
 | 模型 | `internal/web/storage/models.go` | 新增 `MCPServer` 结构体 |
 | Repo | `internal/web/storage/mcp_repo.go` ✨新建 | CRUD |
 | Manager | `internal/web/mcp/manager.go` ✨新建 | 连接/发现/调用/缓存 |
-| Manager | `internal/web/mcp/transport.go` ✨新建 | 三种 transport 构建 + content 序列化 |
+| Manager | `internal/web/mcp/transport.go` ✨新建 | transport 构建（sse/streamable）+ content 序列化 |
 | 接口 | `internal/web/app/server.go` | `serverStore` 增方法；装配 Manager |
 | Handler | `internal/web/app/mcp_handlers.go` ✨新建 | CRUD + test |
 | 校验 | `internal/web/app/mcp_handlers.go` | `normalizeTransport` 等 |
@@ -278,7 +278,6 @@ func (s *Store) DeleteMCPServer(ctx, id) error
 
 | 风险 | 缓解 |
 |---|---|
-| stdio 子进程执行任意命令（安全） | 配置为用户自建、需登录鉴权；可后续加管理员开关/白名单。文档中提示风险 |
 | 远程 MCP 连接阻塞对话 | 连接/发现/调用均设置 context 超时；失败降级 |
 | MCP 工具过多撑大上下文 | token 估算已纳入合并后的定义；可后续加每用户工具数上限 |
 | SDK 版本/API 变动 | 锁定具体版本；transport 构建集中在 `transport.go` 便于适配 |
@@ -292,7 +291,7 @@ func (s *Store) DeleteMCPServer(ctx, id) error
 2. 迁移在已有库上幂等执行，`mcp_servers` 表创建成功。
 3. 单测：`mcp_repo` CRUD；`manager` 工具名前缀/content 序列化；`normalizeTransport` 枚举校验。
 4. 端到端：
-   - 前端创建一个 stdio 配置（如 `npx -y @modelcontextprotocol/server-everything`）→ 测试连接显示工具数。
+   - 前端创建一个 sse/streamable 配置（填写远程 MCP 服务地址 url）→ 测试连接显示工具数。
    - 发起对话，确认 LLM 可调用 `mcp__*` 工具并返回结果。
    - 删除/禁用配置后，工具从对话中消失。
 5. 回归：未配置 MCP 时，对话与内置工具行为与改动前一致。

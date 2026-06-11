@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,19 +37,6 @@ func httpClientWithHeaders(headers map[string]string) *http.Client {
 // buildTransport 根据配置的 transport 类型构造对应的 MCP 客户端传输层。
 func buildTransport(server storage.MCPServer) (mcpsdk.Transport, error) {
 	switch server.Transport {
-	case "stdio":
-		if strings.TrimSpace(server.Command) == "" {
-			return nil, fmt.Errorf("stdio transport requires a command")
-		}
-		cmd := exec.Command(server.Command, server.Args...)
-		if len(server.Env) > 0 {
-			env := make([]string, 0, len(server.Env))
-			for key, value := range server.Env {
-				env = append(env, key+"="+value)
-			}
-			cmd.Env = append(cmd.Environ(), env...)
-		}
-		return &mcpsdk.CommandTransport{Command: cmd}, nil
 	case "sse":
 		if strings.TrimSpace(server.URL) == "" {
 			return nil, fmt.Errorf("sse transport requires a url")
