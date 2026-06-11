@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -50,6 +52,30 @@ func buildTransport(server storage.MCPServer) (mcpsdk.Transport, error) {
 	default:
 		return nil, fmt.Errorf("unsupported transport %q", server.Transport)
 	}
+}
+
+func buildBuiltinStdioTransport(server storage.MCPServer) (mcpsdk.Transport, error) {
+	command := strings.TrimSpace(server.Command)
+	if command == "" {
+		return nil, fmt.Errorf("stdio transport requires a command")
+	}
+	cmd := exec.Command(command, server.Args...)
+	cmd.Env = append(os.Environ(), envPairs(server.Env)...)
+	return &mcpsdk.CommandTransport{Command: cmd}, nil
+}
+
+func envPairs(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	pairs := make([]string, 0, len(env))
+	for key, value := range env {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		pairs = append(pairs, key+"="+value)
+	}
+	return pairs
 }
 
 // serializeContent 把 MCP 工具调用返回的 content blocks 拼成纯文本，契合现有工具结果的字符串契约。

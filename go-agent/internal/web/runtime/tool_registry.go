@@ -77,6 +77,7 @@ func (s *Service) toolDefinitionsForUser(ctx context.Context, userID string) []o
 	if s.MCP == nil {
 		return defs
 	}
+	s.MCP.EnsureBuiltinSessions(ctx)
 	s.MCP.EnsureUserSessions(ctx, userID)
 	mcpTools := s.MCP.ToolsForUser(userID)
 	if len(mcpTools) == 0 {

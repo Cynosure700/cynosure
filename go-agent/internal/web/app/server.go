@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"nano_cc/internal/assistant"
@@ -90,6 +91,14 @@ func NewServer() (*Server, error) {
 	runtimeService.SetBuiltinSkills(builtinSkills)
 	runtimeService.SetBasePrompt(basePrompt)
 	mcpManager := mcp.NewManager(store)
+	builtinMCPServers, err := mcp.LoadBuiltinConfig(filepath.Join(cfg.AppHome, "mcp_config.json"))
+	if err != nil {
+		mcpManager.Close()
+		return nil, fmt.Errorf("load builtin mcp config: %w", err)
+	}
+	builtinCtx, builtinCancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer builtinCancel()
+	mcpManager.SetBuiltinServers(builtinCtx, builtinMCPServers)
 	runtimeService.SetMCPManager(mcpManager)
 	server := &Server{
 		cfg:           cfg,
