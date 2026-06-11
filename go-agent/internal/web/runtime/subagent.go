@@ -80,9 +80,9 @@ func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agentto
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, trace *subagentTrace, maxRounds int) (openai.ChatCompletionMessage, error) {
 	roundsSinceTodoWrite := 0
 	for round := 1; round <= maxRounds; round++ {
-		req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, Tools: tools.Definitions()}
+		req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, Tools: tools.Definitions(), MaxTokens: defaultMaxTokens}
 		reqBody, _ := json.Marshal(req)
-		msg, finishReason, err := s.runModelRoundStream(ctx, state, req)
+		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
 		respBody, _ := json.Marshal(msg)
 		logger.LogLLMRound(round, fmt.Sprintf("subagent run=%s parent_tool_call=%s conversation=%s", trace.runID, trace.parentToolCallID, parent.Conversation.ID), reqBody, respBody, err)
 		if err != nil {

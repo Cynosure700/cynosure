@@ -54,6 +54,35 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 	return req.RequestHistory, nil
 }
 
+// reactiveCompact runs the aggressive ReactiveCompactStrategy out-of-band when
+// the LLM rejects a request with HTTP 413 (context overflow). On success it
+// updates both state.Messages (effective this round) and state.ModelHistory
+// (the new baseline reused by later rounds), but never state.History (the
+// verbatim display history). On failure state is left untouched.
+func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
+	store, ok := s.Store.(compression.Store)
+	if !ok {
+		return fmt.Errorf("reactive compact: store does not support compression artifacts")
+	}
+	requestHistory := cloneMessages(state.ModelHistory)
+	req := &compression.Request{
+		Conversation:   state.Conversation,
+		User:           state.User,
+		RequestHistory: requestHistory,
+		SystemPrompt:   state.SystemPrompt,
+		Tools:          s.Tools.Definitions(),
+		Store:          store,
+		Estimator:      compression.DefaultTokenEstimator{},
+		Summarizer:     s.summarizeHistoryForContext,
+	}
+	if err := (&compression.ReactiveCompactStrategy{}).Apply(ctx, req); err != nil {
+		return err
+	}
+	state.ModelHistory = req.RequestHistory
+	state.Messages = buildOpenAIMessages(state.SystemPrompt, req.RequestHistory)
+	return nil
+}
+
 func cloneMessages(messages []storage.Message) []storage.Message {
 	if len(messages) == 0 {
 		return nil

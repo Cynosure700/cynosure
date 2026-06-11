@@ -10,6 +10,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 
 	"nano_cc/internal/idgen"
+	"nano_cc/internal/llm"
 	"nano_cc/internal/logger"
 	agenttools "nano_cc/internal/tools"
 	"nano_cc/internal/web/runtime/compression"
@@ -20,6 +21,20 @@ const (
 	assistantDeltaEvent = "assistant_delta"
 	reasoningDeltaEvent = "reasoning_delta"
 	maxRound = 50
+
+	// defaultMaxTokens is the per-request output budget; on the first
+	// truncation it is upgraded to truncationMaxTokens.
+	defaultMaxTokens = 8000
+	// truncationMaxTokens is the upgraded output budget after the first
+	// truncation (8x the default).
+	truncationMaxTokens = 64 * 1024
+	// maxResumeAttempts is how many continuation requests are issued after the
+	// upgraded budget still truncates.
+	maxResumeAttempts = 3
+
+	// truncationResumePrompt is injected as a user message to make the model
+	// continue an output that was cut off by the token limit.
+	truncationResumePrompt = `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`
 )
 
 type bufferedModelDelta struct {
@@ -100,12 +115,13 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		state.LastContextBudget = estimator.ContextTokenBudget()
 		emitMeta(state)
 		req := openai.ChatCompletionRequest{
-			Model:    s.Cfg.LLM.ModelID,
-			Messages: state.Messages,
-			Tools:    toolDefs,
+			Model:     s.Cfg.LLM.ModelID,
+			Messages:  state.Messages,
+			Tools:     toolDefs,
+			MaxTokens: defaultMaxTokens,
 		}
 		reqBody, _ := json.Marshal(req)
-		msg, finishReason, err := s.runModelRoundStream(ctx, state, req)
+		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
 		respBody, _ := json.Marshal(msg)
 		logger.LogLLMRound(round, fmt.Sprintf("main-agent conversation=%s", conversation.ID), reqBody, respBody, err)
 		if err != nil {
@@ -173,10 +189,106 @@ func emitMeta(state *LoopState) {
 	})
 }
 
-func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
+// runModelRoundWithRecovery wraps runModelRoundStream with truncation and
+// context-overflow recovery. Transient 429/529 retries are handled inside the
+// LLM client and are transparent here.
+//
+//   - Truncation (finish_reason == length): the first time, the output budget is
+//     upgraded to truncationMaxTokens and the same request is retried WITHOUT
+//     touching messages (the partial output is discarded). If it still
+//     truncates, up to maxResumeAttempts continuation requests are issued, each
+//     appending the truncated text plus a resume prompt; segments are streamed
+//     and concatenated into one assistant message.
+//   - Context overflow (HTTP 413): reactiveCompact is run once and the request
+//     rebuilt from the compacted history, then retried. A second overflow is
+//     returned to the caller (handled by the existing fallback boundary).
+func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
+	cur := req
+	upgraded := false
+	compacted := false
+	resumeAttempts := 0
+	var accumulated strings.Builder
+	var accumulatedReasoning strings.Builder
+
+	for {
+		msg, finishReason, deltas, err := s.runModelRoundStream(ctx, state, cur)
+		if err != nil {
+			if llm.IsContextOverflow(err) && !compacted {
+				if compactErr := s.reactiveCompact(ctx, state); compactErr != nil {
+					logger.Warn(fmt.Sprintf("reactive compact failed conversation=%s: %v", state.Conversation.ID, compactErr))
+					return openai.ChatCompletionMessage{}, "", err
+				}
+				compacted = true
+				cur.Messages = state.Messages
+				cur.MaxTokens = defaultMaxTokens
+				upgraded = false
+				resumeAttempts = 0
+				accumulated.Reset()
+				accumulatedReasoning.Reset()
+				continue
+			}
+			return openai.ChatCompletionMessage{}, "", err
+		}
+
+		resuming := accumulated.Len() > 0
+		if finishReason != openai.FinishReasonLength {
+			if resuming {
+				flushContentDeltas(state, deltas)
+				return openai.ChatCompletionMessage{
+					Role:             "assistant",
+					Content:          accumulated.String() + msg.Content,
+					ReasoningContent: accumulatedReasoning.String() + msg.ReasoningContent,
+					ToolCalls:        msg.ToolCalls,
+				}, finishReason, nil
+			}
+			if state.Writer != nil && shouldEmitAssistantContentDeltas(finishReason, msg.ToolCalls) {
+				flushContentDeltas(state, deltas)
+			}
+			return msg, finishReason, nil
+		}
+
+		// Truncated output.
+		if !upgraded {
+			// Discard the partial output, upgrade the budget, retry unchanged.
+			upgraded = true
+			cur.MaxTokens = truncationMaxTokens
+			continue
+		}
+		if resumeAttempts >= maxResumeAttempts {
+			// Best-effort: emit and return what we have so far.
+			flushContentDeltas(state, deltas)
+			logger.Warn(fmt.Sprintf("truncation resume exhausted conversation=%s after %d attempts", state.Conversation.ID, resumeAttempts))
+			return openai.ChatCompletionMessage{
+				Role:             "assistant",
+				Content:          accumulated.String() + msg.Content,
+				ReasoningContent: accumulatedReasoning.String() + msg.ReasoningContent,
+			}, finishReason, nil
+		}
+		// Keep this partial segment and ask the model to continue.
+		flushContentDeltas(state, deltas)
+		accumulated.WriteString(msg.Content)
+		accumulatedReasoning.WriteString(msg.ReasoningContent)
+		resumeAttempts++
+		cur.Messages = append(cur.Messages,
+			openai.ChatCompletionMessage{Role: "assistant", Content: msg.Content},
+			openai.ChatCompletionMessage{Role: "user", Content: truncationResumePrompt},
+		)
+	}
+}
+
+func flushContentDeltas(state *LoopState, deltas []bufferedModelDelta) {
+	if state.Writer == nil {
+		return
+	}
+	for _, delta := range deltas {
+		_ = state.Writer.Event(delta.Event, map[string]any{"content": delta.Content})
+	}
+}
+
+func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, []bufferedModelDelta, error) {
 	stream, err := s.LLM.CreateChatCompletionStream(ctx, req)
 	if err != nil {
-		return openai.ChatCompletionMessage{}, "", err
+		return openai.ChatCompletionMessage{}, "", nil, err
 	}
 	defer stream.Close()
 
@@ -194,7 +306,7 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 			if err == io.EOF {
 				break
 			}
-			return openai.ChatCompletionMessage{}, "", err
+			return openai.ChatCompletionMessage{}, "", nil, err
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -222,16 +334,11 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		}
 	}
 	if !seenChoice || (!seenOutput && finishReason == "") {
-		return openai.ChatCompletionMessage{}, "", fmt.Errorf("model stream returned no choices")
+		return openai.ChatCompletionMessage{}, "", nil, fmt.Errorf("model stream returned no choices")
 	}
 	calls := toolCalls.Calls()
-	if state.Writer != nil && shouldEmitAssistantContentDeltas(finishReason, calls) {
-		for _, delta := range bufferedContentDeltas {
-			_ = state.Writer.Event(delta.Event, map[string]any{"content": delta.Content})
-		}
-	}
 
-	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, nil
+	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, bufferedContentDeltas, nil
 }
 
 func shouldEmitAssistantContentDeltas(finishReason openai.FinishReason, toolCalls []openai.ToolCall) bool {

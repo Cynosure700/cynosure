@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -40,20 +42,55 @@ func NewDeepseekClient(baseURL, apiKey string) Client {
 	}
 }
 
-func (c *deepseekClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+// buildRequestBody assembles the DeepSeek request body, passing through
+// max_tokens when set so callers can control/override the output budget.
+func buildRequestBody(req openai.ChatCompletionRequest, stream bool) map[string]any {
 	body := map[string]any{
 		"model":            req.Model,
 		"messages":         req.Messages,
 		"thinking":         map[string]string{"type": "enabled"},
 		"reasoning_effort": "high",
-		"stream":           false,
+		"stream":           stream,
 	}
-
 	if len(req.Tools) > 0 {
 		body["tools"] = req.Tools
 	}
+	if req.MaxTokens > 0 {
+		body["max_tokens"] = req.MaxTokens
+	}
+	return body
+}
 
-	jsonBody, err := json.Marshal(body)
+// retryTransient runs do until it succeeds, returns a non-retryable error, or
+// the transient-retry budget is exhausted. 429/529 are retried with
+// exponential backoff plus jitter; ctx cancellation aborts immediately.
+func retryTransient[T any](ctx context.Context, do func() (T, error)) (T, error) {
+	var zero T
+	for attempt := 0; ; attempt++ {
+		result, err := do()
+		if err == nil {
+			return result, nil
+		}
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || !isRetryableStatus(apiErr.StatusCode) || attempt >= maxTransientRetries {
+			return zero, err
+		}
+		select {
+		case <-time.After(backoffDelay(attempt)):
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		}
+	}
+}
+
+func (c *deepseekClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	return retryTransient(ctx, func() (openai.ChatCompletionResponse, error) {
+		return c.createChatCompletionOnce(ctx, req)
+	})
+}
+
+func (c *deepseekClient) createChatCompletionOnce(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	jsonBody, err := json.Marshal(buildRequestBody(req, false))
 	if err != nil {
 		return openai.ChatCompletionResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
@@ -79,7 +116,7 @@ func (c *deepseekClient) CreateChatCompletion(ctx context.Context, req openai.Ch
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return openai.ChatCompletionResponse{}, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
+		return openai.ChatCompletionResponse{}, &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var result openai.ChatCompletionResponse
@@ -91,19 +128,13 @@ func (c *deepseekClient) CreateChatCompletion(ctx context.Context, req openai.Ch
 }
 
 func (c *deepseekClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error) {
-	body := map[string]any{
-		"model":            req.Model,
-		"messages":         req.Messages,
-		"thinking":         map[string]string{"type": "enabled"},
-		"reasoning_effort": "high",
-		"stream":           true,
-	}
+	return retryTransient(ctx, func() (ChatCompletionStream, error) {
+		return c.createChatCompletionStreamOnce(ctx, req)
+	})
+}
 
-	if len(req.Tools) > 0 {
-		body["tools"] = req.Tools
-	}
-
-	jsonBody, err := json.Marshal(body)
+func (c *deepseekClient) createChatCompletionStreamOnce(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error) {
+	jsonBody, err := json.Marshal(buildRequestBody(req, true))
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -126,7 +157,7 @@ func (c *deepseekClient) CreateChatCompletionStream(ctx context.Context, req ope
 		if readErr != nil {
 			return nil, fmt.Errorf("read response: %w", readErr)
 		}
-		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
