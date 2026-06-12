@@ -91,7 +91,7 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
 	renderer, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(100))
-	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, events: make(chan Event, 128), renderer: renderer}
+	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer}
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
@@ -108,7 +108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = max(5, msg.Height-8)
+		m.viewport.Height = m.viewportHeight()
 		m.input.SetWidth(max(20, msg.Width-4))
 		m.refreshViewport()
 		return m, nil
@@ -148,6 +148,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case Event:
 		if msg.Generation != 0 && msg.Generation != m.generation {
+			if m.running {
+				return m, m.waitEvent()
+			}
 			return m, nil
 		}
 		switch msg.Name {
@@ -180,23 +183,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.refreshViewport()
 	return m, cmd
 }
 
 func (m Model) View() string {
-	return m.renderHeader() + "\n" + m.renderConversationFrame() + "\n" + m.renderInput()
+	return m.viewport.View()
 }
 
 func (m Model) respond(ctx context.Context, text string, generation int64) tea.Cmd {
 	return func() tea.Msg {
 		if m.runtime == nil {
-			return Event{Generation: generation, Name: "error", Content: "runtime 未初始化"}
+			m.events <- Event{Generation: generation, Name: "error", Content: "runtime 未初始化"}
+			return nil
 		}
 		_, err := m.runtime.RespondToConversation(ctx, m.session.Conversation, m.session.User, text, NewEventWriter(m.events, generation))
 		if err != nil {
-			return Event{Generation: generation, Name: "error", Content: err.Error()}
+			m.events <- Event{Generation: generation, Name: "error", Content: err.Error()}
+			return nil
 		}
-		return Event{Generation: generation, Name: "done"}
+		m.events <- Event{Generation: generation, Name: "done"}
+		return nil
 	}
 }
 
@@ -430,14 +437,34 @@ func isLiveAssistantRole(role string) bool {
 }
 
 func (m *Model) refreshViewport() {
-	m.viewport.SetContent(m.renderMessages())
+	m.viewport.Width = max(10, m.width)
+	m.viewport.Height = m.viewportHeight()
+	m.viewport.SetContent(m.renderTranscript())
 	m.viewport.GotoBottom()
 }
 
-func (m Model) renderMessages() string {
-	if len(m.messages) == 0 {
-		return m.renderWelcome()
+func (m Model) viewportHeight() int {
+	if m.height <= 0 {
+		return 20
 	}
+	return max(1, m.height)
+}
+
+func (m Model) renderTranscript() string {
+	var b strings.Builder
+	b.WriteString(m.renderWelcome())
+	if len(m.messages) > 0 {
+		b.WriteString("\n\n")
+		b.WriteString(m.renderMessages())
+	}
+	b.WriteString("\n")
+	b.WriteString(m.renderInput())
+	b.WriteString("\n")
+	b.WriteString(subtleStyle().Render(m.renderLiveStatus()))
+	return b.String()
+}
+
+func (m Model) renderMessages() string {
 	var b strings.Builder
 	for _, msg := range m.messages {
 		b.WriteString(m.renderMessage(msg))
@@ -481,7 +508,7 @@ func (m Model) renderWelcome() string {
 	intro := "像 Claude Code 一样一问一答：在终端直接提问，回答会流式显示在下方。"
 	quick := "快捷键：Enter 发送 · Ctrl+C 中断/退出 · /resume 恢复 · /clear 清屏"
 	stats := fmt.Sprintf("Skills %d · MCP tools %d", m.session.SkillCount, m.session.MCPToolCount)
-	return accentArtStyle().Render(art) + "\n\n" + intro + "\n" + subtleStyle().Render(quick) + "\n" + subtleStyle().Render(stats)
+	return startupPanelStyle().Width(max(20, m.width-2)).Render(accentArtStyle().Render(art) + "\n\n" + intro + "\n" + subtleStyle().Render(quick) + "\n" + subtleStyle().Render(stats))
 }
 
 func (m Model) renderHeader() string {
@@ -504,13 +531,18 @@ func (m Model) renderConversationFrame() string {
 }
 
 func (m Model) renderInput() string {
-	caption := subtleStyle().Render(m.renderLiveStatus())
-	prompt := inputPromptStyle().Render("› ")
-	return prompt + strings.TrimRight(m.input.View(), "\n") + "\n" + caption
+	prompt := inputPromptStyle().Render("›")
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" {
+		text = subtleStyle().Render(m.input.Placeholder)
+	} else {
+		text = userStyle().Render(text)
+	}
+	return inputLineStyle().Width(max(10, m.width)).Render(prompt + " " + text)
 }
 
 func (m Model) renderLiveStatus() string {
-	parts := []string{"Enter 发送", "Ctrl+C 中断/退出", "/help 查看命令", fmt.Sprintf("本轮工具 %d", m.toolCallCount)}
+	parts := []string{"Enter 发送", "Ctrl+C 中断/退出", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
 	if m.contextBudget > 0 {
 		parts = append(parts, fmt.Sprintf("上下文 %d%% · %s/%s", min(100, m.contextTokens*100/m.contextBudget), compactNumber(m.contextTokens), compactNumber(m.contextBudget)))
 	} else {
@@ -581,6 +613,10 @@ func conversationStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Padding(1, 2, 0, 2)
 }
 
+func startupPanelStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(tuiPalette.coral).Padding(1, 2).Margin(1, 0)
+}
+
 func userStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(tuiPalette.ink)
 }
@@ -611,6 +647,10 @@ func accentArtStyle() lipgloss.Style {
 
 func inputPromptStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(tuiPalette.mint).Bold(true)
+}
+
+func inputLineStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Background(lipgloss.Color("238")).Foreground(tuiPalette.ink)
 }
 
 func compactNumber(n int) string {

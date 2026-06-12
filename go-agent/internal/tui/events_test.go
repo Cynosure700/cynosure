@@ -138,6 +138,37 @@ func TestModelIgnoresStaleGenerationEvents(t *testing.T) {
 	}
 }
 
+func TestModelKeepsWaitingAfterStaleGenerationEvent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 2
+	app.running = true
+	app.events <- Event{Generation: 2, Name: "assistant_delta", Content: "fresh"}
+
+	_, cmd := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "stale"})
+
+	if cmd == nil {
+		t.Fatal("expected stale event to keep waiting while current generation is still running")
+	}
+	got := cmd()
+	if event, ok := got.(Event); !ok || event.Generation != 2 || event.Content != "fresh" {
+		t.Fatalf("next message = %#v, want fresh event from current generation", got)
+	}
+}
+
+func TestRespondSendsTerminalEventThroughEventQueue(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+
+	msg := app.respond(context.Background(), "hello", 7)()
+
+	if msg != nil {
+		t.Fatalf("respond command returned %#v, want nil so waitEvent preserves queued event order", msg)
+	}
+	got := <-app.events
+	if got.Generation != 7 || got.Name != "error" || !strings.Contains(got.Content, "runtime 未初始化") {
+		t.Fatalf("queued event = %#v, want runtime error for generation 7", got)
+	}
+}
+
 func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
@@ -206,12 +237,12 @@ func TestViewUsesTerminalTranscriptWithoutConversationBox(t *testing.T) {
 	app.refreshViewport()
 
 	view := app.View()
-	for _, forbidden := range []string{"╭", "╮", "╰", "╯"} {
+	for _, forbidden := range []string{"✦ go-agent", "cwd /tmp/project"} {
 		if strings.Contains(view, forbidden) {
-			t.Fatalf("view = %q, should not render rounded conversation frame %q", view, forbidden)
+			t.Fatalf("view = %q, should not render fixed header %q", view, forbidden)
 		}
 	}
-	for _, want := range []string{"› hello", "go-agent", "你好", "本轮工具 0", "上下文 --"} {
+	for _, want := range []string{"nano, but cozy", "› hello", "go-agent", "你好", "工具 0", "上下文 --"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
 		}
@@ -241,5 +272,57 @@ func TestViewFitsWithinTerminalHeight(t *testing.T) {
 
 	if got := lipgloss.Height(model.View()); got > model.height {
 		t.Fatalf("view height = %d, want <= terminal height %d so history is not clipped", got, model.height)
+	}
+}
+
+func TestViewKeepsWelcomeAndPromptInScrollableTranscript(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+	model.appendMessage("user", "hello")
+	model.appendMessage("assistant", "你好")
+	model.refreshViewport()
+
+	view := model.View()
+	for _, want := range []string{"nano, but cozy", "› hello", "go-agent", "你好", "问 go-agent 一件事"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want it to contain %q", view, want)
+		}
+	}
+	if strings.Index(view, "› hello") > strings.Index(view, "go-agent") {
+		t.Fatalf("view = %q, want assistant answer below the submitted user prompt", view)
+	}
+	if strings.Index(view, "你好") > strings.Index(view, "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want next prompt below assistant answer", view)
+	}
+}
+
+func TestViewportScrollsTranscriptToActivePrompt(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+
+	view := model.View()
+	if !strings.Contains(view, "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want active prompt visible after scrolling to bottom", view)
+	}
+	if lipgloss.Height(view) > model.height {
+		t.Fatalf("view height = %d, want <= terminal height %d", lipgloss.Height(view), model.height)
+	}
+}
+
+func TestTypingRefreshesInlinePrompt(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	model := updated.(Model)
+
+	if !strings.Contains(model.View(), "› h") {
+		t.Fatalf("view = %q, want inline prompt to show typed text", model.View())
 	}
 }
