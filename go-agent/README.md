@@ -4,12 +4,12 @@
 
 ## 核心能力
 
-- **TUI 聊天界面**：终端内多轮对话、流式输出、Markdown 渲染、状态栏和基础 slash commands。
+- **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
 - **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`todo_write`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
 - **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
 - **Skill 系统**：启动时读取 `~/.link/skills` 与 `<cwd>/.link/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.link/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
-- **项目级记忆**：启动时读取 `<cwd>/memory/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
+- **项目级记忆**：启动时读取 `<cwd>/.link/memory/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
 - **历史会话恢复**：对话历史持久化到 `~/link/session/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
 - **上下文压缩**：请求模型前自动压缩超长历史，支持大工具结果落盘、消息窗口裁剪、最近工具结果保留与 413 后激进压缩；上下文摘要仅保存在运行期内存中，不做持久化。
 
@@ -77,7 +77,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ### 本地存储边界
 
-- **项目级文件**：`<cwd>/memory/` 保存项目记忆，`<cwd>/task_outputs/` 保存工具输出日志和大结果落盘文件，`<cwd>/.link/skills` 与 `<cwd>/.link/.mcp.json` 分别提供工作区 Skills 与 MCP 配置。
+- **项目级文件**：`<cwd>/.link/memory/` 保存项目记忆，`<cwd>/task_outputs/` 保存工具输出日志和大结果落盘文件，`<cwd>/.link/skills` 与 `<cwd>/.link/.mcp.json` 分别提供工作区 Skills 与 MCP 配置。
 - **用户级文件**：`~/.link/settings.json` 保存 LLM 配置，`~/.link/skills` 保存用户级 Skills，`~/link/session/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
@@ -97,10 +97,10 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ## 项目级记忆
 
-TUI 本地模式会在当前工作区创建并维护 `memory/` 目录。记忆只对当前项目下的会话有效；切换到其他项目时，会读取那个项目自己的 `memory/`，不会复用当前项目记忆。
+TUI 本地模式会在当前工作区创建并维护 `.link/memory/` 目录。记忆只对当前项目下的会话有效；切换到其他项目时，会读取那个项目自己的 `.link/memory/`，不会复用当前项目记忆。
 
 ```text
-<cwd>/memory/
+<cwd>/.link/memory/
 ├── memory.md                 # 长期记忆索引
 ├── <memory-name>.md          # 单条长期记忆
 └── sessions/
@@ -109,7 +109,7 @@ TUI 本地模式会在当前工作区创建并维护 `memory/` 目录。记忆�
 
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
 - 长期记忆类型包括 `user_preference`、`episodic_memory` 和 `project_fact`。`project_fact` 用于记录当前项目事实，例如架构、命令、约定、依赖、已知约束和实现决策。
-- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `memory/sessions/<session_id>.md`，不会按轮次生成多个文件。
+- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `.link/memory/sessions/<session_id>.md`，不会按轮次生成多个文件。
 - 会话收尾更新只对当前项目当前会话加锁，锁 key 为 `项目名 + session_id`。
 
 ## 历史会话
@@ -156,6 +156,25 @@ go run .
 # 显式指定用户项目目录作为工作区
 go run . --cwd /path/to/project
 ```
+
+## TUI 界面与实时状态
+
+TUI 主界面由顶部状态栏、会话视窗和输入区组成：
+
+- **顶部状态栏**：展示当前运行状态、当前回复已使用工具数、上下文 token 使用比例、当前工作区、Skill 数量和 MCP 工具数量。
+- **会话视窗**：按角色区分用户、Agent、系统和错误消息；Agent 回复支持 Markdown 渲染。
+- **思考过程**：模型流式返回的 reasoning 会以灰色 `✦ 思考` 块实时展示，降低视觉权重但保留执行透明度。
+- **流式回答**：最终对用户可见的 assistant 内容会继续按增量输出；涉及工具调用的中间 assistant 文本不会提前刷屏，避免干扰阅读。
+- **输入区提示**：底部固定展示 `Enter`、`Ctrl+C`、`/help` 等常用操作提示。
+
+状态栏示例：
+
+```text
+✦ go-agent  generating  工具 3  上下文 72% · 72k/100k
+cwd /path/to/project · skills 6 · mcp tools 4
+```
+
+其中 `工具` 是当前回复累计工具调用次数，`上下文` 是最近一次发送给模型的上下文估算 token 与预算占比。
 
 ## TUI 快捷命令
 

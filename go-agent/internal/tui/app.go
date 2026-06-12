@@ -36,8 +36,31 @@ type SessionResumer interface {
 }
 
 type Message struct {
-	Role    string
-	Content string
+	Role             string
+	Content          string
+	ReasoningContent string
+}
+
+type palette struct {
+	ink      lipgloss.Color
+	muted    lipgloss.Color
+	panel    lipgloss.Color
+	cyan     lipgloss.Color
+	mint     lipgloss.Color
+	lavender lipgloss.Color
+	butter   lipgloss.Color
+	coral    lipgloss.Color
+}
+
+var tuiPalette = palette{
+	ink:      lipgloss.Color("255"),
+	muted:    lipgloss.Color("244"),
+	panel:    lipgloss.Color("238"),
+	cyan:     lipgloss.Color("81"),
+	mint:     lipgloss.Color("120"),
+	lavender: lipgloss.Color("183"),
+	butter:   lipgloss.Color("229"),
+	coral:    lipgloss.Color("210"),
 }
 
 type Model struct {
@@ -55,13 +78,16 @@ type Model struct {
 	generation       int64
 	resumeSelecting  bool
 	resumeCandidates []storage.ResumableSession
+	toolCallCount    int
+	contextTokens    int
+	contextBudget    int
 }
 
 func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input := textarea.New()
-	input.Placeholder = "输入消息，Enter 发送，/help 查看命令"
+	input.Placeholder = "问 go-agent 一件事..."
 	input.Focus()
-	input.SetHeight(3)
+	input.SetHeight(2)
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
 	renderer, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(100))
@@ -69,7 +95,7 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
-	program := tea.NewProgram(NewModel(runtimeService, session), tea.WithAltScreen(), tea.WithContext(ctx))
+	program := tea.NewProgram(NewModel(runtimeService, session), tea.WithContext(ctx))
 	_, err := program.Run()
 	return err
 }
@@ -82,8 +108,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = max(5, msg.Height-7)
-		m.input.SetWidth(msg.Width - 4)
+		m.viewport.Height = max(5, msg.Height-8)
+		m.input.SetWidth(max(20, msg.Width-4))
 		m.refreshViewport()
 		return m, nil
 	case tea.KeyMsg:
@@ -113,6 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.appendMessage("user", text)
 			m.running = true
+			m.toolCallCount = 0
 			m.generation++
 			generation := m.generation
 			ctx, cancel := context.WithCancel(context.Background())
@@ -127,13 +154,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "assistant_delta":
 			m.appendAssistantDelta(msg.Content)
 		case "reasoning_delta":
-			// 初版不逐字展开 reasoning，避免刷屏；状态栏仍显示生成中。
+			m.appendThinkingDelta(msg.Content)
 		case "assistant":
-			if msg.Content != "" {
-				m.replaceLastAssistant(msg.Content)
+			m.updateMetaFromData(msg.Data)
+			content := msg.Content
+			if content == "" && msg.Data != nil {
+				content = eventContent(msg.Data)
 			}
+			if content != "" {
+				m.replaceLastAssistant(content, eventString(msg.Data, "reasoning_content"))
+			}
+		case "meta":
+			m.updateMetaFromData(msg.Data)
 		case "error":
 			m.appendMessage("error", msg.Content)
+			m.running = false
 		case "done":
 			m.running = false
 		}
@@ -149,11 +184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	status := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
-		fmt.Sprintf("go-agent TUI | cwd: %s | skills:%d | mcp:%d | %s", m.session.CWD, m.session.SkillCount, m.session.MCPToolCount, runningText(m.running)),
-	)
-	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-	return status + "\n" + border.Width(max(10, m.width-2)).Height(max(5, m.height-7)).Render(m.viewport.View()) + "\n" + m.input.View()
+	return m.renderHeader() + "\n" + m.renderConversationFrame() + "\n" + m.renderInput()
 }
 
 func (m Model) respond(ctx context.Context, text string, generation int64) tea.Cmd {
@@ -284,7 +315,7 @@ func messagesForDisplay(history []storage.Message) []Message {
 	for _, msg := range history {
 		switch msg.Role {
 		case "user", "assistant", "system", "error":
-			messages = append(messages, Message{Role: msg.Role, Content: msg.Content})
+			messages = append(messages, Message{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
 		}
 	}
 	return messages
@@ -363,19 +394,39 @@ func (m *Model) appendMessage(role, content string) {
 }
 
 func (m *Model) appendAssistantDelta(delta string) {
-	if len(m.messages) == 0 || m.messages[len(m.messages)-1].Role != "assistant" {
+	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
 		m.appendMessage("assistant", delta)
 		return
+	}
+	if m.messages[len(m.messages)-1].Role == "thinking" {
+		m.messages[len(m.messages)-1].Role = "assistant"
 	}
 	m.messages[len(m.messages)-1].Content += delta
 }
 
-func (m *Model) replaceLastAssistant(content string) {
-	if len(m.messages) == 0 || m.messages[len(m.messages)-1].Role != "assistant" {
-		m.appendMessage("assistant", content)
+func (m *Model) appendThinkingDelta(delta string) {
+	if delta == "" {
 		return
 	}
+	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
+		m.messages = append(m.messages, Message{Role: "assistant", ReasoningContent: delta})
+		return
+	}
+	m.messages[len(m.messages)-1].ReasoningContent += delta
+}
+
+func (m *Model) replaceLastAssistant(content, reasoning string) {
+	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
+		m.messages = append(m.messages, Message{Role: "assistant", Content: content, ReasoningContent: reasoning})
+		return
+	}
+	m.messages[len(m.messages)-1].Role = "assistant"
 	m.messages[len(m.messages)-1].Content = content
+	m.messages[len(m.messages)-1].ReasoningContent = reasoning
+}
+
+func isLiveAssistantRole(role string) bool {
+	return role == "assistant" || role == "thinking"
 }
 
 func (m *Model) refreshViewport() {
@@ -384,21 +435,189 @@ func (m *Model) refreshViewport() {
 }
 
 func (m Model) renderMessages() string {
+	if len(m.messages) == 0 {
+		return m.renderWelcome()
+	}
 	var b strings.Builder
 	for _, msg := range m.messages {
-		prefix := lipgloss.NewStyle().Bold(true).Render(msg.Role + ":")
+		b.WriteString(m.renderMessage(msg))
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
+func (m Model) renderMessage(msg Message) string {
+	switch msg.Role {
+	case "user":
+		return promptLineStyle().Render("›") + " " + userStyle().Render(msg.Content)
+	case "assistant":
 		content := msg.Content
-		if msg.Role == "assistant" && m.renderer != nil {
+		if m.renderer != nil {
 			if rendered, err := m.renderer.Render(content); err == nil {
 				content = strings.TrimSpace(rendered)
 			}
 		}
-		b.WriteString(prefix)
-		b.WriteString("\n")
-		b.WriteString(content)
-		b.WriteString("\n\n")
+		if m.running && strings.TrimSpace(msg.ReasoningContent) != "" {
+			content = thinkingStyle().Render("✽ 思考中\n"+strings.TrimSpace(msg.ReasoningContent)) + "\n" + content
+		}
+		return assistantLeadStyle().Render("go-agent") + "\n" + content
+	case "thinking":
+		return thinkingStyle().Render("✽ 思考中\n" + msg.Content)
+	case "system":
+		return systemStyle().Render("• " + msg.Content)
+	case "error":
+		return errorStyle().Render("✗ " + msg.Content)
+	default:
+		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + msg.Content
 	}
-	return b.String()
+}
+
+func (m Model) renderWelcome() string {
+	art := strings.Join([]string{
+		`   /\_/\\`,
+		`  ( o.o )   nano, but cozy`,
+		`   > ^ <    ask · think · build`,
+	}, "\n")
+	intro := "像 Claude Code 一样一问一答：在终端直接提问，回答会流式显示在下方。"
+	quick := "快捷键：Enter 发送 · Ctrl+C 中断/退出 · /resume 恢复 · /clear 清屏"
+	stats := fmt.Sprintf("Skills %d · MCP tools %d", m.session.SkillCount, m.session.MCPToolCount)
+	return accentArtStyle().Render(art) + "\n\n" + intro + "\n" + subtleStyle().Render(quick) + "\n" + subtleStyle().Render(stats)
+}
+
+func (m Model) renderHeader() string {
+	width := max(20, m.width)
+	status := runningText(m.running)
+	contextText := "上下文 --"
+	if m.contextBudget > 0 {
+		contextText = fmt.Sprintf("上下文 %d%% · %s/%s", min(100, m.contextTokens*100/m.contextBudget), compactNumber(m.contextTokens), compactNumber(m.contextBudget))
+	}
+	left := titleStyle().Render("✦ go-agent")
+	right := headerMetaStyle().Render(fmt.Sprintf("%s  ·  本轮工具 %d  ·  %s", status, m.toolCallCount, contextText))
+	gap := max(1, width-lipgloss.Width(left)-lipgloss.Width(right)-4)
+	line := left + strings.Repeat(" ", gap) + right
+	workspace := subtleStyle().Render(fmt.Sprintf("cwd %s · skills %d · mcp tools %d", m.session.CWD, m.session.SkillCount, m.session.MCPToolCount))
+	return headerStyle().Width(width).Render(line + "\n" + workspace)
+}
+
+func (m Model) renderConversationFrame() string {
+	return conversationStyle().Width(max(10, m.width)).Render(m.viewport.View())
+}
+
+func (m Model) renderInput() string {
+	caption := subtleStyle().Render(m.renderLiveStatus())
+	prompt := inputPromptStyle().Render("› ")
+	return prompt + strings.TrimRight(m.input.View(), "\n") + "\n" + caption
+}
+
+func (m Model) renderLiveStatus() string {
+	parts := []string{"Enter 发送", "Ctrl+C 中断/退出", "/help 查看命令", fmt.Sprintf("本轮工具 %d", m.toolCallCount)}
+	if m.contextBudget > 0 {
+		parts = append(parts, fmt.Sprintf("上下文 %d%% · %s/%s", min(100, m.contextTokens*100/m.contextBudget), compactNumber(m.contextTokens), compactNumber(m.contextBudget)))
+	} else {
+		parts = append(parts, "上下文 --")
+	}
+	return strings.Join(parts, " · ")
+}
+
+func (m *Model) updateMetaFromData(data any) {
+	if count, ok := eventInt(data, "tool_call_count"); ok {
+		m.toolCallCount = count
+	}
+	if tokens, ok := eventInt(data, "context_tokens"); ok {
+		m.contextTokens = tokens
+	}
+	if budget, ok := eventInt(data, "context_budget"); ok {
+		m.contextBudget = budget
+	}
+}
+
+func eventString(data any, key string) string {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := m[key].(string)
+	return value
+}
+
+func eventInt(data any, key string) (int, bool) {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	switch value := m[key].(type) {
+	case int:
+		return value, true
+	case int64:
+		return int(value), true
+	case float64:
+		return int(value), true
+	default:
+		return 0, false
+	}
+}
+
+func roleLabel(label string, color lipgloss.Color) string {
+	return lipgloss.NewStyle().Bold(true).Foreground(color).Render(label)
+}
+
+func headerStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Padding(0, 1).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(tuiPalette.panel)
+}
+
+func titleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(tuiPalette.mint)
+}
+
+func headerMetaStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+}
+
+func subtleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.muted)
+}
+
+func conversationStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Padding(1, 2, 0, 2)
+}
+
+func userStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.ink)
+}
+
+func thinkingStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Italic(true).PaddingLeft(2)
+}
+
+func systemStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.butter)
+}
+
+func errorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.coral)
+}
+
+func promptLineStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.cyan).Bold(true)
+}
+
+func assistantLeadStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.mint).Bold(true)
+}
+
+func accentArtStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.lavender).Bold(true)
+}
+
+func inputPromptStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.mint).Bold(true)
+}
+
+func compactNumber(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return strconv.Itoa(n)
 }
 
 func runningText(running bool) string {
@@ -410,6 +629,13 @@ func runningText(running bool) string {
 
 func max(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

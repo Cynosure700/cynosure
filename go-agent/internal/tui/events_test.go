@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"nano_cc/internal/agent/mcp"
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/sessions"
@@ -132,5 +135,111 @@ func TestModelIgnoresStaleGenerationEvents(t *testing.T) {
 	model := updated.(Model)
 	if len(model.messages) != 0 {
 		t.Fatalf("messages = %#v, want stale event ignored", model.messages)
+	}
+}
+
+func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "先判断是否需要工具"})
+	model := updated.(Model)
+	rendered := model.renderMessages()
+
+	for _, want := range []string{"思考", "先判断是否需要工具"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered messages = %q, want it to contain %q", rendered, want)
+		}
+	}
+}
+
+func TestModelAssistantFinalEventHidesReasoningAfterDoneAndKeepsMeta(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "分析路径"})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "assistant", Content: "完成", Data: map[string]any{"content": "完成", "reasoning_content": "分析路径", "tool_call_count": 2, "context_tokens": 45000, "context_budget": 100000}})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "done"})
+	model := updated.(Model)
+
+	rendered := model.renderMessages()
+	if !strings.Contains(rendered, "完成") {
+		t.Fatalf("rendered messages = %q, want final answer", rendered)
+	}
+	if strings.Contains(rendered, "分析路径") {
+		t.Fatalf("rendered messages = %q, should hide reasoning after done", rendered)
+	}
+	view := model.View()
+	for _, want := range []string{"工具 2", "上下文 45%"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want it to contain %q", view, want)
+		}
+	}
+}
+
+func TestModelMetaEventUpdatesLiveStatus(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "meta", Data: map[string]any{"tool_call_count": 3, "context_tokens": 72000, "context_budget": 100000}})
+	model := updated.(Model)
+
+	view := model.View()
+	for _, want := range []string{"工具 3", "上下文 72%"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want it to contain %q", view, want)
+		}
+	}
+}
+
+func TestViewUsesTerminalTranscriptWithoutConversationBox(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	app.width = 80
+	app.height = 24
+	app.viewport.Width = 80
+	app.viewport.Height = 18
+	app.appendMessage("user", "hello")
+	app.appendMessage("assistant", "你好")
+	app.refreshViewport()
+
+	view := app.View()
+	for _, forbidden := range []string{"╭", "╮", "╰", "╯"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("view = %q, should not render rounded conversation frame %q", view, forbidden)
+		}
+	}
+	for _, want := range []string{"› hello", "go-agent", "你好", "本轮工具 0", "上下文 --"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want it to contain %q", view, want)
+		}
+	}
+}
+
+func TestErrorEventReleasesRunningStateForNextPrompt(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "error", Content: "network failed"})
+	model := updated.(Model)
+
+	if model.running {
+		t.Fatal("model should stop running after an error so the next user message can be sent")
+	}
+}
+
+func TestViewFitsWithinTerminalHeight(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+	model.appendMessage("user", "hello")
+	model.appendMessage("assistant", strings.Repeat("这一行回答会比较长，用来模拟实际模型输出。", 6))
+	model.refreshViewport()
+
+	if got := lipgloss.Height(model.View()); got > model.height {
+		t.Fatalf("view height = %d, want <= terminal height %d so history is not clipped", got, model.height)
 	}
 }

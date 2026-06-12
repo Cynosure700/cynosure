@@ -275,7 +275,7 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 		t.Fatalf("InsertMemory returned error: %v", err)
 	}
 
-	indexPath := filepath.Join(workspace, "memory", "memory.md")
+	indexPath := filepath.Join(workspace, ".link", "memory", "memory.md")
 	indexBytes, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("read memory index: %v", err)
@@ -317,7 +317,7 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 		t.Fatalf("ReplaceConversationMemories second returned error: %v", err)
 	}
 
-	sessionPath := filepath.Join(workspace, "memory", "sessions", conv.SessionID+".md")
+	sessionPath := filepath.Join(workspace, ".link", "memory", "sessions", conv.SessionID+".md")
 	bodyBytes, err := os.ReadFile(sessionPath)
 	if err != nil {
 		t.Fatalf("read session memory: %v", err)
@@ -326,7 +326,7 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 	if strings.Contains(body, "第一轮") || !strings.Contains(body, "第二轮") || !strings.Contains(body, conv.SessionID) {
 		t.Fatalf("session memory should be overwritten in one file, got %q", body)
 	}
-	entries, err := filepath.Glob(filepath.Join(workspace, "memory", "sessions", "*.md"))
+	entries, err := filepath.Glob(filepath.Join(workspace, ".link", "memory", "sessions", "*.md"))
 	if err != nil {
 		t.Fatalf("glob session memories: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestBootstrapLoadsLinkMarkdownIntoRuntime(t *testing.T) {
 	if bundle.Conversation.SessionID == "" || bundle.Conversation.SessionID == bundle.Conversation.ID {
 		t.Fatalf("SessionID = %q, ConversationID = %q", bundle.Conversation.SessionID, bundle.Conversation.ID)
 	}
-	if _, err := os.Stat(filepath.Join(workspace, "memory", "memory.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(workspace, ".link", "memory", "memory.md")); err != nil {
 		t.Fatalf("memory index not created: %v", err)
 	}
 }

@@ -27,7 +27,7 @@ type MarkdownMemoryStore struct {
 }
 
 func NewMarkdownMemoryStore(workspaceRoot string) (*MarkdownMemoryStore, error) {
-	root := filepath.Join(strings.TrimSpace(workspaceRoot), "memory")
+	root := filepath.Join(strings.TrimSpace(workspaceRoot), ".link", "memory")
 	store := &MarkdownMemoryStore{
 		rootDir:     root,
 		indexPath:   filepath.Join(root, "memory.md"),
