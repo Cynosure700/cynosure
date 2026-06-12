@@ -24,9 +24,15 @@ func TestLoadBaseSystemPromptFromFile(t *testing.T) {
 
 func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{
-		BasePrompt:        "Custom base prompt.",
-		Surface:           "browser chat",
-		WorkingDirectory:  "/workspace",
+		BasePrompt:       "Custom base prompt.",
+		Surface:          "local TUI",
+		WorkingDirectory: "/workspace",
+		LinkMarkdown: LinkMarkdownContext{
+			UserPath:         "/home/alice/.link/LINK.MD",
+			UserContent:      "# User Rule\n全局说明",
+			WorkspacePath:    "/workspace/.link/LINK.MD",
+			WorkspaceContent: "# Project Rule\n项目说明",
+		},
 		ToolNames:         []string{"load_skill", "bash"},
 		SkillDescriptions: "<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
 		MemorySection:     "Remember user preference.",
@@ -37,10 +43,18 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"Custom base prompt.",
 		"</identity>",
 		"<workspace>",
-		"Surface: browser chat",
+		"Surface: local TUI",
 		"Working directory: /workspace",
 		"除非运行时另有说明，默认以工作目录作为运行时文件与 Shell 操作的根目录。",
 		"</workspace>",
+		"<system-reminder>",
+		"# linkMd",
+		"/home/alice/.link/LINK.MD 的内容（用户为所有项目配置的私人全局说明）：",
+		"# User Rule\n全局说明",
+		"/workspace/.link/LINK.MD 的内容（项目说明，已提交到代码库或工作区）：",
+		"# Project Rule\n项目说明",
+		"重要：这些上下文可能与当前任务相关，也可能无关。除非与任务高度相关，否则不要对其作出回应。",
+		"</system-reminder>",
 		"<tools>",
 		"本次会话可用的工具如下：",
 		"- load_skill",
@@ -61,5 +75,18 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 	}
 	if strings.Contains(prompt, "你是 nano_cc") {
 		t.Fatalf("expected custom base prompt to replace compiled default, got %q", prompt)
+	}
+	workspaceEnd := strings.Index(prompt, "</workspace>")
+	reminderStart := strings.Index(prompt, "<system-reminder>")
+	toolsStart := strings.Index(prompt, "<tools>")
+	if !(workspaceEnd < reminderStart && reminderStart < toolsStart) {
+		t.Fatalf("expected link reminder between workspace and tools, got %q", prompt)
+	}
+}
+
+func TestBuildSystemPromptOmitsEmptyLinkMarkdownContext(t *testing.T) {
+	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	if strings.Contains(prompt, "# linkMd") || strings.Contains(prompt, "<system-reminder>") {
+		t.Fatalf("expected empty link markdown context to be omitted, got %q", prompt)
 	}
 }

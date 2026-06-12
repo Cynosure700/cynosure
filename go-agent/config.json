@@ -7,19 +7,7 @@
     "builtin_skills_dir": "skills",
     "command_bin_dir": "bin",
     "command_script_dir": "cmd",
-    "web_allowed_tools": "load_skill,bash,read_file,write_file,edit_file,spawn_subagent",
+    "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,spawn_subagent",
     "bash_allow_outside_workspace": false,
-    "bash_allow_dangerous_commands": false,
-    "server_addr": ":8080",
-    "allowed_origin": "http://localhost:5173",
-    "mysql_host": "1.12.217.28",
-    "mysql_port": "3306",
-    "mysql_user": "root",
-    "mysql_database": "vibe_coding",
-    "redis_addr": "1.12.217.28:6379",
-    "redis_db": 0,
-    "es_addresses": "http://1.12.217.28:9200",
-    "es_username": "",
-    "session_cookie_name": "nano_cc_session",
-    "session_ttl_minutes": 10080
+    "bash_allow_dangerous_commands": false
 }

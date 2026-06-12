@@ -16,56 +16,32 @@ type Config struct {
 
 type fileConfig struct {
 	Config
-	AppHome                    string `json:"app_home"`
-	BuiltinSkillsDir           string `json:"builtin_skills_dir"`
-	CommandBinDir              string `json:"command_bin_dir"`
-	CommandScriptDir           string `json:"command_script_dir"`
-	SystemPromptPath           string `json:"system_prompt_path"`
-	WorkspaceRoot              string `json:"workspace_root"`
-	WebAllowedTools            string `json:"web_allowed_tools"`
-	BashAllowOutsideWorkspace  bool   `json:"bash_allow_outside_workspace"`
-	BashAllowDangerousCommands bool   `json:"bash_allow_dangerous_commands"`
-	ServerAddr                 string `json:"server_addr"`
-	AllowedOrigin              string `json:"allowed_origin"`
-	MySQLHost                  string `json:"mysql_host"`
-	MySQLPort                  string `json:"mysql_port"`
-	MySQLUser                  string `json:"mysql_user"`
-	MySQLDatabase              string `json:"mysql_database"`
-	RedisAddr                  string `json:"redis_addr"`
-	RedisDB                    int    `json:"redis_db"`
-	ESAddresses                string `json:"es_addresses"`
-	ESUsername                 string `json:"es_username"`
-	SessionCookieName          string `json:"session_cookie_name"`
-	SessionTTLMinutes          int    `json:"session_ttl_minutes"`
-	ConversationLockTTLSeconds         int `json:"conversation_lock_ttl_seconds"`
-	MemoryWorkTimeoutSeconds           int `json:"memory_work_timeout_seconds"`
-	ConversationLockWaitTimeoutSeconds int `json:"conversation_lock_wait_timeout_seconds"`
+	AppHome                            string `json:"app_home"`
+	BuiltinSkillsDir                   string `json:"builtin_skills_dir"`
+	CommandBinDir                      string `json:"command_bin_dir"`
+	CommandScriptDir                   string `json:"command_script_dir"`
+	SystemPromptPath                   string `json:"system_prompt_path"`
+	WorkspaceRoot                      string `json:"workspace_root"`
+	AllowedTools                       string `json:"allowed_tools"`
+	BashAllowOutsideWorkspace          bool   `json:"bash_allow_outside_workspace"`
+	BashAllowDangerousCommands         bool   `json:"bash_allow_dangerous_commands"`
+	ConversationLockTTLSeconds         int    `json:"conversation_lock_ttl_seconds"`
+	MemoryWorkTimeoutSeconds           int    `json:"memory_work_timeout_seconds"`
+	ConversationLockWaitTimeoutSeconds int    `json:"conversation_lock_wait_timeout_seconds"`
 }
 
 type AppConfig struct {
-	LLM                        Config
-	ServerAddr                 string
-	AllowedOrigin              string
-	DatabaseURL                string
-	RedisAddr                  string
-	RedisPassword              string
-	RedisDB                    int
-	ESAddresses                []string
-	ESUsername                 string
-	ESPassword                 string
-	JWTSecret                  string
-	AppHome                    string
-	BuiltinSkillsDir           string
-	CommandBinDir              string
-	CommandScriptDir           string
-	SystemPromptPath           string
-	WorkspaceRoot              string
-	LogsDir                    string
-	WebAllowedTools            []string
-	BashAllowOutsideWorkspace  bool
-	BashAllowDangerousCommands bool
-	CookieName                 string
-	SessionTTLMinutes          int
+	LLM                         Config
+	AppHome                     string
+	BuiltinSkillsDir            string
+	CommandBinDir               string
+	CommandScriptDir            string
+	SystemPromptPath            string
+	WorkspaceRoot               string
+	LogsDir                     string
+	AllowedTools                []string
+	BashAllowOutsideWorkspace   bool
+	BashAllowDangerousCommands  bool
 	ConversationLockTTL         time.Duration
 	MemoryWorkTimeout           time.Duration
 	ConversationLockWaitTimeout time.Duration
@@ -91,7 +67,7 @@ func configFilePath() string {
 func loadLLMConfig(fileCfg fileConfig) (Config, error) {
 	cfg := Config{
 		BaseURL: strings.TrimSpace(fileCfg.Config.BaseURL),
-		APIKey:  firstNonEmpty(getenv("OPENAI_API_KEY"), "sk-06bad5d0b8bc47409c9473aa74615a21"),
+		APIKey:  strings.TrimSpace(getenv("OPENAI_API_KEY")),
 		ModelID: strings.TrimSpace(fileCfg.Config.ModelID),
 	}
 

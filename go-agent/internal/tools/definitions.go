@@ -72,7 +72,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
-	toolDef("load_skill", "Load the full instructions of a skill by exact name before using or following that skill. It first looks up the current user's enabled database skills, then falls back to local builtin skills.", map[string]any{
+	toolDef("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill. Skills are loaded from the user's ~/.link/skills and the workspace .link/skills directories, with workspace skills taking precedence.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"name": strParam("Name of the skill to load"),

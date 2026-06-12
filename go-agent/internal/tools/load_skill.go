@@ -11,9 +11,10 @@ import (
 )
 
 type SkillSnapshot struct {
-	UserSkills  *sessions.SkillLoader
-	LocalSkills *sessions.SkillLoader
-	Merged      *sessions.SkillLoader
+	UserSkills      *sessions.SkillLoader
+	WorkspaceSkills *sessions.SkillLoader
+	LocalSkills     *sessions.SkillLoader
+	Merged          *sessions.SkillLoader
 }
 
 type LoadedSkill struct {
@@ -26,9 +27,10 @@ const skillSnapshotContextKey contextKey = "skill_snapshot"
 
 func NewSkillSnapshot(userSkills, localSkills *sessions.SkillLoader) *SkillSnapshot {
 	return &SkillSnapshot{
-		UserSkills:  userSkills,
-		LocalSkills: localSkills,
-		Merged:      sessions.MergeSkillLoaders(localSkills, userSkills),
+		UserSkills:      userSkills,
+		WorkspaceSkills: localSkills,
+		LocalSkills:     localSkills,
+		Merged:          sessions.MergeSkillLoaders(userSkills, localSkills),
 	}
 }
 
@@ -49,16 +51,14 @@ func (s *SkillSnapshot) LoadSkill(name string) (LoadedSkill, error) {
 	if s == nil {
 		return LoadedSkill{}, fmt.Errorf("no capabilities are available in this conversation")
 	}
-	if s.UserSkills != nil {
-		entry, err := s.UserSkills.GetEntry(name)
+	if s.Merged != nil {
+		entry, err := s.Merged.GetEntry(name)
 		if err == nil {
-			return LoadedSkill{Name: name, Source: "db", Entry: entry}, nil
-		}
-	}
-	if s.LocalSkills != nil {
-		entry, err := s.LocalSkills.GetEntry(name)
-		if err == nil {
-			return LoadedSkill{Name: name, Source: "local", Entry: entry}, nil
+			source := strings.TrimSpace(entry.Source)
+			if source == "" {
+				source = "local"
+			}
+			return LoadedSkill{Name: name, Source: source, Entry: entry}, nil
 		}
 	}
 	return LoadedSkill{}, fmt.Errorf("unknown skill %q. Available: %s", name, strings.Join(s.availableSkillNames(), ", "))
@@ -66,7 +66,7 @@ func (s *SkillSnapshot) LoadSkill(name string) (LoadedSkill, error) {
 
 func (s *SkillSnapshot) availableSkillNames() []string {
 	seen := map[string]struct{}{}
-	for _, loader := range []*sessions.SkillLoader{s.UserSkills, s.LocalSkills} {
+	for _, loader := range []*sessions.SkillLoader{s.Merged, s.UserSkills, s.WorkspaceSkills, s.LocalSkills} {
 		if loader == nil {
 			continue
 		}

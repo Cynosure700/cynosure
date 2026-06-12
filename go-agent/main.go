@@ -3,16 +3,11 @@ package main
 import (
 	"log"
 
-	"nano_cc/internal/web/app"
+	"nano_cc/internal/cli"
 )
 
 func main() {
-	server, err := app.NewServer()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := server.Run(); err != nil {
+	if err := cli.Main(); err != nil {
 		log.Fatal(err)
 	}
 }

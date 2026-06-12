@@ -11,9 +11,10 @@ import (
 )
 
 type SkillEntry struct {
-	Meta map[string]string
-	Body string
-	Path string
+	Meta   map[string]string
+	Body   string
+	Path   string
+	Source string
 }
 
 type SkillLoader struct {
@@ -25,6 +26,18 @@ const (
 	skillEntryFileName      = "SKILL.md"
 	defaultSkillDescription = "No description provided."
 )
+
+type SkillDir struct {
+	Path   string
+	Source string
+}
+
+type SkillSummary struct {
+	Name        string
+	Description string
+	Source      string
+	Path        string
+}
 
 func NewSkillLoader() *SkillLoader {
 	return &SkillLoader{Skills: make(map[string]*SkillEntry)}
@@ -43,16 +56,21 @@ func LoadBuiltinSkillsFromDir(dir string) (*SkillLoader, error) {
 }
 
 func (sl *SkillLoader) LoadAllFromDir(dir string) error {
+	return sl.LoadAllFromDirWithSource(dir, "")
+}
+
+func (sl *SkillLoader) LoadAllFromDirWithSource(dir string, source string) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.Skills = make(map[string]*SkillEntry)
+	seenInDir := make(map[string]string)
 
 	err := filepath.WalkDir(dir, func(fullPath string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() || d.Name() != skillEntryFileName {
+		if d.IsDir() || !isSkillEntryFile(d.Name()) {
 			return nil
 		}
 
@@ -63,10 +81,15 @@ func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 
 		meta, body := parseFrontmatter(string(data))
 		name := canonicalSkillName(fullPath, meta)
+		if previous, exists := seenInDir[name]; exists {
+			return fmt.Errorf("duplicate skill %q in %s and %s", name, previous, fullPath)
+		}
+		seenInDir[name] = fullPath
 		sl.Skills[name] = &SkillEntry{
-			Meta: meta,
-			Body: body,
-			Path: fullPath,
+			Meta:   meta,
+			Body:   body,
+			Path:   fullPath,
+			Source: source,
 		}
 		return nil
 	})
@@ -78,6 +101,30 @@ func (sl *SkillLoader) LoadAllFromDir(dir string) error {
 	}
 
 	return nil
+}
+
+func isSkillEntryFile(name string) bool {
+	return strings.EqualFold(name, skillEntryFileName)
+}
+
+func LoadSkillsFromDirs(dirs []SkillDir) (*SkillLoader, error) {
+	merged := NewSkillLoader()
+	entries := make(map[string]*SkillEntry)
+	for _, dir := range dirs {
+		path := strings.TrimSpace(dir.Path)
+		if path == "" {
+			continue
+		}
+		loader := NewSkillLoader()
+		if err := loader.LoadAllFromDirWithSource(path, strings.TrimSpace(dir.Source)); err != nil {
+			return nil, err
+		}
+		for name, entry := range loader.Entries() {
+			entries[name] = entry
+		}
+	}
+	merged.LoadFromEntries(entries)
+	return merged, nil
 }
 
 func (sl *SkillLoader) LoadFromEntries(entries map[string]*SkillEntry) {
@@ -132,9 +179,10 @@ func cloneSkillEntry(entry *SkillEntry) *SkillEntry {
 		meta[key] = value
 	}
 	return &SkillEntry{
-		Meta: meta,
-		Body: entry.Body,
-		Path: entry.Path,
+		Meta:   meta,
+		Body:   entry.Body,
+		Path:   entry.Path,
+		Source: entry.Source,
 	}
 }
 
@@ -204,6 +252,28 @@ func (sl *SkillLoader) GetDescriptions() string {
 	lines = append(lines, "</skills>")
 
 	return strings.Join(lines, "\n")
+}
+
+func (sl *SkillLoader) Summaries() []SkillSummary {
+	if sl == nil {
+		return nil
+	}
+	entries := sl.Entries()
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	summaries := make([]SkillSummary, 0, len(names))
+	for _, name := range names {
+		entry := entries[name]
+		description := strings.TrimSpace(entry.Meta["description"])
+		if description == "" {
+			description = defaultSkillDescription
+		}
+		summaries = append(summaries, SkillSummary{Name: name, Description: description, Source: entry.Source, Path: entry.Path})
+	}
+	return summaries
 }
 
 func (sl *SkillLoader) GetContent(name string) (string, error) {

@@ -16,6 +16,9 @@ func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 				t.Fatalf("expected load_skill description to contain %q, got %q", want, description)
 			}
 		}
+		if strings.Contains(strings.ToLower(description), "database") {
+			t.Fatalf("expected load_skill description to avoid database wording, got %q", description)
+		}
 		return
 	}
 	t.Fatalf("expected AllToolDefs to include load_skill")

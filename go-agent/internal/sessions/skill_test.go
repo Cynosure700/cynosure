@@ -49,6 +49,83 @@ Do the thing.`
 	}
 }
 
+func TestLoadAllFromDir_AcceptsLowercaseSkillEntryFile(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "lowercase-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.md"), []byte(`---
+name: lowercase-skill
+description: Lowercase entry
+---
+
+lowercase body`), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	loader := NewSkillLoader()
+	if err := loader.LoadAllFromDir(root); err != nil {
+		t.Fatalf("load skills: %v", err)
+	}
+	entry, ok := loader.Skills["lowercase-skill"]
+	if !ok {
+		t.Fatalf("expected lowercase skill.md to be loaded")
+	}
+	if entry.Path != filepath.Join(skillDir, "skill.md") {
+		t.Fatalf("Path = %q, want lowercase skill path", entry.Path)
+	}
+}
+
+func TestLoadSkillsFromDirsWorkspaceOverridesUser(t *testing.T) {
+	root := t.TempDir()
+	userDir := filepath.Join(root, "home", ".link", "skills")
+	workspaceDir := filepath.Join(root, "project", ".link", "skills")
+	writeSkillEntry(t, filepath.Join(userDir, "shared"), "skill.md", "shared", "User description", "user body")
+	writeSkillEntry(t, filepath.Join(workspaceDir, "shared"), "skill.md", "shared", "Workspace description", "workspace body")
+	writeSkillEntry(t, filepath.Join(userDir, "user-only"), "skill.md", "user-only", "User only", "user only body")
+
+	loader, err := LoadSkillsFromDirs([]SkillDir{{Path: userDir, Source: "user"}, {Path: workspaceDir, Source: "workspace"}})
+	if err != nil {
+		t.Fatalf("LoadSkillsFromDirs returned error: %v", err)
+	}
+	if len(loader.Skills) != 2 {
+		t.Fatalf("expected 2 skills after workspace override, got %d", len(loader.Skills))
+	}
+	shared := loader.Skills["shared"]
+	if shared.Body != "workspace body" {
+		t.Fatalf("shared body = %q, want workspace body", shared.Body)
+	}
+	if shared.Source != "workspace" {
+		t.Fatalf("shared source = %q, want workspace", shared.Source)
+	}
+	if loader.Skills["user-only"].Source != "user" {
+		t.Fatalf("user-only source = %q, want user", loader.Skills["user-only"].Source)
+	}
+}
+
+func TestLoadSkillsFromDirsRejectsDuplicateNameWithinSameDir(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, "skills")
+	writeSkillEntry(t, filepath.Join(skillsDir, "one"), "skill.md", "duplicate", "One", "one body")
+	writeSkillEntry(t, filepath.Join(skillsDir, "two"), "skill.md", "duplicate", "Two", "two body")
+
+	if _, err := LoadSkillsFromDirs([]SkillDir{{Path: skillsDir, Source: "user"}}); err == nil {
+		t.Fatalf("expected duplicate skill names in the same dir to fail")
+	}
+}
+
+func writeSkillEntry(t *testing.T, dir, fileName, name, description, body string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	doc := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n" + body
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(doc), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+}
+
 func TestCanonicalSkillName_FallsBackToDirectoryName(t *testing.T) {
 	name := canonicalSkillName(filepath.Join("/tmp", "my-skill", "SKILL.md"), map[string]string{})
 	if name != "my-skill" {
