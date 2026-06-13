@@ -769,6 +769,22 @@ func TestRunConfigDoesNotCaptureMouseClicks(t *testing.T) {
 	}
 }
 
+func TestConversationFrameDoesNotRenderSelectableBlankPadding(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+	model := updated.(Model)
+
+	frame := model.renderConversationFrame()
+	for _, line := range strings.Split(frame, "\n") {
+		if line != "" && strings.Trim(line, " ") == "" {
+			t.Fatalf("conversation frame contains selectable blank padding line %q", line)
+		}
+		if strings.HasSuffix(line, strings.Repeat(" ", 4)) {
+			t.Fatalf("conversation frame line has selectable right padding %q", line)
+		}
+	}
+}
+
 func TestUserMessagesRenderMutedFromAssistantOutput(t *testing.T) {
 	if got := userStyle().GetForeground(); got != tuiPalette.muted {
 		t.Fatalf("user foreground = %#v, want muted grey foreground to separate it from assistant output", got)

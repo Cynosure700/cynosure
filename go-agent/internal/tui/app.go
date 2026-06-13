@@ -841,7 +841,15 @@ func (m Model) workspaceLabel() string {
 }
 
 func (m Model) renderConversationFrame() string {
-	return conversationStyle().Width(max(10, m.width)).Render(m.viewport.View())
+	return trimSelectablePadding(conversationStyle().Width(max(10, m.width)).Render(m.viewport.View()))
+}
+
+func trimSelectablePadding(view string) string {
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderInput() string {
