@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "po_e7dedd1da027727d61c2397b",
+  "session_id": "99f6c277-f695-47f9-8a6e-8c91573f6083",
+  "conversation_id": "conv_a1ebf86b6d0ab87bbaa61928",
+  "user_id": "local-user",
+  "message_id": "msg_e61ccae3df91b38245b3e52d",
+  "tool_call_id": "call_00_9puCCeMbVJrBuUiQnzyI2560",
+  "kind": "tool_result",
+  "strategy": "tool_result_compression",
+  "original_bytes": 6823,
+  "content_sha256": "d9c2fc7f6669bd59d55dc484b6855c6f111aacd4613aab51d88d4d682da7f54a",
+  "preview": "/Users/bytedance/golang_pro/nano_cc/go-agent/architecture_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/config_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/config.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/manager_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/manager.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/transport_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/mcp/transport.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/compression_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/compression.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/conversation_memory_strategy.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/full_history_summarization.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/message_window_compression.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/reactive_compact.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/recent_tool_result_retention.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/token_estimator.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/compression/tool_result_compression.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/context_compression_test.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/context_compression.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/conversation_flow.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/conversation_memory.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/helpers.go\n/Users/bytedance/golang_pro/nano_cc/go-agent/internal/agent/runtime/hook_bri",
+  "content_file": "99f6c277-f695-47f9-8a6e-8c91573f6083-po_e7dedd1da027727d61c2397b.txt",
+  "created_at": "2026-06-13T17:17:32.978316+08:00"
+}

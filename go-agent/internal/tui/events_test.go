@@ -316,6 +316,118 @@ func TestViewportScrollsTranscriptToActivePrompt(t *testing.T) {
 	}
 }
 
+func TestPageUpScrollsTranscriptHistory(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+	bottomOffset := model.viewport.YOffset
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(Model)
+
+	if model.viewport.YOffset >= bottomOffset {
+		t.Fatalf("viewport offset = %d, want less than bottom offset %d after page up", model.viewport.YOffset, bottomOffset)
+	}
+	if strings.Contains(model.View(), "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want page up to reveal history instead of staying at active prompt", model.View())
+	}
+}
+
+func TestMouseWheelUpScrollsTranscriptHistory(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+	bottomOffset := model.viewport.YOffset
+
+	updated, _ = model.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	model = updated.(Model)
+
+	if model.viewport.YOffset >= bottomOffset {
+		t.Fatalf("viewport offset = %d, want less than bottom offset %d after wheel up", model.viewport.YOffset, bottomOffset)
+	}
+}
+
+func TestManualScrollUpPreventsAutoScrollOnNewContent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+
+	updated, _ = model.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	model = updated.(Model)
+	scrolledOffset := model.viewport.YOffset
+
+	updated, _ = model.Update(Event{Name: "assistant_delta", Content: "new streaming content"})
+	model = updated.(Model)
+
+	if model.viewport.YOffset != scrolledOffset {
+		t.Fatalf("viewport offset = %d, want to stay at manually scrolled offset %d when new content arrives", model.viewport.YOffset, scrolledOffset)
+	}
+	if strings.Contains(model.View(), "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want new content refresh not to force active prompt into view", model.View())
+	}
+}
+
+func TestBottomPositionAutoFollowsNewContent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+
+	updated, _ = model.Update(Event{Name: "assistant_delta", Content: "new streaming content"})
+	model = updated.(Model)
+
+	if !model.viewport.AtBottom() {
+		t.Fatalf("viewport offset = %d, want to keep following new content at bottom", model.viewport.YOffset)
+	}
+	if !strings.Contains(model.View(), "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want active prompt visible while following bottom", model.View())
+	}
+}
+
+func TestScrollingBackToBottomRestoresAutoFollow(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+
+	updated, _ = model.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	model = updated.(Model)
+	if !model.viewport.AtBottom() {
+		t.Fatalf("viewport offset = %d, want page down to return to bottom", model.viewport.YOffset)
+	}
+
+	updated, _ = model.Update(Event{Name: "assistant_delta", Content: "new streaming content"})
+	model = updated.(Model)
+
+	if !model.viewport.AtBottom() {
+		t.Fatalf("viewport offset = %d, want new content to follow after returning to bottom", model.viewport.YOffset)
+	}
+}
+
 func TestTypingRefreshesInlinePrompt(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -324,6 +436,38 @@ func TestTypingRefreshesInlinePrompt(t *testing.T) {
 
 	if !strings.Contains(model.View(), "› h") {
 		t.Fatalf("view = %q, want inline prompt to show typed text", model.View())
+	}
+}
+
+func TestTypingSpaceRefreshesInlinePrompt(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+	model := updated.(Model)
+
+	if !strings.Contains(model.renderInput(), "h "+inputCursor) {
+		t.Fatalf("input = %q, want typed space to remain visible before cursor", model.renderInput())
+	}
+}
+
+func TestSubmittingInputPreservesTypedSpaces(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello ")})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(Model)
+
+	if len(model.messages) == 0 || model.messages[len(model.messages)-1].Content != "hello " {
+		t.Fatalf("messages = %#v, want submitted text to preserve typed trailing space", model.messages)
+	}
+}
+
+func TestRunConfigKeepsTerminalCopyFriendly(t *testing.T) {
+	config := newRunConfig(context.Background(), NewModel(nil, SessionInfo{}))
+
+	if config.altScreen || config.mouseCellMotion {
+		t.Fatalf("run config = %#v, want no alt screen and no mouse capture so terminal text can be selected and copied", config)
 	}
 }
 

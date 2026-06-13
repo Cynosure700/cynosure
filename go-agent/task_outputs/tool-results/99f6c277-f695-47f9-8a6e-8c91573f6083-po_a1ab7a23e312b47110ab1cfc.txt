@@ -85,7 +85,6 @@ type Model struct {
 	toolCallCount    int
 	contextTokens    int
 	contextBudget    int
-	autoFollow       bool
 }
 
 func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
@@ -96,27 +95,15 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
 	renderer := newMarkdownRenderer(100)
-	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer, autoFollow: true}
+	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer}
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
 	previousConsole := logger.SetConsoleEnabled(false)
 	defer logger.SetConsoleEnabled(previousConsole)
-	config := newRunConfig(ctx, NewModel(runtimeService, session))
-	program := tea.NewProgram(config.model, config.options...)
+	program := tea.NewProgram(NewModel(runtimeService, session), tea.WithContext(ctx), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := program.Run()
 	return err
-}
-
-type runConfig struct {
-	model           Model
-	options         []tea.ProgramOption
-	altScreen       bool
-	mouseCellMotion bool
-}
-
-func newRunConfig(ctx context.Context, model Model) runConfig {
-	return runConfig{model: model, options: []tea.ProgramOption{tea.WithContext(ctx)}}
 }
 
 func (m Model) Init() tea.Cmd { return textarea.Blink }
@@ -144,12 +131,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "enter":
-			text := m.input.Value()
-			if strings.TrimSpace(text) == "" || m.running {
+			text := strings.TrimSpace(m.input.Value())
+			if text == "" || m.running {
 				return m, nil
 			}
 			m.input.Reset()
-			m.autoFollow = true
 			if m.resumeSelecting && m.handleResumeSelection(text) {
 				m.refreshViewport()
 				return m, nil
@@ -225,7 +211,6 @@ func (m *Model) updateViewportScroll(msg tea.Msg) (tea.Cmd, bool) {
 		case tea.KeyPgUp, tea.KeyPgDown, tea.KeyUp, tea.KeyDown:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			m.autoFollow = m.viewport.AtBottom()
 			return cmd, true
 		}
 	case tea.MouseMsg:
@@ -234,7 +219,6 @@ func (m *Model) updateViewportScroll(msg tea.Msg) (tea.Cmd, bool) {
 			case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
 				var cmd tea.Cmd
 				m.viewport, cmd = m.viewport.Update(msg)
-				m.autoFollow = m.viewport.AtBottom()
 				return cmd, true
 			}
 		}
@@ -492,13 +476,10 @@ func isLiveAssistantRole(role string) bool {
 }
 
 func (m *Model) refreshViewport() {
-	shouldFollow := m.autoFollow || m.viewport.AtBottom()
 	m.viewport.Width = max(10, m.width)
 	m.viewport.Height = m.viewportHeight()
 	m.viewport.SetContent(m.renderTranscript())
-	if shouldFollow {
-		m.viewport.GotoBottom()
-	}
+	m.viewport.GotoBottom()
 }
 
 func (m Model) viewportHeight() int {
@@ -606,7 +587,7 @@ func (m Model) renderConversationFrame() string {
 
 func (m Model) renderInput() string {
 	prompt := inputPromptStyle().Render("›")
-	text := m.input.Value()
+	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
 		text = inputPromptStyle().Render(inputCursor) + " " + subtleStyle().Render(m.input.Placeholder)
 	} else {

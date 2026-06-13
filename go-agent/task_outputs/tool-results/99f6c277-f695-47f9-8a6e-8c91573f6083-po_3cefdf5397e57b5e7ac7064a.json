@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "po_3cefdf5397e57b5e7ac7064a",
+  "session_id": "99f6c277-f695-47f9-8a6e-8c91573f6083",
+  "conversation_id": "conv_a1ebf86b6d0ab87bbaa61928",
+  "user_id": "local-user",
+  "message_id": "msg_d62d7401e7d415321a2b8117",
+  "tool_call_id": "call_05_rHhGBdFFI2eNeMssIBAC7023",
+  "kind": "tool_result",
+  "strategy": "tool_result_compression",
+  "original_bytes": 15294,
+  "content_sha256": "b1941aa99e0b6880923c356cabb024dd7c56a6b85eaa04a82ef1c54af85e002a",
+  "preview": "package runtime\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"strings\"\n\n\topenai \"github.com/sashabaranov/go-openai\"\n\n\t\"nano_cc/internal/agent/storage\"\n\t\"nano_cc/internal/idgen\"\n\t\"nano_cc/internal/logger\"\n)\n\nconst (\n\tMemoryTypeEpisodicMemory = \"episodic_memory\"\n\tMemoryTypeUserPreference = \"user_preference\"\n\tMemoryTypeProjectFact    = \"project_fact\"\n)\n\nconst (\n\tmaxPreferenceMemories    = 20\n\tmaxSessionSummaries      = 20\n\tsessionSummaryPruneCount = 10\n\tmaxProjectFactMemories   = 50\n\tmaxInjectedMemories      = 10\n\tmaxMemoryDialogueChars   = 4000\n\tmaxMemoryNameRunes       = 80\n\tmaxMemoryDescRunes       = 300\n\tmaxMemoryBodyRunes       = 2000\n)\n\nfunc validMemoryType(t string) bool {\n\tswitch t {\n\tcase MemoryTypeEpisodicMemory, MemoryTypeUserPreference, MemoryTypeProjectFact:\n\t\treturn true\n\t}\n\treturn false\n}\n\nconst memoryExtractionSystemPrompt = `You are a project-scoped long-term memory extraction engine for a personal assistant named Link.\nAll memories are valid ONLY for the current project. Do not create memories that should be reused in other projects.\nFrom the dialogue, extract durable memories worth keeping for the current project. Use the \"type\" field for three kinds:\n- \"episodic_memory\": a concrete event/experience in this project session. Preserve factual integrity and temporal order; summarize what happened, not raw messages.\n- \"user_preference\": a stable user preference, constraint, or recurring habit that applies to this project.\n- \"project_fact\": a reusable fact about the current project, such as architecture, commands, conventions, dependencies, known constraints, or implementation decisions. It is not general world knowledge and must not be treated as valid outside this project.\n\nRules:\n- Only extract NEW information not already covered by \"Existing memories\".\n- Do not store one-off, trivial, or sensitive private data (passwords, payment, health).\n- Do not extract facts about other projects.\n- \"name\": short title (\u003c=80 chars). \"description\": one-sentence gis",
+  "content_file": "99f6c277-f695-47f9-8a6e-8c91573f6083-po_3cefdf5397e57b5e7ac7064a.txt",
+  "created_at": "2026-06-13T17:17:02.960728+08:00"
+}

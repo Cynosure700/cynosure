@@ -23,7 +23,7 @@ const (
 var (
 	logFile        *os.File
 	logFilePath    string
-	consoleEnabled = true
+	consoleEnabled = false
 	logMu          sync.Mutex
 )
 

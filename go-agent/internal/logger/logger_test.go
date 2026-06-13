@@ -24,6 +24,16 @@ func TestInitFileLoggerUnderWorkspaceRoot_WritesIntoLogsDirectory(t *testing.T) 
 	}
 }
 
+func TestInfoDoesNotWriteToTerminalByDefault(t *testing.T) {
+	output := captureStdout(t, func() {
+		Info("startup log should stay out of terminal")
+	})
+
+	if output != "" {
+		t.Fatalf("stdout = %q, want no terminal output for logger.Info by default", output)
+	}
+}
+
 func TestInfoWritesDebugLogIntoWorkspaceLogs(t *testing.T) {
 	workspaceRoot := t.TempDir()
 
@@ -48,7 +58,7 @@ func TestConsoleDisabledSuppressesTerminalOutputButKeepsFileLog(t *testing.T) {
 		t.Fatalf("init file logger under workspace root: %v", err)
 	}
 	SetConsoleEnabled(false)
-	t.Cleanup(func() { SetConsoleEnabled(true) })
+	t.Cleanup(func() { SetConsoleEnabled(false) })
 
 	output := captureStdout(t, func() {
 		Info("tui-only log")
