@@ -12,10 +12,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"nano_cc/internal/agent/mcp"
 	"nano_cc/internal/agent/runtime"
 	"nano_cc/internal/agent/storage"
+	"nano_cc/internal/logger"
 	"nano_cc/internal/sessions"
 )
 
@@ -63,6 +65,8 @@ var tuiPalette = palette{
 	coral:    lipgloss.Color("210"),
 }
 
+const inputCursor = "█"
+
 type Model struct {
 	runtime          *runtime.Service
 	session          SessionInfo
@@ -90,12 +94,14 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input.SetHeight(2)
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
-	renderer, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(100))
+	renderer := newMarkdownRenderer(100)
 	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer}
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
-	program := tea.NewProgram(NewModel(runtimeService, session), tea.WithContext(ctx))
+	previousConsole := logger.SetConsoleEnabled(false)
+	defer logger.SetConsoleEnabled(previousConsole)
+	program := tea.NewProgram(NewModel(runtimeService, session), tea.WithContext(ctx), tea.WithAltScreen())
 	_, err := program.Run()
 	return err
 }
@@ -110,6 +116,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Width = msg.Width
 		m.viewport.Height = m.viewportHeight()
 		m.input.SetWidth(max(20, msg.Width-4))
+		m.renderer = newMarkdownRenderer(m.messageWidth())
 		m.refreshViewport()
 		return m, nil
 	case tea.KeyMsg:
@@ -145,6 +152,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ctx, cancel := context.WithCancel(context.Background())
 			m.cancel = cancel
 			return m, tea.Batch(m.waitEvent(), m.respond(ctx, text, generation))
+		}
+		if isTerminalProbeResponseInput(msg) {
+			return m, nil
 		}
 	case Event:
 		if msg.Generation != 0 && msg.Generation != m.generation {
@@ -476,27 +486,43 @@ func (m Model) renderMessages() string {
 func (m Model) renderMessage(msg Message) string {
 	switch msg.Role {
 	case "user":
-		return promptLineStyle().Render("›") + " " + userStyle().Render(msg.Content)
+		return promptLineStyle().Render("›") + " " + userStyle().Render(wrapText(msg.Content, m.messageWidth()-2))
 	case "assistant":
 		content := msg.Content
 		if m.renderer != nil {
 			if rendered, err := m.renderer.Render(content); err == nil {
-				content = strings.TrimSpace(rendered)
+				content = wrapText(strings.TrimSpace(rendered), m.messageWidth())
 			}
+		} else {
+			content = wrapText(content, m.messageWidth())
 		}
 		if m.running && strings.TrimSpace(msg.ReasoningContent) != "" {
-			content = thinkingStyle().Render("✽ 思考中\n"+strings.TrimSpace(msg.ReasoningContent)) + "\n" + content
+			content = thinkingStyle().Render("✽ 思考中\n"+wrapText(strings.TrimSpace(msg.ReasoningContent), m.messageWidth()-2)) + "\n" + content
 		}
 		return assistantLeadStyle().Render("go-agent") + "\n" + content
 	case "thinking":
-		return thinkingStyle().Render("✽ 思考中\n" + msg.Content)
+		return thinkingStyle().Render("✽ 思考中\n" + wrapText(msg.Content, m.messageWidth()-2))
 	case "system":
-		return systemStyle().Render("• " + msg.Content)
+		return systemStyle().Render("• " + wrapText(msg.Content, m.messageWidth()-2))
 	case "error":
-		return errorStyle().Render("✗ " + msg.Content)
+		return errorStyle().Render("✗ " + wrapText(msg.Content, m.messageWidth()-2))
 	default:
-		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + msg.Content
+		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + wrapText(msg.Content, m.messageWidth())
 	}
+}
+
+func (m Model) messageWidth() int {
+	return max(10, m.width)
+}
+
+func newMarkdownRenderer(width int) *glamour.TermRenderer {
+	renderer, _ := glamour.NewTermRenderer(glamour.WithStandardStyle("dark"), glamour.WithWordWrap(max(10, width)))
+	return renderer
+}
+
+func wrapText(text string, width int) string {
+	width = max(1, width)
+	return ansi.Hardwrap(text, width, true)
 }
 
 func (m Model) renderWelcome() string {
@@ -534,11 +560,19 @@ func (m Model) renderInput() string {
 	prompt := inputPromptStyle().Render("›")
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
-		text = subtleStyle().Render(m.input.Placeholder)
+		text = inputPromptStyle().Render(inputCursor) + " " + subtleStyle().Render(m.input.Placeholder)
 	} else {
-		text = userStyle().Render(text)
+		text = userStyle().Render(text) + inputPromptStyle().Render(inputCursor)
 	}
 	return inputLineStyle().Width(max(10, m.width)).Render(prompt + " " + text)
+}
+
+func isTerminalProbeResponseInput(msg tea.KeyMsg) bool {
+	if msg.Type != tea.KeyRunes {
+		return false
+	}
+	value := string(msg.Runes)
+	return strings.Contains(value, ";rgb:") && strings.Contains(value, "/")
 }
 
 func (m Model) renderLiveStatus() string {

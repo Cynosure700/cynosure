@@ -326,3 +326,53 @@ func TestTypingRefreshesInlinePrompt(t *testing.T) {
 		t.Fatalf("view = %q, want inline prompt to show typed text", model.View())
 	}
 }
+
+func TestEmptyInputShowsCursor(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+
+	input := model.renderInput()
+	if !strings.Contains(input, "█") {
+		t.Fatalf("input = %q, want visible cursor for empty input", input)
+	}
+	if !strings.Contains(input, "问 go-agent 一件事") {
+		t.Fatalf("input = %q, want placeholder to remain visible", input)
+	}
+}
+
+func TestTerminalColorProbeResponseDoesNotPolluteInput(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("11;rgb:1818/1818/1818")})
+	model := updated.(Model)
+
+	if strings.Contains(model.renderInput(), "rgb:") {
+		t.Fatalf("input = %q, want terminal color probe response ignored", model.renderInput())
+	}
+}
+
+func TestMessagesWrapToTerminalWidth(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	model := updated.(Model)
+
+	longChinese := strings.Repeat("这是一段很长的中文回答", 8)
+	for _, msg := range []Message{
+		{Role: "user", Content: longChinese},
+		{Role: "assistant", Content: longChinese},
+		{Role: "system", Content: longChinese},
+	} {
+		if got := maxRenderedLineWidth(model.renderMessage(msg)); got > model.width {
+			t.Fatalf("%s message rendered line width = %d, want <= terminal width %d; render = %q", msg.Role, got, model.width, model.renderMessage(msg))
+		}
+	}
+}
+
+func maxRenderedLineWidth(s string) int {
+	maxWidth := 0
+	for _, line := range strings.Split(s, "\n") {
+		maxWidth = max(maxWidth, lipgloss.Width(line))
+	}
+	return maxWidth
+}

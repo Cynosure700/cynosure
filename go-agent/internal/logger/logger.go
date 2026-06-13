@@ -21,9 +21,10 @@ const (
 )
 
 var (
-	logFile     *os.File
-	logFilePath string
-	logMu       sync.Mutex
+	logFile        *os.File
+	logFilePath    string
+	consoleEnabled = true
+	logMu          sync.Mutex
 )
 
 func InitFileLogger() error {
@@ -65,6 +66,20 @@ func LogFilePath() string {
 	logMu.Lock()
 	defer logMu.Unlock()
 	return logFilePath
+}
+
+func SetConsoleEnabled(enabled bool) bool {
+	logMu.Lock()
+	defer logMu.Unlock()
+	previous := consoleEnabled
+	consoleEnabled = enabled
+	return previous
+}
+
+func shouldWriteConsole() bool {
+	logMu.Lock()
+	defer logMu.Unlock()
+	return consoleEnabled
 }
 
 func writeDebugLog(level, msg string) {
@@ -121,36 +136,50 @@ func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err 
 }
 
 func Info(msg string) {
-	fmt.Printf("%s%s%s\n", blue, msg, reset)
+	if shouldWriteConsole() {
+		fmt.Printf("%s%s%s\n", blue, msg, reset)
+	}
 	writeDebugLog("INFO", msg)
 }
 
 func Warn(msg string) {
-	fmt.Printf("%s%s%s\n", yellow, msg, reset)
+	if shouldWriteConsole() {
+		fmt.Printf("%s%s%s\n", yellow, msg, reset)
+	}
 	writeDebugLog("WARN", msg)
 }
 
 func Error(msg string) {
-	fmt.Printf("%s%s%s\n", red, msg, reset)
+	if shouldWriteConsole() {
+		fmt.Printf("%s%s%s\n", red, msg, reset)
+	}
 	writeDebugLog("ERROR", msg)
 }
 
 func Success(msg string) {
-	fmt.Printf("%s%s%s\n", green, msg, reset)
+	if shouldWriteConsole() {
+		fmt.Printf("%s%s%s\n", green, msg, reset)
+	}
 	writeDebugLog("SUCCESS", msg)
 }
 
 func Tool(name, msg string) {
-	fmt.Printf("%s[%s]%s %s\n", cyan, name, reset, msg)
+	if shouldWriteConsole() {
+		fmt.Printf("%s[%s]%s %s\n", cyan, name, reset, msg)
+	}
 	writeDebugLog("TOOL", fmt.Sprintf("[%s] %s", name, msg))
 }
 
 func Assistant(msg string) {
-	fmt.Printf("%sAssistant:%s %s\n", green, reset, msg)
+	if shouldWriteConsole() {
+		fmt.Printf("%sAssistant:%s %s\n", green, reset, msg)
+	}
 	writeDebugLog("ASSISTANT", msg)
 }
 
 func User(msg string) {
-	fmt.Printf("%sYou:%s %s\n", blue, reset, msg)
+	if shouldWriteConsole() {
+		fmt.Printf("%sYou:%s %s\n", blue, reset, msg)
+	}
 	writeDebugLog("USER", msg)
 }
