@@ -2,6 +2,7 @@
 
 - [go-agent项目工作区精确路径](go-agent项目工作区精确路径.md) — 工作区路径为 /Users/bytedance/golang_pro/nano_cc/go-agent
 - [go-agent项目的技术栈与架构](go-agent项目的技术栈与架构.md) — go-agent是一个Go语言编写的TUI通用智能体，使用Deepseek、Bubble Tea、SQLite等。
+- [go-agent项目详细目录结构与核心架构](go-agent项目详细目录结构与核心架构.md) — 助手在总结中列出了go-agent项目的完整文件树、核心架构流程和关键特性
 - [创建 basic.go 并展示 Go 基础语法](创建-basic.go-并展示-Go-基础语法.md) — 用户要求创建 Go 文件并写基本语法，助手创建了 workspace/basic.go 并给出了语法总结表格。
 - [工作区定义和功能](工作区定义和功能.md) — Link描述工作区是其后台处理环境，用于阅读、分析和生成代码文件，产物直接返回给用户。
 - [当前工作区具体路径](当前工作区具体路径.md) — 当前项目所在的工作区绝对路径，用于所有文件操作和引用。

@@ -301,6 +301,33 @@ func (w *captureEventWriter) nonMetaEvents() []capturedEvent {
 	return out
 }
 
+func nonToolLifecycleEvents(events []capturedEvent) []capturedEvent {
+	out := make([]capturedEvent, 0, len(events))
+	for _, e := range events {
+		if e.name == toolCallStartEvent || e.name == toolCallDoneEvent {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func eventMap(t *testing.T, data any) map[string]any {
+	t.Helper()
+	m, ok := data.(map[string]any)
+	if !ok {
+		t.Fatalf("event data = %#v, want map[string]any", data)
+	}
+	return m
+}
+
+func stringValue(value any) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
 func testAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
 	return config.AppConfig{
@@ -648,7 +675,7 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 	if len(store.toolCalls) != 1 || store.toolCalls[0].ToolName != "bash" || store.toolCalls[0].Status != "success" {
 		t.Fatalf("expected one successful bash tool call, got %#v", store.toolCalls)
 	}
-	events := writer.nonMetaEvents()
+	events := nonToolLifecycleEvents(writer.nonMetaEvents())
 	if len(events) < 2 || events[0].name != "assistant_delta" || events[len(events)-1].name != "assistant" {
 		t.Fatalf("expected streamed final answer after tool call, got %#v", events)
 	}
@@ -1345,6 +1372,108 @@ func TestRespondToConversation_ReturnsSuccessfulToolResultIntoLoop(t *testing.T)
 	}
 	if storedHistory[3].Role != "assistant" || storedHistory[3].Content != "final answer" {
 		t.Fatalf("expected final assistant message at end of history, got %#v", storedHistory[3])
+	}
+}
+
+func TestRespondToConversation_EmitsToolLifecycleEvents(t *testing.T) {
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{{
+					ID:   "tool_lifecycle_1",
+					Type: "function",
+					Function: openai.FunctionCall{
+						Name:      "load_skill",
+						Arguments: `{"name":"builtin-skill"}`,
+					},
+				}}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
+	})
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: builtin}
+	writer := &captureEventWriter{}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_events", Title: "新对话"}, storage.User{ID: "usr_tool_events", Username: "tool-user"}, "加载技能", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := writer.nonMetaEvents()
+	if len(events) < 3 {
+		t.Fatalf("events = %#v, want at least tool start, tool done, assistant", events)
+	}
+	if events[0].name != toolCallStartEvent || events[1].name != toolCallDoneEvent {
+		t.Fatalf("event order = %#v, want tool_call_start then tool_call_done before assistant streaming", events)
+	}
+	start := eventMap(t, events[0].data)
+	if start["tool_call_id"] != "tool_lifecycle_1" || start["tool_name"] != "load_skill" || start["status"] != "running" {
+		t.Fatalf("start event = %#v, want running load_skill", start)
+	}
+	if !strings.Contains(stringValue(start["args_preview"]), "builtin-skill") {
+		t.Fatalf("start args_preview = %#v, want skill name", start["args_preview"])
+	}
+	done := eventMap(t, events[1].data)
+	if done["tool_call_id"] != "tool_lifecycle_1" || done["tool_name"] != "load_skill" || done["status"] != "success" {
+		t.Fatalf("done event = %#v, want success load_skill", done)
+	}
+	if !strings.Contains(stringValue(done["result_preview"]), "builtin-skill") {
+		t.Fatalf("done result_preview = %#v, want loaded skill preview", done["result_preview"])
+	}
+}
+
+func TestRespondToConversation_EmitsRejectedToolLifecycleEvent(t *testing.T) {
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{{
+					ID:   "tool_lifecycle_2",
+					Type: "function",
+					Function: openai.FunctionCall{
+						Name:      "load_skill",
+						Arguments: `{"name":"missing-skill"}`,
+					},
+				}}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "handled"},
+			}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), BuiltinSkills: sessions.NewSkillLoader()}
+	writer := &captureEventWriter{}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_tool_rejected", Title: "新对话"}, storage.User{ID: "usr_tool_rejected", Username: "tool-user"}, "加载不存在技能", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := writer.nonMetaEvents()
+	if len(events) < 2 || events[0].name != toolCallStartEvent || events[1].name != toolCallDoneEvent {
+		t.Fatalf("events = %#v, want tool lifecycle events", events)
+	}
+	done := eventMap(t, events[1].data)
+	if done["status"] != "rejected" {
+		t.Fatalf("done event status = %#v, want rejected", done["status"])
+	}
+	if !strings.Contains(stringValue(done["result_preview"]), "missing-skill") {
+		t.Fatalf("done result_preview = %#v, want rejection reason", done["result_preview"])
 	}
 }
 

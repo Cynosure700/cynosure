@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -18,9 +19,13 @@ import (
 )
 
 const (
-	assistantDeltaEvent = "assistant_delta"
-	reasoningDeltaEvent = "reasoning_delta"
-	maxRound            = 50
+	assistantDeltaEvent  = "assistant_delta"
+	reasoningDeltaEvent  = "reasoning_delta"
+	toolCallStartEvent   = "tool_call_start"
+	toolCallDoneEvent    = "tool_call_done"
+	maxRound             = 50
+	toolArgsPreviewMax   = 160
+	toolResultPreviewMax = 300
 
 	// defaultMaxTokens is the per-request output budget; on the first
 	// truncation it is upgraded to truncationMaxTokens.
@@ -164,6 +169,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
+			emitToolCallStart(state, toolCtx)
 			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID)}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
@@ -171,6 +177,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
+			emitToolCallDone(state, toolCtx)
 			state.ToolCallCount++
 			emitMeta(state)
 		}
@@ -187,6 +194,102 @@ func emitMeta(state *LoopState) {
 		"context_tokens":  state.LastContextTokens,
 		"context_budget":  state.LastContextBudget,
 	})
+}
+
+func emitToolCallStart(state *LoopState, toolCtx *ToolUseContext) {
+	if state == nil || state.Writer == nil || toolCtx == nil {
+		return
+	}
+	_ = state.Writer.Event(toolCallStartEvent, map[string]any{
+		"tool_call_id": toolCtx.ToolCall.ID,
+		"tool_name":    toolCtx.Name,
+		"raw_args":     toolCtx.RawArgs,
+		"args_preview": previewToolArgs(toolCtx.Name, toolCtx.RawArgs),
+		"status":       "running",
+	})
+}
+
+func emitToolCallDone(state *LoopState, toolCtx *ToolUseContext) {
+	if state == nil || state.Writer == nil || toolCtx == nil {
+		return
+	}
+	_ = state.Writer.Event(toolCallDoneEvent, map[string]any{
+		"tool_call_id":   toolCtx.ToolCall.ID,
+		"tool_name":      toolCtx.Name,
+		"raw_args":       toolCtx.RawArgs,
+		"args_preview":   previewToolArgs(toolCtx.Name, toolCtx.RawArgs),
+		"status":         toolCtx.Outcome.Status,
+		"result_preview": previewToolResult(toolCtx.Outcome),
+		"audit_summary":  toolCtx.Outcome.AuditSummary(),
+	})
+}
+
+func previewToolArgs(toolName, rawArgs string) string {
+	trimmed := strings.TrimSpace(rawArgs)
+	if trimmed == "" {
+		return ""
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &args); err != nil {
+		return truncatePreview(singleLine(trimmed), toolArgsPreviewMax)
+	}
+	for _, key := range preferredToolArgKeys(toolName) {
+		if value, ok := args[key]; ok {
+			return truncatePreview(fmt.Sprintf("%s: %s", key, singleLine(fmt.Sprint(value))), toolArgsPreviewMax)
+		}
+	}
+	return truncatePreview(singleLine(stableJSON(args)), toolArgsPreviewMax)
+}
+
+func preferredToolArgKeys(toolName string) []string {
+	if toolName == "bash" {
+		return []string{"command", "description"}
+	}
+	return []string{"file_path", "path", "name", "query", "command"}
+}
+
+func previewToolResult(outcome toolExecutionOutcome) string {
+	preview := outcome.Audit.OutcomeSummary
+	if strings.TrimSpace(preview) == "" {
+		preview = outcome.Result
+	}
+	return truncatePreview(limitPreviewLines(singleLine(preview), 3), toolResultPreviewMax)
+}
+
+func stableJSON(args map[string]any) string {
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%q:%q", key, fmt.Sprint(args[key])))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+func singleLine(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func limitPreviewLines(text string, maxLines int) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[:maxLines], "\n") + " …"
+}
+
+func truncatePreview(text string, maxLen int) string {
+	runes := []rune(strings.TrimSpace(text))
+	if maxLen <= 0 || len(runes) <= maxLen {
+		return string(runes)
+	}
+	if maxLen == 1 {
+		return "…"
+	}
+	return string(runes[:maxLen-1]) + "…"
 }
 
 // runModelRoundWithRecovery wraps runModelRoundStream with truncation and

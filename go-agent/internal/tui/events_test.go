@@ -226,6 +226,71 @@ func TestModelMetaEventUpdatesLiveStatus(t *testing.T) {
 	}
 }
 
+func TestModelDisplaysToolCallLifecycle(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id": "tool_1",
+		"tool_name":    "bash",
+		"args_preview": "command: go test ./...",
+		"status":       "running",
+	}})
+	model := updated.(Model)
+	if len(model.messages) != 1 || model.messages[0].Role != "tool" || model.messages[0].ToolCall == nil {
+		t.Fatalf("messages = %#v, want one tool message", model.messages)
+	}
+	rendered := model.renderMessages()
+	for _, want := range []string{"⏺ Bash", "command: go test ./...", "⎿ running"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_1",
+		"tool_name":      "bash",
+		"args_preview":   "command: go test ./...",
+		"status":         "success",
+		"result_preview": "ok nano_cc/internal/tui 0.42s",
+	}})
+	model = updated.(Model)
+	if len(model.messages) != 1 {
+		t.Fatalf("messages = %#v, want tool done to update existing message", model.messages)
+	}
+	rendered = model.renderMessages()
+	for _, want := range []string{"✓ Bash", "⎿ success · ok nano_cc/internal/tui 0.42s"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+}
+
+func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_missing_start",
+		"tool_name":      "read_file",
+		"args_preview":   "file_path: /tmp/a.go",
+		"status":         "rejected",
+		"result_preview": "Error: outside workspace",
+	}})
+	model := updated.(Model)
+	if len(model.messages) != 1 || model.messages[0].Role != "tool" || model.messages[0].ToolCall == nil {
+		t.Fatalf("messages = %#v, want appended completed tool message", model.messages)
+	}
+	rendered := model.renderMessages()
+	for _, want := range []string{"✗ Read", "⎿ rejected · Error: outside workspace"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+}
+
 func TestViewUsesTerminalTranscriptWithoutConversationBox(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	app.width = 80

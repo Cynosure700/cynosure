@@ -41,6 +41,15 @@ type Message struct {
 	Role             string
 	Content          string
 	ReasoningContent string
+	ToolCall         *ToolCallView
+}
+
+type ToolCallView struct {
+	ID            string
+	Name          string
+	ArgsPreview   string
+	Status        string
+	ResultPreview string
 }
 
 type palette struct {
@@ -200,6 +209,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "meta":
 			m.updateMetaFromData(msg.Data)
+		case "tool_call_start":
+			m.appendToolCallStart(msg.Data)
+		case "tool_call_done":
+			m.updateToolCallDone(msg.Data)
 		case "error":
 			m.appendMessage("error", msg.Content)
 			m.running = false
@@ -487,6 +500,54 @@ func (m *Model) replaceLastAssistant(content, reasoning string) {
 	m.messages[len(m.messages)-1].ReasoningContent = reasoning
 }
 
+func (m *Model) appendToolCallStart(data any) {
+	tool := toolCallViewFromEvent(data)
+	if tool.ID == "" && tool.Name == "" {
+		return
+	}
+	if tool.Status == "" {
+		tool.Status = "running"
+	}
+	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
+}
+
+func (m *Model) updateToolCallDone(data any) {
+	tool := toolCallViewFromEvent(data)
+	if tool.ID == "" && tool.Name == "" {
+		return
+	}
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		if m.messages[i].Role != "tool" || m.messages[i].ToolCall == nil {
+			continue
+		}
+		if tool.ID != "" && m.messages[i].ToolCall.ID == tool.ID {
+			m.messages[i].ToolCall.Name = firstNonEmpty(tool.Name, m.messages[i].ToolCall.Name)
+			m.messages[i].ToolCall.ArgsPreview = firstNonEmpty(tool.ArgsPreview, m.messages[i].ToolCall.ArgsPreview)
+			m.messages[i].ToolCall.Status = firstNonEmpty(tool.Status, m.messages[i].ToolCall.Status)
+			m.messages[i].ToolCall.ResultPreview = tool.ResultPreview
+			return
+		}
+	}
+	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
+}
+
+func toolCallViewFromEvent(data any) ToolCallView {
+	return ToolCallView{
+		ID:            eventString(data, "tool_call_id"),
+		Name:          eventString(data, "tool_name"),
+		ArgsPreview:   eventString(data, "args_preview"),
+		Status:        eventString(data, "status"),
+		ResultPreview: eventString(data, "result_preview"),
+	}
+}
+
+func firstNonEmpty(primary, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return primary
+	}
+	return fallback
+}
+
 func isLiveAssistantRole(role string) bool {
 	return role == "assistant" || role == "thinking"
 }
@@ -554,9 +615,73 @@ func (m Model) renderMessage(msg Message) string {
 		return systemStyle().Render("• " + wrapText(msg.Content, m.messageWidth()-2))
 	case "error":
 		return errorStyle().Render("✗ " + wrapText(msg.Content, m.messageWidth()-2))
+	case "tool":
+		return m.renderToolMessage(msg)
 	default:
 		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + wrapText(msg.Content, m.messageWidth())
 	}
+}
+
+func (m Model) renderToolMessage(msg Message) string {
+	if msg.ToolCall == nil {
+		return toolStyleForStatus("").Render("⏺ Tool")
+	}
+	tool := msg.ToolCall
+	status := strings.TrimSpace(tool.Status)
+	if status == "" {
+		status = "running"
+	}
+	icon := toolIcon(status)
+	name := displayToolName(tool.Name)
+	line := icon + " " + name
+	if strings.TrimSpace(tool.ArgsPreview) != "" {
+		line += "(" + tool.ArgsPreview + ")"
+	}
+	result := status
+	if strings.TrimSpace(tool.ResultPreview) != "" {
+		result += " · " + tool.ResultPreview
+	}
+	body := line + "\n  ⎿ " + result
+	return toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-2))
+}
+
+func toolIcon(status string) string {
+	switch status {
+	case "success":
+		return "✓"
+	case "rejected", "error", "failed":
+		return "✗"
+	default:
+		return "⏺"
+	}
+}
+
+func displayToolName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "Tool"
+	}
+	if strings.HasPrefix(trimmed, "mcp__") {
+		parts := strings.Split(trimmed, "__")
+		if len(parts) >= 3 {
+			return "MCP " + humanToolName(parts[len(parts)-1])
+		}
+	}
+	return humanToolName(trimmed)
+}
+
+func humanToolName(name string) string {
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' })
+	if len(parts) == 0 {
+		return name
+	}
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, "")
 }
 
 func (m Model) messageWidth() int {
@@ -713,6 +838,17 @@ func systemStyle() lipgloss.Style {
 
 func errorStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(tuiPalette.coral)
+}
+
+func toolStyleForStatus(status string) lipgloss.Style {
+	switch status {
+	case "success":
+		return lipgloss.NewStyle().Foreground(tuiPalette.mint).PaddingLeft(1)
+	case "rejected", "error", "failed":
+		return lipgloss.NewStyle().Foreground(tuiPalette.coral).PaddingLeft(1)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")).PaddingLeft(1)
+	}
 }
 
 func promptLineStyle() lipgloss.Style {
