@@ -32,7 +32,11 @@ func (s *Store) AppendToolResultLog(ctx context.Context, entry storage.ToolResul
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now()
 	}
-	path := filepath.Join(s.workspaceRoot, "task_outputs", sessionID, "tools.md")
+	dir, err := taskOutputsDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, sessionID, "tools.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

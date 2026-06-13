@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"nano_cc/internal/agent/storage"
+	"nano_cc/internal/config"
 )
 
 type persistedOutputMetadata struct {
@@ -33,7 +34,7 @@ type persistedOutputMetadata struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-func persistOutputToWorkspace(ctx context.Context, workspaceRoot, sessionID string, output storage.PersistedOutput) (storage.PersistedOutput, error) {
+func persistOutputToWorkspace(ctx context.Context, sessionID string, output storage.PersistedOutput) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return output, err
 	}
@@ -57,7 +58,10 @@ func persistOutputToWorkspace(ctx context.Context, workspaceRoot, sessionID stri
 
 	contentFile := persistedOutputContentFileName(sessionID, output.ID)
 	metadataFile := persistedOutputMetadataFileName(sessionID, output.ID)
-	dir := persistedOutputDir(workspaceRoot)
+	dir, err := persistedOutputDir()
+	if err != nil {
+		return output, err
+	}
 	metadata := persistedOutputMetadata{
 		Version:        1,
 		ID:             output.ID,
@@ -87,7 +91,7 @@ func persistOutputToWorkspace(ctx context.Context, workspaceRoot, sessionID stri
 	return output, nil
 }
 
-func loadPersistedOutputFromWorkspace(ctx context.Context, workspaceRoot, sessionID, id string) (storage.PersistedOutput, error) {
+func loadPersistedOutputFromWorkspace(ctx context.Context, sessionID, id string) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return storage.PersistedOutput{}, err
 	}
@@ -97,7 +101,10 @@ func loadPersistedOutputFromWorkspace(ctx context.Context, workspaceRoot, sessio
 	if !validStoredOutputID(id) {
 		return storage.PersistedOutput{}, fmt.Errorf("invalid persisted output id: %q", id)
 	}
-	dir := persistedOutputDir(workspaceRoot)
+	dir, err := persistedOutputDir()
+	if err != nil {
+		return storage.PersistedOutput{}, err
+	}
 	metadataBytes, err := os.ReadFile(filepath.Join(dir, persistedOutputMetadataFileName(sessionID, id)))
 	if err != nil {
 		return storage.PersistedOutput{}, err
@@ -137,14 +144,17 @@ func loadPersistedOutputFromWorkspace(ctx context.Context, workspaceRoot, sessio
 	}, nil
 }
 
-func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, workspaceRoot, sessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error) {
+func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, sessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return storage.PersistedOutput{}, err
 	}
 	if !validSessionID(sessionID) {
 		return storage.PersistedOutput{}, fmt.Errorf("invalid session_id: %q", sessionID)
 	}
-	dir := persistedOutputDir(workspaceRoot)
+	dir, err := persistedOutputDir()
+	if err != nil {
+		return storage.PersistedOutput{}, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -172,13 +182,21 @@ func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, workspaceR
 		if metadata.SessionID != sessionID || metadata.ConversationID != conversationID || metadata.UserID != userID || metadata.MessageID != messageID || metadata.ToolCallID != toolCallID || metadata.Strategy != strategy || metadata.ContentSHA256 != contentSHA256 {
 			continue
 		}
-		return loadPersistedOutputFromWorkspace(ctx, workspaceRoot, sessionID, metadata.ID)
+		return loadPersistedOutputFromWorkspace(ctx, sessionID, metadata.ID)
 	}
 	return storage.PersistedOutput{}, sql.ErrNoRows
 }
 
-func persistedOutputDir(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, "task_outputs", "tool-results")
+func persistedOutputDir() (string, error) {
+	dir, err := taskOutputsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tool-results"), nil
+}
+
+func taskOutputsDir() (string, error) {
+	return config.LinkTaskOutputsDir()
 }
 
 func persistedOutputContentFileName(sessionID, id string) string {

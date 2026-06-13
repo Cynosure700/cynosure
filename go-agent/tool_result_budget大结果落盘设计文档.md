@@ -9,20 +9,20 @@
 - 上下文压缩链路已经有 `ToolResultCompressionStrategy`：当最近一轮 tool_result 总字节数超过 `200 * 1024` 时，会按结果大小从大到小替换为 `<persisted-output>` 标记与前 2000 字符预览，核心逻辑在 `internal/agent/runtime/compression/tool_result_compression.go:76`。
 - 当前大结果保存仍依赖 `Store.CreatePersistedOutput` 的本地内存 map，进程退出后不可恢复，见 `internal/local/store.go:185`。
 - `read_persisted_output` 已存在，可按 id 分段读取 persisted output，处理入口在 `internal/tools/persisted_output.go:42`，读取适配器在 `internal/agent/runtime/context_compression.go:114`。
-- 工具执行结果目前只追加到内存中的 `state.History` / `state.ModelHistory`，追加点在 `internal/agent/runtime/hooks/tool.go:42`，尚未写入当前工作区的 `task_outputs/{session_id}/tools.md`。
+- 工具执行结果目前只追加到内存中的 `state.History` / `state.ModelHistory`，追加点在 `internal/agent/runtime/hooks/tool.go:42`，尚未写入用户目录的 `~/.link/task_outputs/{session_id}/tools.md`。
 
-本需求要求把 tool_result_budget 触发的大结果落盘到当前工作区，并把所有工具执行结果追加写入当前工作区的 Markdown 文件，便于 TUI 本地使用、会话排查和跨进程恢复。
+本需求要求把 tool_result_budget 触发的大结果落盘到用户目录 `~/.link/task_outputs/`，并把所有工具执行结果追加写入该目录下的 Markdown 文件，便于 TUI 本地使用、会话排查和跨进程恢复。
 
 ## 2. 需求与边界
 
 ### 2.1 目标
 
-1. 当 tool_result_budget 触发大结果压缩时，将完整工具结果落盘到当前工作区：
-   - 目录：`task_outputs/tool-results/`
+1. 当 tool_result_budget 触发大结果压缩时，将完整工具结果落盘到用户目录：
+   - 目录：`~/.link/task_outputs/tool-results/`
    - 策略：从最大的 tool_result 开始落盘，直到当前上下文内 tool_result 总字节数降到预算以内。
    - 上下文保留：`<persisted-output>` 标记 + 前 2000 字符预览。
 2. 工具每次执行完成后，将工具执行结果追加写入：
-   - 文件：`task_outputs/{session_id}/tools.md`
+   - 文件：`~/.link/task_outputs/{session_id}/tools.md`
    - 写入方式：追加写，保留历史工具执行记录。
 3. `read_persisted_output` 继续可用：模型看到 `<persisted-output>` 后，仍能通过 id 分段读取完整结果。
 
@@ -31,14 +31,14 @@
 1. 不改变工具本身的执行逻辑、权限模型和 TUI 展示样式。
 2. 不改变 `~/link/session/{session_id}/history` / `model_history` 的会话历史格式。
 3. 不新增远端存储或数据库依赖。
-4. 不把 `task_outputs/{session_id}/tools.md` 的内容自动注入 LLM 上下文；上下文仍只通过模型历史与压缩策略控制。
+4. 不把 `~/.link/task_outputs/{session_id}/tools.md` 的内容自动注入 LLM 上下文；上下文仍只通过模型历史与压缩策略控制。
 
 ### 2.3 明确假设
 
-1. “当前工作区”使用 TUI 启动时的 `workspaceRoot` / `CWD`，即 `local.Store.workspaceRoot` 当前记录的路径。
-2. 需求中的 `task_outputs /{session_id}/tools.md` 视为路径书写空格误差，实际实现为 `task_outputs/{session_id}/tools.md`。
-3. `task_outputs/tool-results/` 不再额外按 session 分目录；文件名中包含 `session_id` 与 persisted output id，避免冲突并便于定位。
-4. 大结果文件写入当前工作区，`tools.md` 也写入当前工作区；这与历史会话文件仍写在 `~/link/session` 下互不替代。
+1. TUI 仍使用 `workspaceRoot` / `CWD` 标识当前项目与校验会话归属，但工具输出文件统一写入用户目录 `~/.link/task_outputs/`。
+2. 需求中的 `task_outputs /{session_id}/tools.md` 视为路径书写空格误差，实际实现为 `~/.link/task_outputs/{session_id}/tools.md`。
+3. `~/.link/task_outputs/tool-results/` 不再额外按 session 分目录；文件名中包含 `session_id` 与 persisted output id，避免冲突并便于定位。
+4. 大结果文件和 `tools.md` 均写入 `~/.link/task_outputs/`；这与历史会话文件仍写在 `~/link/session` 下互不替代。
 
 ## 3. 方案对比
 
@@ -46,7 +46,7 @@
 
 在本地 `Store` 的 persisted output 创建/查询路径中增加文件落盘：
 
-- `CreatePersistedOutput` 同时写内存 map 和 `task_outputs/tool-results/{session_id}-{id}.txt`。
+- `CreatePersistedOutput` 同时写内存 map 和 `~/.link/task_outputs/tool-results/{session_id}-{id}.txt`。
 - `GetPersistedOutputForConversation` 内存命中则直接返回；内存未命中时从文件恢复内容。
 - `GetPersistedOutputByMessageHash` 继续使用内存索引；如需跨进程恢复，可读取 sidecar metadata 重建索引。
 
@@ -72,10 +72,10 @@
 
 ### 4.1 目录结构
 
-当前工作区下新增：
+用户目录下新增：
 
 ```text
-task_outputs/
+~/.link/task_outputs/
 ├── tool-results/
 │   ├── {session_id}-{persisted_output_id}.txt
 │   └── {session_id}-{persisted_output_id}.json
@@ -156,7 +156,7 @@ Metadata 文件建议格式：
 
 1. 先按当前内存 map 查找，并校验 `user_id` 与 `conversation_id`。
 2. 未命中时，通过 `conversation_id` 找到当前 `Conversation`，取得 `session_id`。
-3. 在 `task_outputs/tool-results/` 中读取 `{session_id}-{id}.json`。
+3. 在 `~/.link/task_outputs/tool-results/` 中读取 `{session_id}-{id}.json`。
 4. 校验 metadata：
    - id 一致。
    - conversation_id 一致。
@@ -165,15 +165,15 @@ Metadata 文件建议格式：
 5. 读取 `.txt` 内容并计算 sha256，与 metadata 中的 `content_sha256` 对比。
 6. 返回 `storage.PersistedOutput`。
 
-这样 TUI 重启、恢复历史会话后，只要当前工作区的 `task_outputs/tool-results/` 仍在，模型就可以继续通过 marker id 读取完整输出。
+这样 TUI 重启、恢复历史会话后，只要 `~/.link/task_outputs/tool-results/` 仍在，模型就可以继续通过 marker id 读取完整输出。
 
-### 4.6 `task_outputs/{session_id}/tools.md` 追加写
+### 4.6 `~/.link/task_outputs/{session_id}/tools.md` 追加写
 
 在工具执行后 hook 中追加写入：
 
 - 当前追加工具消息的入口是 `appendToolMessageHook`，见 `internal/agent/runtime/hooks/tool.go:42`。
 - 该 hook 目前只更新 `state.Messages`、`state.History`、`state.ModelHistory`。
-- 设计新增一个 Store 能力，例如 `AppendToolResultLog(ctx, conversationID, userID, toolCallID, toolName, rawArgs, outcome)`，由本地 Store 负责写入工作区。
+- 设计新增一个 Store 能力，例如 `AppendToolResultLog(ctx, conversationID, userID, toolCallID, toolName, rawArgs, outcome)`，由本地 Store 负责写入 `~/.link/task_outputs/`。
 
 追加格式建议：
 
@@ -235,8 +235,8 @@ type toolResultLogStore interface {
 
 - `history`：继续保存展示历史，包含完整工具结果或压缩后的 marker，取决于当轮写入时机。
 - `model_history`：继续保存压缩后的模型历史，用于下轮上下文。
-- `task_outputs/tool-results/`：保存被 tool_result_budget 移出上下文的大结果全文。
-- `task_outputs/{session_id}/tools.md`：保存每次工具执行的结果日志，不参与上下文压缩。
+- `~/.link/task_outputs/tool-results/`：保存被 tool_result_budget 移出上下文的大结果全文。
+- `~/.link/task_outputs/{session_id}/tools.md`：保存每次工具执行的结果日志，不参与上下文压缩。
 
 ## 5. 错误处理
 
@@ -245,7 +245,7 @@ type toolResultLogStore interface {
 3. sha256 校验失败：返回错误，不返回可能损坏的内容。
 4. `tools.md` 追加失败：记录日志，不影响工具消息追加到模型上下文。
 5. session_id 或 output id 非法：拒绝写入/读取，避免路径穿越。
-6. 工作区目录不存在：创建 `task_outputs` 子目录；若创建失败按上述策略处理。
+6. 用户目录下 `~/.link/task_outputs/` 不存在：自动创建；若创建失败按上述策略处理。
 
 ## 6. 测试计划
 
@@ -256,7 +256,7 @@ type toolResultLogStore interface {
    - 超阈值后从最大结果开始落盘。
    - marker 保留前 2000 字符预览。
 2. `local.Store.CreatePersistedOutput` 新增测试：
-   - 创建 `task_outputs/tool-results/{session_id}-{id}.txt/.json`。
+   - 创建 `~/.link/task_outputs/tool-results/{session_id}-{id}.txt/.json`。
    - 文件内容等于完整 result。
    - metadata 字段完整，sha256 正确。
 3. `local.Store.GetPersistedOutputForConversation` 新增测试：
@@ -265,7 +265,7 @@ type toolResultLogStore interface {
    - user_id / conversation_id 不匹配时拒绝。
    - sha256 不匹配时报错。
 4. `AppendToolResultLog` 新增测试：
-   - 首次创建 `task_outputs/{session_id}/tools.md`。
+   - 首次创建 `~/.link/task_outputs/{session_id}/tools.md`。
    - 多次调用追加多段记录。
    - 结果中包含反引号时 Markdown 仍结构完整。
 5. hook 测试：
@@ -276,24 +276,24 @@ type toolResultLogStore interface {
 
 1. 在临时工作区触发一个超过 200KB 的工具输出。
 2. 确认模型上下文中只剩 `<persisted-output>` + 2000 字符预览。
-3. 确认当前工作区生成 `task_outputs/tool-results/*.txt` 与 `.json`。
+3. 确认用户目录生成 `~/.link/task_outputs/tool-results/*.txt` 与 `.json`。
 4. 调用 `read_persisted_output(id, offset, limit)` 能读取完整内容分片。
-5. 确认 `task_outputs/{session_id}/tools.md` 追加了工具名、参数、状态与结果。
+5. 确认 `~/.link/task_outputs/{session_id}/tools.md` 追加了工具名、参数、状态与结果。
 6. 重启 TUI 并 `/resume` 同一会话后，再调用 `read_persisted_output` 仍可读取文件中的完整输出。
 
 ## 7. 实施步骤建议
 
 1. 在 `internal/local` 中新增 persisted output 文件辅助逻辑：路径构造、安全文件名校验、metadata 结构、原子写、文件读取与 sha256 校验。
-2. 修改 `local.Store.CreatePersistedOutput`：保持内存写入，同时写入 `task_outputs/tool-results/`。
+2. 修改 `local.Store.CreatePersistedOutput`：保持内存写入，同时写入 `~/.link/task_outputs/tool-results/`。
 3. 修改 `local.Store.GetPersistedOutputForConversation`：增加文件 fallback。
 4. 新增 `storage.ToolResultLogEntry` 与 `AppendToolResultLog` 能力。
-5. 在工具 post hook / append hook 后追加写 `task_outputs/{session_id}/tools.md`。
+5. 在工具 post hook / append hook 后追加写 `~/.link/task_outputs/{session_id}/tools.md`。
 6. 补充单元测试和集成测试。
 
 ## 8. 验收标准
 
-1. 超过 tool_result_budget 时，大结果从最大的开始落盘到当前工作区 `task_outputs/tool-results/`。
+1. 超过 tool_result_budget 时，大结果从最大的开始落盘到 `~/.link/task_outputs/tool-results/`。
 2. 模型上下文中被落盘的大结果只保留 `<persisted-output>` 标记与前 2000 字符预览。
 3. `read_persisted_output` 能读取本轮和恢复会话后的 persisted output。
-4. 每次工具执行后，当前工作区 `task_outputs/{session_id}/tools.md` 都会追加对应结果。
+4. 每次工具执行后，`~/.link/task_outputs/{session_id}/tools.md` 都会追加对应结果。
 5. `go test ./...` 通过。

@@ -89,6 +89,22 @@ func LinkSkillsDir() (string, error) {
 	return filepath.Join(home, ".link", "skills"), nil
 }
 
+func LinkMemoryDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".link", "memory"), nil
+}
+
+func LinkTaskOutputsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".link", "task_outputs"), nil
+}
+
 func LinkSessionDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

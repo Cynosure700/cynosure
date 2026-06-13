@@ -3,6 +3,8 @@ package local
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"unicode"
 
 	"nano_cc/internal/agent/storage"
+	"nano_cc/internal/config"
 	"nano_cc/internal/idgen"
 )
 
@@ -27,15 +30,20 @@ type MarkdownMemoryStore struct {
 }
 
 func NewMarkdownMemoryStore(workspaceRoot string) (*MarkdownMemoryStore, error) {
-	root := filepath.Join(strings.TrimSpace(workspaceRoot), ".link", "memory")
+	projectName := sanitizeName(filepath.Base(filepath.Clean(workspaceRoot)))
+	if projectName == "" {
+		projectName = "project"
+	}
+	baseDir, err := config.LinkMemoryDir()
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(baseDir, workspaceMemoryDirName(workspaceRoot))
 	store := &MarkdownMemoryStore{
 		rootDir:     root,
 		indexPath:   filepath.Join(root, "memory.md"),
 		sessionsDir: filepath.Join(root, "sessions"),
-		projectName: sanitizeName(filepath.Base(filepath.Clean(workspaceRoot))),
-	}
-	if store.projectName == "" {
-		store.projectName = "project"
+		projectName: projectName,
 	}
 	if err := store.EnsureLayout(); err != nil {
 		return nil, err
@@ -451,6 +459,19 @@ func sanitizeName(s string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-._")
+}
+
+func workspaceMemoryDirName(workspaceRoot string) string {
+	base := sanitizeName(filepath.Base(filepath.Clean(workspaceRoot)))
+	if base == "" {
+		base = "project"
+	}
+	abs, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		abs = filepath.Clean(workspaceRoot)
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return base + "-" + hex.EncodeToString(sum[:])[:8]
 }
 
 func safeRelativeMemoryPath(path string) bool {

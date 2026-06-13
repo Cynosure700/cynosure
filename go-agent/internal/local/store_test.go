@@ -35,7 +35,9 @@ func TestStoreMaintainsConversationHistory(t *testing.T) {
 }
 
 func TestStorePersistsToolResultOutputToWorkspaceFileAndRestoresAfterRestart(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -64,8 +66,8 @@ func TestStorePersistsToolResultOutputToWorkspaceFileAndRestoresAfterRestart(t *
 	if err := store.CreatePersistedOutput(ctx, output); err != nil {
 		t.Fatalf("CreatePersistedOutput returned error: %v", err)
 	}
-	contentPath := filepath.Join(workspace, "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
-	metaPath := filepath.Join(workspace, "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".json")
+	contentPath := filepath.Join(home, ".link", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
+	metaPath := filepath.Join(home, ".link", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".json")
 	contentBytes, err := os.ReadFile(contentPath)
 	if err != nil {
 		t.Fatalf("expected persisted content file: %v", err)
@@ -99,7 +101,9 @@ func TestStorePersistsToolResultOutputToWorkspaceFileAndRestoresAfterRestart(t *
 }
 
 func TestStoreRestoresPersistedOutputByMessageHashFromWorkspace(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -145,7 +149,9 @@ func TestStoreRestoresPersistedOutputByMessageHashFromWorkspace(t *testing.T) {
 }
 
 func TestStoreRejectsCorruptPersistedToolResultFile(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -161,7 +167,7 @@ func TestStoreRejectsCorruptPersistedToolResultFile(t *testing.T) {
 	if err := store.CreatePersistedOutput(ctx, output); err != nil {
 		t.Fatalf("CreatePersistedOutput returned error: %v", err)
 	}
-	contentPath := filepath.Join(workspace, "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
+	contentPath := filepath.Join(home, ".link", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
 	if err := os.WriteFile(contentPath, []byte("被篡改"), 0o644); err != nil {
 		t.Fatalf("tamper content file: %v", err)
 	}
@@ -178,7 +184,9 @@ func TestStoreRejectsCorruptPersistedToolResultFile(t *testing.T) {
 }
 
 func TestStoreRejectsPersistedToolResultFromDifferentUser(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -207,7 +215,9 @@ func TestStoreRejectsPersistedToolResultFromDifferentUser(t *testing.T) {
 }
 
 func TestStoreAppendsToolResultLogUnderSessionDirectory(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -226,7 +236,7 @@ func TestStoreAppendsToolResultLogUnderSessionDirectory(t *testing.T) {
 	if err := store.AppendToolResultLog(ctx, second); err != nil {
 		t.Fatalf("AppendToolResultLog second returned error: %v", err)
 	}
-	logPath := filepath.Join(workspace, "task_outputs", conv.SessionID, "tools.md")
+	logPath := filepath.Join(home, ".link", "task_outputs", conv.SessionID, "tools.md")
 	bodyBytes, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read tools.md: %v", err)
@@ -264,7 +274,9 @@ func TestStoreConversationCacheIsIndependentCopy(t *testing.T) {
 }
 
 func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -275,7 +287,8 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 		t.Fatalf("InsertMemory returned error: %v", err)
 	}
 
-	indexPath := filepath.Join(workspace, ".link", "memory", "memory.md")
+	memoryRoot := filepath.Join(home, ".link", "memory", workspaceMemoryDirName(workspace))
+	indexPath := filepath.Join(memoryRoot, "memory.md")
 	indexBytes, err := os.ReadFile(indexPath)
 	if err != nil {
 		t.Fatalf("read memory index: %v", err)
@@ -297,8 +310,51 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 	}
 }
 
+func TestMarkdownMemoryStoreDoesNotListOtherWorkspaceMemoriesFromHomeLink(t *testing.T) {
+	home := t.TempDir()
+	workspace := filepath.Join(t.TempDir(), "project-a")
+	otherWorkspace := filepath.Join(t.TempDir(), "project-b")
+	t.Setenv("HOME", home)
+	ctx := context.Background()
+
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	if err := store.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProjectFact, Name: "当前项目", Description: "current", Body: "只属于当前项目"}); err != nil {
+		t.Fatalf("InsertMemory current returned error: %v", err)
+	}
+	otherStore, err := NewStoreWithMemory(otherWorkspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory other returned error: %v", err)
+	}
+	if err := otherStore.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProjectFact, Name: "其他项目", Description: "other", Body: "不应被当前项目检索到"}); err != nil {
+		t.Fatalf("InsertMemory other returned error: %v", err)
+	}
+
+	freshStore, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory fresh returned error: %v", err)
+	}
+	items, err := freshStore.ListRelevantMemories(ctx, LocalUserID)
+	if err != nil {
+		t.Fatalf("ListRelevantMemories returned error: %v", err)
+	}
+	if len(items) != 1 || !strings.Contains(items[0].Body, "只属于当前项目") {
+		t.Fatalf("items = %#v, want only current workspace memory", items)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".link", "memory", workspaceMemoryDirName(workspace), "memory.md")); err != nil {
+		t.Fatalf("current workspace memory index not under home .link: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".link", "memory", workspaceMemoryDirName(otherWorkspace), "memory.md")); err != nil {
+		t.Fatalf("other workspace memory index not under home .link: %v", err)
+	}
+}
+
 func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
+	home := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv("HOME", home)
 	store, err := NewStoreWithMemory(workspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
@@ -317,7 +373,8 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 		t.Fatalf("ReplaceConversationMemories second returned error: %v", err)
 	}
 
-	sessionPath := filepath.Join(workspace, ".link", "memory", "sessions", conv.SessionID+".md")
+	memoryRoot := filepath.Join(home, ".link", "memory", workspaceMemoryDirName(workspace))
+	sessionPath := filepath.Join(memoryRoot, "sessions", conv.SessionID+".md")
 	bodyBytes, err := os.ReadFile(sessionPath)
 	if err != nil {
 		t.Fatalf("read session memory: %v", err)
@@ -326,7 +383,7 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 	if strings.Contains(body, "第一轮") || !strings.Contains(body, "第二轮") || !strings.Contains(body, conv.SessionID) {
 		t.Fatalf("session memory should be overwritten in one file, got %q", body)
 	}
-	entries, err := filepath.Glob(filepath.Join(workspace, ".link", "memory", "sessions", "*.md"))
+	entries, err := filepath.Glob(filepath.Join(memoryRoot, "sessions", "*.md"))
 	if err != nil {
 		t.Fatalf("glob session memories: %v", err)
 	}
@@ -497,7 +554,7 @@ func TestBootstrapLoadsLinkMarkdownIntoRuntime(t *testing.T) {
 	if bundle.Conversation.SessionID == "" || bundle.Conversation.SessionID == bundle.Conversation.ID {
 		t.Fatalf("SessionID = %q, ConversationID = %q", bundle.Conversation.SessionID, bundle.Conversation.ID)
 	}
-	if _, err := os.Stat(filepath.Join(workspace, ".link", "memory", "memory.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".link", "memory", workspaceMemoryDirName(workspace), "memory.md")); err != nil {
 		t.Fatalf("memory index not created: %v", err)
 	}
 }

@@ -70,6 +70,7 @@ func runTUI(ctx context.Context, opts Options) error {
 		MCPServers:   bundle.MCPServers,
 		SkillCount:   bundle.SkillCount,
 		MCPToolCount: bundle.MCPToolCount,
+		ModelID:      bundle.Runtime.Cfg.LLM.ModelID,
 	})
 }
 

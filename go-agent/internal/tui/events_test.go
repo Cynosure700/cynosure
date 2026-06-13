@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,12 @@ import (
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/sessions"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func plainTerminalText(text string) string {
+	return ansiEscapePattern.ReplaceAllString(text, "")
+}
 
 type fakeSessionResumer struct {
 	sessions []storage.ResumableSession
@@ -185,6 +192,43 @@ func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
 	}
 }
 
+func TestModelDisplaysOnlyCurrentAssistantReasoningWhileRunning(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{
+		{Role: "assistant", Content: "历史答案", ReasoningContent: "历史思考"},
+		{Role: "user", Content: "继续"},
+	}
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "当前思考"})
+	model := updated.(Model)
+	rendered := model.renderMessages()
+
+	if !strings.Contains(rendered, "当前思考") {
+		t.Fatalf("rendered messages = %q, want current reasoning", rendered)
+	}
+	if strings.Contains(rendered, "历史思考") {
+		t.Fatalf("rendered messages = %q, should keep historical reasoning collapsed while current reasoning streams", rendered)
+	}
+}
+
+func TestModelDoesNotExpandHistoricalReasoningBeforeCurrentReasoningStarts(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{
+		{Role: "user", Content: "上一问"},
+		{Role: "assistant", Content: "历史答案", ReasoningContent: "历史思考"},
+		{Role: "user", Content: "新问题"},
+	}
+	app.running = true
+
+	rendered := app.renderMessages()
+
+	if strings.Contains(rendered, "历史思考") {
+		t.Fatalf("rendered messages = %q, should keep historical reasoning collapsed before current reasoning starts", rendered)
+	}
+}
+
 func TestModelAssistantFinalEventHidesReasoningAfterDoneAndKeepsMeta(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
@@ -291,23 +335,62 @@ func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 	}
 }
 
-func TestViewUsesTerminalTranscriptWithoutConversationBox(t *testing.T) {
+func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.appendMessage("user", "新问题")
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "需要先跑测试"})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id": "tool_1",
+		"tool_name":    "bash",
+		"args_preview": "command: go test ./...",
+		"status":       "running",
+	}})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_1",
+		"tool_name":      "bash",
+		"args_preview":   "command: go test ./...",
+		"status":         "success",
+		"result_preview": "ok nano_cc/internal/tui 0.42s",
+	}})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "reasoning_delta", Content: "再检查结果"})
+	model := updated.(Model)
+	rendered := model.renderMessages()
+	for _, want := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok nano_cc/internal/tui 0.42s"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q visible before assistant reply starts", rendered, want)
+		}
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_delta", Content: "完成"})
+	model = updated.(Model)
+	rendered = model.renderMessages()
+	for _, want := range []string{"新问题", "完成"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	for _, forbidden := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok nano_cc/internal/tui 0.42s"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("rendered = %q, should hide %q once assistant reply starts", rendered, forbidden)
+		}
+	}
+}
+
+func TestViewUsesClaudeLikeSeparatedTerminalRegions(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	app.width = 80
 	app.height = 24
 	app.viewport.Width = 80
-	app.viewport.Height = 18
+	app.viewport.Height = app.viewportHeight()
 	app.appendMessage("user", "hello")
 	app.appendMessage("assistant", "你好")
 	app.refreshViewport()
 
 	view := app.View()
-	for _, forbidden := range []string{"✦ go-agent", "cwd /tmp/project"} {
-		if strings.Contains(view, forbidden) {
-			t.Fatalf("view = %q, should not render fixed header %q", view, forbidden)
-		}
-	}
-	for _, want := range []string{"nano, but cozy", "› hello", "go-agent", "你好", "工具 0", "上下文 --"} {
+	for _, want := range []string{"go-agent", "/tmp/project", "› hello", "你好", "工具 0", "上下文 --", "╭", "╰"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
 		}
@@ -340,7 +423,154 @@ func TestViewFitsWithinTerminalHeight(t *testing.T) {
 	}
 }
 
-func TestViewKeepsWelcomeAndPromptInScrollableTranscript(t *testing.T) {
+func TestViewSeparatesHeaderTranscriptAndInputLikeClaudeCode(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", SkillCount: 2, MCPToolCount: 3})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+	model.appendMessage("user", "hello")
+	model.appendMessage("assistant", "你好")
+	model.refreshViewport()
+
+	view := model.View()
+	for _, want := range []string{"go-agent", "/tmp/project", "╭", "╰", "Enter 发送", "上下文 --"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want Claude-like separated region marker %q", view, want)
+		}
+	}
+	if model.viewport.Height > 14 {
+		t.Fatalf("viewport height = %d, want room reserved for header and boxed input", model.viewport.Height)
+	}
+	if lipgloss.Height(view) > model.height {
+		t.Fatalf("view height = %d, want <= terminal height %d", lipgloss.Height(view), model.height)
+	}
+}
+
+func TestHeaderShowsOnlyModelAndWorkspaceMetadata(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash", SkillCount: 2, MCPToolCount: 3})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+
+	header := model.renderHeader()
+	for _, want := range []string{"deepseek-v4-flash", "/tmp/project"} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("header = %q, want metadata %q", header, want)
+		}
+	}
+	for _, forbidden := range []string{"go-agent", "workspace ", "Welcome back!", "API Usage Billing", "Tips for getting started", "Project guide", "Skills 2", "MCP tools 3"} {
+		if strings.Contains(header, forbidden) {
+			t.Fatalf("header = %q, should not contain noisy metadata %q", header, forbidden)
+		}
+	}
+}
+
+func TestHeaderUsesGreenAccentAndCompactCenteredLinkVersionMascot(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+
+	header := model.renderHeader()
+	for _, want := range []string{`Link version: 0.0.1`, `Welcome back`, `/^ ^\`, `/ 0 0 \`, `V\ Y /V`, `/ - \`, `|| (__V`} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("header = %q, want compact Link version mascot part %q", header, want)
+		}
+	}
+	for _, forbidden := range []string{"/\\_/\\", "( o.o )", "> ^ <", "Doggy Server", "DOGGY API", `^-----^`, `Q /`, `(___\\====`, "Ready ✓"} {
+		if strings.Contains(header, forbidden) {
+			t.Fatalf("header = %q, should not contain old/oversized mascot part %q", header, forbidden)
+		}
+	}
+	plain := plainTerminalText(header)
+	if got := lipgloss.Height(plain); got > 13 {
+		t.Fatalf("header height = %d, want compact Link version header height <= 13", got)
+	}
+	if strings.Index(plain, "Welcome back") > strings.Index(plain, "model deepseek-v4-flash") {
+		t.Fatalf("header = %q, want Welcome back above model line", header)
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, `Link version: 0.0.1`) {
+			leftPadding := strings.Index(line, `Link version: 0.0.1`)
+			if leftPadding < 30 {
+				t.Fatalf("header mascot line = %q, want Link version content centered with substantial left padding", line)
+			}
+		}
+	}
+	if headerAccentColor() != tuiPalette.mint {
+		t.Fatalf("header accent = %q, want green accent matching mint palette %q", headerAccentColor(), tuiPalette.mint)
+	}
+}
+
+func TestHeaderBoxClosesWithinTerminalWidth(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/Users/bytedance/golang_pro/nano_cc/go-agent", ModelID: "deepseek-v4-flash"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+
+	header := plainTerminalText(model.renderHeader())
+	for _, line := range strings.Split(header, "\n") {
+		if got := lipgloss.Width(line); got > model.width {
+			t.Fatalf("header line width = %d, want <= terminal width %d: %q", got, model.width, line)
+		}
+	}
+	if !strings.Contains(header, "╮") || !strings.Contains(header, "╯") {
+		t.Fatalf("header = %q, want closed right-side rounded border", header)
+	}
+}
+
+func TestAssistantMessageRendersContentWithoutGoAgentLead(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+
+	rendered := app.renderMessage(Message{Role: "assistant", Content: "你好"})
+	if strings.Contains(rendered, "go-agent") {
+		t.Fatalf("assistant render = %q, should render answer directly without go-agent label", rendered)
+	}
+	if !strings.Contains(rendered, "你好") {
+		t.Fatalf("assistant render = %q, want assistant content", rendered)
+	}
+}
+
+func TestHeaderStaysVisibleWhenTranscriptScrolls(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	model := updated.(Model)
+	for i := 0; i < 20; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(Model)
+
+	view := model.View()
+	for _, want := range []string{"deepseek-v4-flash", "/tmp/project"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view = %q, want fixed header metadata %q after scrolling transcript", view, want)
+		}
+	}
+}
+
+func TestViewFitsVerySmallTerminalHeight(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 5})
+	model := updated.(Model)
+	model.appendMessage("assistant", "reply")
+	model.refreshViewport()
+
+	if got := lipgloss.Height(model.View()); got > model.height {
+		t.Fatalf("view height = %d, want <= tiny terminal height %d", got, model.height)
+	}
+}
+
+func TestHeaderKeepsLongWorkspaceOnOneLine(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/a/very/long/workspace/path/that/should/not/wrap/the/header", SkillCount: 2, MCPToolCount: 3})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
+	model := updated.(Model)
+
+	header := model.renderHeader()
+	if !strings.Contains(header, "…") {
+		t.Fatalf("header = %q, want long workspace truncated with ellipsis", header)
+	}
+}
+
+func TestViewKeepsWelcomeAndMessagesInScrollableTranscriptWithFixedPrompt(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model := updated.(Model)
@@ -349,16 +579,19 @@ func TestViewKeepsWelcomeAndPromptInScrollableTranscript(t *testing.T) {
 	model.refreshViewport()
 
 	view := model.View()
-	for _, want := range []string{"nano, but cozy", "› hello", "go-agent", "你好", "问 go-agent 一件事"} {
+	for _, want := range []string{"› hello", "go-agent", "你好", "问 go-agent 一件事"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
 		}
 	}
-	if strings.Index(view, "› hello") > strings.Index(view, "go-agent") {
+	if strings.Index(view, "› hello") > strings.Index(view, "你好") {
 		t.Fatalf("view = %q, want assistant answer below the submitted user prompt", view)
 	}
-	if strings.Index(view, "你好") > strings.Index(view, "问 go-agent 一件事") {
-		t.Fatalf("view = %q, want next prompt below assistant answer", view)
+	if !strings.Contains(model.renderInputArea(), "问 go-agent 一件事") {
+		t.Fatalf("input area = %q, want fixed prompt to contain placeholder", model.renderInputArea())
+	}
+	if strings.Contains(model.renderTranscript(), "问 go-agent 一件事") {
+		t.Fatalf("transcript = %q, want active prompt outside scrollable history", model.renderTranscript())
 	}
 }
 
@@ -381,7 +614,7 @@ func TestViewportScrollsTranscriptToActivePrompt(t *testing.T) {
 	}
 }
 
-func TestPageUpScrollsTranscriptHistory(t *testing.T) {
+func TestPageUpScrollsTranscriptHistoryWhileKeepingPromptFixed(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
 	model := updated.(Model)
@@ -398,8 +631,8 @@ func TestPageUpScrollsTranscriptHistory(t *testing.T) {
 	if model.viewport.YOffset >= bottomOffset {
 		t.Fatalf("viewport offset = %d, want less than bottom offset %d after page up", model.viewport.YOffset, bottomOffset)
 	}
-	if strings.Contains(model.View(), "问 go-agent 一件事") {
-		t.Fatalf("view = %q, want page up to reveal history instead of staying at active prompt", model.View())
+	if !strings.Contains(model.View(), "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want fixed prompt to remain visible after page up", model.View())
 	}
 }
 
@@ -442,8 +675,8 @@ func TestManualScrollUpPreventsAutoScrollOnNewContent(t *testing.T) {
 	if model.viewport.YOffset != scrolledOffset {
 		t.Fatalf("viewport offset = %d, want to stay at manually scrolled offset %d when new content arrives", model.viewport.YOffset, scrolledOffset)
 	}
-	if strings.Contains(model.View(), "问 go-agent 一件事") {
-		t.Fatalf("view = %q, want new content refresh not to force active prompt into view", model.View())
+	if !strings.Contains(model.View(), "问 go-agent 一件事") {
+		t.Fatalf("view = %q, want fixed prompt to remain visible while history stays scrolled", model.View())
 	}
 }
 
@@ -528,11 +761,20 @@ func TestSubmittingInputPreservesTypedSpaces(t *testing.T) {
 	}
 }
 
-func TestRunConfigKeepsTerminalCopyFriendly(t *testing.T) {
+func TestRunConfigDoesNotCaptureMouseClicks(t *testing.T) {
 	config := newRunConfig(context.Background(), NewModel(nil, SessionInfo{}))
 
-	if config.altScreen || config.mouseCellMotion {
-		t.Fatalf("run config = %#v, want no alt screen and no mouse capture so terminal text can be selected and copied", config)
+	if !config.altScreen || config.mouseCellMotion {
+		t.Fatalf("run config = %#v, want alt screen without mouse capture so terminal clicks keep native selection behavior", config)
+	}
+}
+
+func TestUserMessagesRenderMutedFromAssistantOutput(t *testing.T) {
+	if got := userStyle().GetForeground(); got != tuiPalette.muted {
+		t.Fatalf("user foreground = %#v, want muted grey foreground to separate it from assistant output", got)
+	}
+	if userStyle().GetForeground() == tuiPalette.ink {
+		t.Fatalf("user foreground = %#v, want a different color from the default assistant output", userStyle().GetForeground())
 	}
 }
 

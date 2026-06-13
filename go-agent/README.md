@@ -9,7 +9,7 @@
 - **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
 - **Skill 系统**：启动时读取 `~/.link/skills` 与 `<cwd>/.link/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.link/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
-- **项目级记忆**：启动时读取 `<cwd>/.link/memory/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
+- **项目级记忆**：启动时读取 `~/.link/memory/<workspace-key>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
 - **历史会话恢复**：对话历史持久化到 `~/link/session/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
 - **上下文压缩**：请求模型前自动压缩超长历史，支持大工具结果落盘、消息窗口裁剪、最近工具结果保留与 413 后激进压缩；上下文摘要仅保存在运行期内存中，不做持久化。
 
@@ -77,8 +77,8 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ### 本地存储边界
 
-- **项目级文件**：`<cwd>/.link/memory/` 保存项目记忆，`<cwd>/task_outputs/` 保存工具输出日志和大结果落盘文件，`<cwd>/.link/skills` 与 `<cwd>/.link/.mcp.json` 分别提供工作区 Skills 与 MCP 配置。
-- **用户级文件**：`~/.link/settings.json` 保存 LLM 配置，`~/.link/skills` 保存用户级 Skills，`~/link/session/{session_id}/` 保存历史会话。
+- **项目级文件**：`<cwd>/.link/skills` 与 `<cwd>/.link/.mcp.json` 分别提供工作区 Skills 与 MCP 配置。
+- **用户级文件**：`~/.link/settings.json` 保存 LLM 配置，`~/.link/skills` 保存用户级 Skills，`~/.link/memory/` 保存项目记忆，`~/.link/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/link/session/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
 ### `config.json` 示例
@@ -97,10 +97,10 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ## 项目级记忆
 
-TUI 本地模式会在当前工作区创建并维护 `.link/memory/` 目录。记忆只对当前项目下的会话有效；切换到其他项目时，会读取那个项目自己的 `.link/memory/`，不会复用当前项目记忆。
+TUI 本地模式会在用户目录创建并维护 `~/.link/memory/<workspace-key>/` 目录。`<workspace-key>` 由当前工作区目录名和工作区绝对路径 hash 组成；记忆只对当前项目下的会话有效，切换到其他项目时不会复用当前项目记忆。
 
 ```text
-<cwd>/.link/memory/
+~/.link/memory/<workspace-key>/
 ├── memory.md                 # 长期记忆索引
 ├── <memory-name>.md          # 单条长期记忆
 └── sessions/
@@ -109,7 +109,7 @@ TUI 本地模式会在当前工作区创建并维护 `.link/memory/` 目录。�
 
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
 - 长期记忆类型包括 `user_preference`、`episodic_memory` 和 `project_fact`。`project_fact` 用于记录当前项目事实，例如架构、命令、约定、依赖、已知约束和实现决策。
-- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `.link/memory/sessions/<session_id>.md`，不会按轮次生成多个文件。
+- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.link/memory/<workspace-key>/sessions/<session_id>.md`，不会按轮次生成多个文件。
 - 会话收尾更新只对当前项目当前会话加锁，锁 key 为 `项目名 + session_id`。
 
 ## 历史会话
@@ -130,10 +130,10 @@ TUI 会将每个会话的展示历史和模型历史分别写入用户目录下�
 
 ## 工具输出落盘
 
-TUI 会在当前工作区维护 `task_outputs/`，用于保存工具执行审计记录和被上下文压缩移出模型上下文的大工具结果：
+TUI 会在用户目录维护 `~/.link/task_outputs/`，用于保存工具执行审计记录和被上下文压缩移出模型上下文的大工具结果：
 
 ```text
-<cwd>/task_outputs/
+~/.link/task_outputs/
 ├── tool-results/
 │   ├── <session_id>-<persisted_output_id>.txt   # 大工具结果全文
 │   └── <session_id>-<persisted_output_id>.json  # 结果 metadata 与 sha256
@@ -141,9 +141,9 @@ TUI 会在当前工作区维护 `task_outputs/`，用于保存工具执行审计
     └── tools.md                                 # 当前会话工具执行结果追加日志
 ```
 
-- 当最近一轮 `tool_result` 总量超过预算时，系统会从最大的结果开始落盘到 `task_outputs/tool-results/`，模型上下文中只保留 `<persisted-output>` 标记和前 2000 字符预览。
+- 当最近一轮 `tool_result` 总量超过预算时，系统会从最大的结果开始落盘到 `~/.link/task_outputs/tool-results/`，模型上下文中只保留 `<persisted-output>` 标记和前 2000 字符预览。
 - 模型如需读取完整结果，会通过 `read_persisted_output(id, offset, limit)` 分段读取，读取时会校验会话、用户、conversation 和 sha256。
-- 每次工具执行完成后，都会向 `task_outputs/{session_id}/tools.md` 追加工具名、参数、状态、审计摘要和结果内容，便于本地排查；该文件不会自动注入模型上下文。
+- 每次工具执行完成后，都会向 `~/.link/task_outputs/{session_id}/tools.md` 追加工具名、参数、状态、审计摘要和结果内容，便于本地排查；该文件不会自动注入模型上下文。
 
 ## 启动 TUI
 

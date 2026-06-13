@@ -11,21 +11,21 @@
 
 本次改造目标：
 
-1. 将记忆系统存储迁移到当前工作目录下的 `.link/memory/` 目录。
-2. 每条长期记忆是一个独立 `.md` 文件，并由 `memory/memory.md` 作为索引文件维护文件位置、名称和描述。
-3. 系统启动/构建提示词时先加载 `memory/memory.md`，将候选记忆索引交给大模型判断哪些记忆有用，再按需读取/注入记忆内容或摘要到系统提示词。
+1. 将记忆系统存储迁移到用户目录下的 `~/.link/memory/<workspace-key>/` 目录。
+2. 每条长期记忆是一个独立 `.md` 文件，并由 `~/.link/memory/<workspace-key>/memory.md` 作为索引文件维护文件位置、名称和描述。
+3. 系统启动/构建提示词时先加载当前工作区对应的 `memory.md`，将候选记忆索引交给大模型判断哪些记忆有用，再按需读取/注入记忆内容或摘要到系统提示词。
 4. 当前会话记忆使用 `session_id` 标识；同一会话只维护同一个 `.md` 文件，每轮结束后更新该文件，不生成多个会话记忆文件。
 5. 保持现有“每轮结束异步更新记忆、失败不影响用户响应”的运行特性。
-6. 所有记忆只对当前项目下的会话有效；打开其他项目时只能读取该项目自己的 `.link/memory/`，不得复用当前项目记忆。
+6. 所有记忆只对当前项目下的会话有效；打开其他项目时只能读取 `~/.link/memory/` 下该项目自己的 `<workspace-key>/`，不得复用当前项目记忆。
 
 ## 2. 需求拆解
 
 ### 2.1 长期记忆文件结构
 
-工作目录下新增 `.link/memory/`：
+用户目录下新增 `~/.link/memory/<workspace-key>/`：
 
 ```text
-<cwd>/.link/memory/
+~/.link/memory/<workspace-key>/
   memory.md
   language-preference.md
   project-style.md
@@ -65,16 +65,16 @@ metadata:
 
 - `metadata.node_type` 固定为 `memory`。
 - `metadata.type` 与改造后的 `storage.Memory.Type` 对齐，可为 `user_preference`、`episodic_memory`、`project_fact`。
-- `metadata.project` 记录当前项目名，用于审计和提示词说明；实际隔离以 `<cwd>/.link/memory` 的项目目录边界为准。
+- `metadata.project` 记录当前项目名，用于审计和提示词说明；实际隔离以 `~/.link/memory/<workspace-key>/` 的项目目录边界为准。
 - `originSessionId` 记录生成该长期记忆的会话来源。
-- 索引中的链接路径相对 `.link/memory/` 目录，禁止越界到工作目录外。
+- 索引中的链接路径相对 `~/.link/memory/<workspace-key>/` 目录，禁止越界到该目录外。
 
 ### 2.2 当前会话记忆文件结构
 
 当前会话记忆写入：
 
 ```text
-<cwd>/.link/memory/sessions/<session_id>.md
+~/.link/memory/<workspace-key>/sessions/<session_id>.md
 ```
 
 文件内容同样使用 front matter，但 `node_type` 使用 `session_memory`：
@@ -113,7 +113,7 @@ metadata:
 
 ### 方案 A：直接把现有 Store 方法改成 Markdown 文件读写（推荐）
 
-在 `internal/local` 中实现一个 Markdown 记忆存储层，让本地 `Store` 的记忆接口真正读写 `.link/memory/` 文件；运行时 `runtime.memory.go` 和 `runtime.conversation_memory.go` 尽量复用现有抽取、选择、合并逻辑。
+在 `internal/local` 中实现一个 Markdown 记忆存储层，让本地 `Store` 的记忆接口真正读写 `~/.link/memory/<workspace-key>/` 文件；运行时 `runtime.memory.go` 和 `runtime.conversation_memory.go` 尽量复用现有抽取、选择、合并逻辑。
 
 优点：改动集中，复用现有运行时接口、测试和异步调度逻辑；TUI 与未来可能存在的数据库 Store 保持接口隔离。缺点：需要在本地 Store 内补齐索引解析、Markdown 序列化和原子写入。
 
@@ -137,13 +137,15 @@ metadata:
 
 新增 `internal/local/memory_store.go`，提供 `MarkdownMemoryStore`：
 
-- `rootDir`: `<WorkspaceRoot>/.link/memory`
-- `indexPath`: `<WorkspaceRoot>/.link/memory/memory.md`
-- `sessionsDir`: `<WorkspaceRoot>/.link/memory/sessions`
+- `rootDir`: `~/.link/memory/<workspace-key>`
+- `indexPath`: `~/.link/memory/<workspace-key>/memory.md`
+- `sessionsDir`: `~/.link/memory/<workspace-key>/sessions`
+
+其中 `<workspace-key>` 由当前工作区目录名与工作区绝对路径 hash 组成，用于在同一个用户级目录下隔离不同项目，避免同名目录冲突。
 
 核心能力：
 
-1. `EnsureLayout()`：创建 `.link/memory/`、`.link/memory/sessions/` 和空 `memory.md`。
+1. `EnsureLayout()`：创建 `~/.link/memory/<workspace-key>/`、`~/.link/memory/<workspace-key>/sessions/` 和空 `memory.md`。
 2. `ListMemoryIndex()`：解析 `memory.md`，得到候选记忆的文件名、展示名称、描述。
 3. `ReadMemoryFile(path)`：读取并解析单个长期记忆 Markdown。
 4. `WriteMemoryFile(memory)`：为新记忆生成稳定 slug 文件名，写入 front matter + body，并更新 `memory.md`。
@@ -164,8 +166,8 @@ metadata:
 - `InsertMemory(ctx, storage.Memory)`：写入一个长期记忆 `.md`，并更新索引。
 - `ListMemoriesByUserAndType` / `ListProjectFactMemories`：从索引和文件 front matter 过滤。
 - `ReplaceMemoriesByUserAndType` / `ReplaceProjectFactMemories`：重写对应类型长期记忆文件与索引。
-- `ListConversationMemories(ctx, conversationID)`：通过本地会话上下文或 Store 映射解析出 UUID `session_id`，读取 `.link/memory/sessions/<session_id>.md` 并解析为 `[]storage.ConversationMemory`。
-- `ReplaceConversationMemories(ctx, conversationID, userID, items)`：通过相同映射覆盖写入 `.link/memory/sessions/<session_id>.md`，确保同一会话只更新同一个文件。
+- `ListConversationMemories(ctx, conversationID)`：通过本地会话上下文或 Store 映射解析出 UUID `session_id`，读取 `~/.link/memory/<workspace-key>/sessions/<session_id>.md` 并解析为 `[]storage.ConversationMemory`。
+- `ReplaceConversationMemories(ctx, conversationID, userID, items)`：通过相同映射覆盖写入 `~/.link/memory/<workspace-key>/sessions/<session_id>.md`，确保同一会话只更新同一个文件。
 
 ## 5. 提示词与加载流程
 
@@ -175,7 +177,7 @@ metadata:
 
 - `runtimeService.EnableMemory = true`
 - 本地用户 `MemoryEnabled = true`
-- 初始化 `MarkdownMemoryStore` 并确保 `.link/memory/` 布局存在。
+- 初始化 `MarkdownMemoryStore` 并确保 `~/.link/memory/<workspace-key>/` 布局存在。
 
 ### 5.2 候选记忆选择
 
@@ -262,7 +264,7 @@ You are a project-scoped memory retrieval engine. Given the current project, cur
 设计要求：
 
 - `session_id` 采用随机 UUID 生成，例如 `041581e7-c3e7-46c8-afe7-7cdcc671e80e`。
-- 当前会话记忆文件固定为 `.link/memory/sessions/<session_id>.md`。
+- 当前会话记忆文件固定为 `~/.link/memory/<workspace-key>/sessions/<session_id>.md`。
 - 同一会话每轮结束后覆盖更新该文件，不因为轮次变化生成多个 `.md`。
 - `conversation.ID` 可继续作为现有 runtime 历史、模型历史、事件流等内部会话 ID；但当前会话记忆落盘和记忆收尾锁使用显式 `session_id`。
 - `session_id` 需要随 `storage.Conversation` 或 TUI 本地会话上下文传入 runtime；若不修改公共结构体，也可在本地 Store 维护 `conversation.ID -> session_id` 的映射，但落盘文件名必须使用 UUID `session_id`。
@@ -289,7 +291,7 @@ You are a project-scoped memory retrieval engine. Given the current project, cur
 
 - `session_id` 必须是 UUID；落盘前仍按 `[A-Za-z0-9._-]` 白名单清洗。
 - 长期记忆 slug 同样做字符白名单与重名后缀处理。
-- 索引中的相对路径必须 `filepath.Clean` 后仍位于 `.link/memory/` 下。
+- 索引中的相对路径必须 `filepath.Clean` 后仍位于 `~/.link/memory/<workspace-key>/` 下。
 
 ## 7. 文件格式与解析策略
 
@@ -346,7 +348,7 @@ You are a project-scoped memory retrieval engine. Given the current project, cur
 5. `ReplaceConversationMemories`：随机 UUID `session_id` 多次更新只覆盖同一个 `sessions/<session_id>.md`，会话锁 key 为 `项目名 + session_id`。
 6. `selectRelevantMemories`：模型选中索引后注入正文而不只是 name/description，注入段落明确“仅当前项目有效”。
 7. 记忆抽取/选择/合并提示词：只包含 `user_preference`、`episodic_memory`、`project_fact` 三类，并拒绝跨项目复用。
-8. Bootstrap：TUI 本地模式记忆开关启用，当前项目 `.link/memory/` 布局被创建。
+8. Bootstrap：TUI 本地模式记忆开关启用，当前项目 `~/.link/memory/<workspace-key>/` 布局被创建。
 
 ### 9.2 集成验证
 
@@ -365,21 +367,21 @@ go test ./...
 ## 10. 实施步骤
 
 1. 新增 Markdown 记忆仓储与文件格式工具，覆盖解析、序列化、原子写入。
-2. 调整 `local.Store` 初始化与记忆接口实现，让本地 TUI 使用 `<cwd>/.link/memory`。
+2. 调整 `local.Store` 初始化与记忆接口实现，让本地 TUI 使用 `~/.link/memory/<workspace-key>/`。
 3. 修改 `Bootstrap`，启用本地记忆能力并创建目录布局。
 4. 修改 `runtime.memory.go` 中的抽取、选择、合并提示词：第三类长期记忆改为 `project_fact` 项目事实记忆，并强调记忆仅当前项目有效。
 5. 调整记忆注入渲染逻辑，使模型从 `memory.md` 索引选择后能将选中 `.md` 的有效内容注入系统提示词，并在注入段落注明“仅当前项目有效”。
-6. 调整当前会话记忆读写，为 TUI 会话生成随机 UUID `session_id`，覆盖写入 `.link/memory/sessions/<session_id>.md`，并使用 `项目名 + session_id` 作为会话锁 key。
+6. 调整当前会话记忆读写，为 TUI 会话生成随机 UUID `session_id`，覆盖写入 `~/.link/memory/<workspace-key>/sessions/<session_id>.md`，并使用 `项目名 + session_id` 作为会话锁 key。
 7. 补齐单元测试与必要的集成测试。
 8. 运行测试并修复失败。
 
 ## 11. 非目标
 
-- 不实现跨工作目录共享记忆；本次记忆只存放在当前工作目录的 `.link/memory/` 下。
-- 不允许当前项目记忆影响其他项目会话；其他项目只能读取各自工作目录下的 `.link/memory/`。
+- 不实现跨工作目录共享记忆；本次记忆只存放在 `~/.link/memory/` 下当前工作区对应的 `<workspace-key>/` 中。
+- 不允许当前项目记忆影响其他项目会话；其他项目只能读取 `~/.link/memory/` 下各自 `<workspace-key>/`。
 - 不实现长期记忆文件级锁或跨项目全局锁；本次仅对当前会话使用 `项目名 + session_id` 维度加锁。
 - 不做历史数据库记忆迁移；TUI 本地 Store 当前没有真实数据库落盘，直接启用 Markdown 存储。
-- 不新增用户配置项控制记忆目录；目录固定为 `<cwd>/.link/memory`，符合需求。
+- 不新增用户配置项控制记忆目录；目录固定为 `~/.link/memory/<workspace-key>/`，符合需求。
 
 ## 12. 审阅关注点
 
@@ -387,6 +389,6 @@ go test ./...
 
 1. 是否接受 `session_id` 使用随机 UUID，并与 `conversation.ID` 分离。
 2. 长期记忆 `.md` 是否需要注入完整 body；本设计建议模型先从索引选择，再注入选中记忆正文。
-3. `.link/memory/sessions/<session_id>.md` 是否可作为当前会话记忆文件路径。
+3. `~/.link/memory/<workspace-key>/sessions/<session_id>.md` 是否可作为当前会话记忆文件路径。
 4. 是否接受本次仅对当前会话使用 `项目名 + session_id` 加锁，不做长期记忆文件级锁或跨项目全局锁。
 5. 是否接受第三类长期记忆命名为 `project_fact`，用于记录当前项目事实且不跨项目复用。
