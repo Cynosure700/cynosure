@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
@@ -754,7 +755,10 @@ func (m Model) messageWidth() int {
 }
 
 func newMarkdownRenderer(width int) *glamour.TermRenderer {
-	renderer, _ := glamour.NewTermRenderer(glamour.WithStandardStyle("dark"), glamour.WithWordWrap(max(10, width)))
+	style := styles.DarkStyleConfig
+	style.CodeBlock.Chroma = nil
+	style.CodeBlock.Theme = ""
+	renderer, _ := glamour.NewTermRenderer(glamour.WithStyles(style), glamour.WithWordWrap(max(10, width)))
 	return renderer
 }
 

@@ -16,9 +16,29 @@ import (
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var ansiBackgroundPattern = regexp.MustCompile(`\x1b\[[0-9;]*48;[0-9;]*m`)
 
 func plainTerminalText(text string) string {
 	return ansiEscapePattern.ReplaceAllString(text, "")
+}
+
+func TestAssistantFileTreeDoesNotRenderErrorBackgroundHighlighting(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+	content := "```go\ninternal/\n├── agent/      智能体核心逻辑（含 runtime/compression、runtime/hooks、mcp、storage）\n├── assistant/  对话助手层\n└── tui/        终端用户界面\n```"
+
+	rendered := app.renderMessage(Message{Role: "assistant", Content: content})
+
+	if ansiBackgroundPattern.MatchString(rendered) {
+		t.Fatalf("assistant file tree render = %q, should not use background/error highlighting for plain file tree paths", rendered)
+	}
+	plain := plainTerminalText(rendered)
+	for _, want := range []string{"internal/", "agent/", "runtime/compression", "assistant/", "tui/"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("assistant file tree render = %q, want it to contain %q", plain, want)
+		}
+	}
 }
 
 type fakeSessionResumer struct {
