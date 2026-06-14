@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -59,6 +60,7 @@ type palette struct {
 	muted    lipgloss.Color
 	panel    lipgloss.Color
 	panelDim lipgloss.Color
+	blue     lipgloss.Color
 	cyan     lipgloss.Color
 	mint     lipgloss.Color
 	lavender lipgloss.Color
@@ -71,6 +73,7 @@ var tuiPalette = palette{
 	muted:    lipgloss.Color("244"),
 	panel:    lipgloss.Color("238"),
 	panelDim: lipgloss.Color("235"),
+	blue:     lipgloss.Color("39"),
 	cyan:     lipgloss.Color("81"),
 	mint:     lipgloss.Color("120"),
 	lavender: lipgloss.Color("183"),
@@ -81,24 +84,31 @@ var tuiPalette = palette{
 const inputCursor = "█"
 
 type Model struct {
-	runtime          *runtime.Service
-	session          SessionInfo
-	messages         []Message
-	input            textarea.Model
-	viewport         viewport.Model
-	width            int
-	height           int
-	running          bool
-	events           chan Event
-	cancel           context.CancelFunc
-	renderer         *glamour.TermRenderer
-	generation       int64
-	resumeSelecting  bool
-	resumeCandidates []storage.ResumableSession
-	toolCallCount    int
-	contextTokens    int
-	contextBudget    int
-	autoFollow       bool
+	runtime           *runtime.Service
+	session           SessionInfo
+	messages          []Message
+	input             textarea.Model
+	viewport          viewport.Model
+	width             int
+	height            int
+	running           bool
+	events            chan Event
+	cancel            context.CancelFunc
+	renderer          *glamour.TermRenderer
+	generation        int64
+	resumeSelecting   bool
+	resumeCandidates  []storage.ResumableSession
+	toolCallCount     int
+	contextTokens     int
+	contextBudget     int
+	autoFollow        bool
+	thinkingStartedAt time.Time
+	thinkingNow       time.Time
+}
+
+type thinkingTickMsg struct {
+	generation int64
+	at         time.Time
 }
 
 func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
@@ -176,12 +186,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.appendMessage("user", text)
 			m.running = true
+			m.thinkingStartedAt = time.Now()
+			m.thinkingNow = m.thinkingStartedAt
 			m.toolCallCount = 0
 			m.generation++
 			generation := m.generation
 			ctx, cancel := context.WithCancel(context.Background())
 			m.cancel = cancel
-			return m, tea.Batch(m.waitEvent(), m.respond(ctx, text, generation))
+			m.refreshViewport()
+			return m, tea.Batch(m.waitEvent(), m.respond(ctx, text, generation), m.thinkingTick(generation))
 		}
 		if isTerminalProbeResponseInput(msg) {
 			return m, nil
@@ -193,6 +206,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, ok := m.updateViewportScroll(msg); ok {
 			return m, cmd
 		}
+	case thinkingTickMsg:
+		if msg.generation != m.generation || !m.running {
+			return m, nil
+		}
+		m.thinkingNow = msg.at
+		m.refreshViewport()
+		return m, m.thinkingTick(msg.generation)
 	case Event:
 		if msg.Generation != 0 && msg.Generation != m.generation {
 			if m.running {
@@ -288,6 +308,12 @@ func (m Model) respond(ctx context.Context, text string, generation int64) tea.C
 
 func (m Model) waitEvent() tea.Cmd {
 	return func() tea.Msg { return <-m.events }
+}
+
+func (m Model) thinkingTick(generation int64) tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return thinkingTickMsg{generation: generation, at: t}
+	})
 }
 
 func (m *Model) handleSlashCommand(text string) bool {
@@ -614,7 +640,26 @@ func (m Model) renderMessages() string {
 		b.WriteString(m.renderMessageAt(i, msg, m.shouldShowReasoningAt(i, msg, lastUserIndex)))
 		b.WriteString("\n\n")
 	}
+	if indicator := m.renderThinkingIndicator(); indicator != "" {
+		b.WriteString(indicator)
+		b.WriteString("\n\n")
+	}
 	return b.String()
+}
+
+func (m Model) renderThinkingIndicator() string {
+	if !m.running || m.thinkingStartedAt.IsZero() {
+		return ""
+	}
+	now := m.thinkingNow
+	if now.IsZero() || now.Before(m.thinkingStartedAt) {
+		now = m.thinkingStartedAt
+	}
+	elapsedSeconds := int(now.Sub(m.thinkingStartedAt) / time.Second)
+	if elapsedSeconds < 1 {
+		elapsedSeconds = 1
+	}
+	return thinkingIndicatorStyle().Render(fmt.Sprintf("* Thinking... (%ds)", elapsedSeconds))
 }
 
 func (m Model) lastUserMessageIndex() int {
@@ -661,30 +706,30 @@ func (m Model) renderMessage(msg Message) string {
 func (m Model) renderMessageAt(index int, msg Message, showReasoning bool) string {
 	switch msg.Role {
 	case "user":
-		return promptLineStyle().Render("›") + " " + userStyle().Render(wrapText(msg.Content, m.messageWidth()-2))
+		return renderSelectedUserMessage(msg.Content, m.messageWidth())
 	case "assistant":
 		content := msg.Content
 		if m.renderer != nil {
 			if rendered, err := m.renderer.Render(content); err == nil {
-				content = wrapText(strings.TrimSpace(rendered), m.messageWidth())
+				content = wrapText(colorizeFileReferencesWithRestore(strings.TrimSpace(rendered), ansiForeground(tuiPalette.ink)), m.messageWidth())
 			}
 		} else {
-			content = wrapText(content, m.messageWidth())
+			content = wrapText(colorizeFileReferencesWithRestore(content, ansiForeground(tuiPalette.ink)), m.messageWidth())
 		}
 		if showReasoning {
-			content = thinkingStyle().Render("✽ 思考中\n"+wrapText(strings.TrimSpace(msg.ReasoningContent), m.messageWidth()-2)) + "\n" + content
+			content = thinkingStyle().Render("✽ 思考中\n"+wrapText(colorizeFileReferencesWithRestore(strings.TrimSpace(msg.ReasoningContent), ansiThinking()), m.messageWidth()-2)) + "\n" + content
 		}
 		return content
 	case "thinking":
-		return thinkingStyle().Render("✽ 思考中\n" + wrapText(msg.Content, m.messageWidth()-2))
+		return thinkingStyle().Render("✽ 思考中\n" + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiThinking()), m.messageWidth()-2))
 	case "system":
-		return systemStyle().Render("• " + wrapText(msg.Content, m.messageWidth()-2))
+		return systemStyle().Render("• " + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiForeground(tuiPalette.butter)), m.messageWidth()-2))
 	case "error":
-		return errorStyle().Render("✗ " + wrapText(msg.Content, m.messageWidth()-2))
+		return errorStyle().Render("✗ " + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiForeground(tuiPalette.coral)), m.messageWidth()-2))
 	case "tool":
 		return m.renderToolMessage(msg, index >= 0 && m.hasAssistantContentAfter(index))
 	default:
-		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + wrapText(msg.Content, m.messageWidth())
+		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + wrapText(colorizeFileReferences(msg.Content), m.messageWidth())
 	}
 }
 
@@ -708,7 +753,7 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 		result += " · " + tool.ResultPreview
 	}
 	body := line + "\n  ⎿ " + result
-	return toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-2))
+	return toolStyleForStatus(status).Render(wrapText(colorizeFileReferencesWithRestore(body, ansiToolStatus(status)), m.messageWidth()-2))
 }
 
 func toolIcon(status string) string {
@@ -762,6 +807,83 @@ func newMarkdownRenderer(width int) *glamour.TermRenderer {
 	return renderer
 }
 
+var fileReferencePattern = regexp.MustCompile(`(^|[\s\(\[\{\"'“‘，。；：、])((?:~?/|\./|\.\./)?[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+(?:/)?|[A-Za-z0-9._-]+/|[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9]{0,7})([\s\)\]\}\"'”’。，；：、\x1b]|$)`)
+
+func colorizeFileReferences(text string) string {
+	return colorizeFileReferencesWithRestore(text, "\x1b[0m")
+}
+
+func colorizeFileReferencesForInput(text string) string {
+	return colorizeFileReferencesWithRestore(text, userInputTextStart())
+}
+
+func colorizeFileReferencesForSelectedLine(text string) string {
+	return colorizeFileReferencesWithRestore(text, selectedUserLineStart())
+}
+
+func colorizeFileReferencesWithRestore(text string, restoreSequence string) string {
+	return fileReferencePattern.ReplaceAllStringFunc(text, func(match string) string {
+		parts := fileReferencePattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		if strings.HasSuffix(parts[2], "/...") {
+			return match
+		}
+		return parts[1] + renderFileReferenceWithRestore(parts[2], restoreSequence) + parts[3]
+	})
+}
+
+func renderFileReference(text string) string {
+	return renderFileReferenceWithRestore(text, "\x1b[0m")
+}
+
+func renderFileReferenceWithRestore(text string, restoreSequence string) string {
+	if text == "" {
+		return text
+	}
+	return "\x1b[38;5;" + string(tuiPalette.blue) + "m" + text + restoreSequence
+}
+
+func selectedUserLineStart() string {
+	return "\x1b[48;5;" + string(tuiPalette.panel) + ";38;5;" + string(tuiPalette.ink) + "m"
+}
+
+func userInputTextStart() string {
+	return "\x1b[0;38;5;" + string(tuiPalette.ink) + "m"
+}
+
+func ansiForeground(color lipgloss.Color) string {
+	return "\x1b[0;38;5;" + string(color) + "m"
+}
+
+func ansiThinking() string {
+	return "\x1b[0;3;38;5;242m"
+}
+
+func ansiToolStatus(status string) string {
+	switch status {
+	case "success":
+		return ansiForeground(tuiPalette.mint)
+	case "rejected", "error", "failed":
+		return ansiForeground(tuiPalette.coral)
+	default:
+		return ansiForeground(lipgloss.Color("245"))
+	}
+}
+
+func renderSelectedUserMessage(content string, width int) string {
+	width = max(1, width)
+	wrapped := wrapText("› "+content, width)
+	lines := strings.Split(wrapped, "\n")
+	for i, line := range lines {
+		styled := colorizeFileReferencesForSelectedLine(line)
+		padding := strings.Repeat(" ", max(0, width-lipgloss.Width(line)))
+		lines[i] = selectedUserLineStart() + styled + padding + "\x1b[0m"
+	}
+	return strings.Join(lines, "\n")
+}
+
 func wrapText(text string, width int) string {
 	width = max(1, width)
 	return ansi.Hardwrap(text, width, true)
@@ -810,7 +932,7 @@ func (m Model) renderHeaderLine(width int) string {
 }
 
 func (m Model) renderCompactHeader(width int) string {
-	return titleStyle().Render(centerHeaderLine("Link version: 0.0.1", width)) + "\n" + titleStyle().Render(centerHeaderLine("Welcome back", width)) + "\n" + subtleStyle().Render(centerHeaderLine("model "+m.modelLabel()+" · "+m.workspaceLabel(), width))
+	return titleStyle().Render(centerHeaderLine("Link version: 0.0.1", width)) + "\n" + titleStyle().Render(centerHeaderLine("Welcome back", width)) + "\n" + subtleStyle().Render(centerHeaderLine("model "+m.modelLabel()+" · "+renderFileReference(m.workspaceLabel()), width))
 }
 
 func (m Model) renderFullHeader(width int) string {
@@ -823,7 +945,7 @@ func (m Model) renderFullHeader(width int) string {
 		mascotStyle().Render(centerHeaderLine(` || (__V`, width)),
 		titleStyle().Render(centerHeaderLine("Welcome back", width)),
 		titleStyle().Render(centerHeaderLine("model "+m.modelLabel(), width)),
-		subtleStyle().Render(centerHeaderLine(m.workspaceLabel(), width)),
+		subtleStyle().Render(centerHeaderLine(renderFileReference(m.workspaceLabel()), width)),
 	}
 	return strings.Join(lines, "\n")
 }
@@ -866,7 +988,7 @@ func (m Model) renderInput() string {
 	if text == "" {
 		text = inputPromptStyle().Render(inputCursor) + " " + subtleStyle().Render(m.input.Placeholder)
 	} else {
-		text = userStyle().Render(text) + inputPromptStyle().Render(inputCursor)
+		text = userInputTextStart() + colorizeFileReferencesForInput(text) + "\x1b[0m" + inputPromptStyle().Render(inputCursor)
 	}
 	return inputLineStyle().Width(max(10, m.width-4)).Render(prompt + " " + text)
 }
@@ -1001,6 +1123,10 @@ func userStyle() lipgloss.Style {
 
 func thinkingStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Italic(true).PaddingLeft(2)
+}
+
+func thinkingIndicatorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tuiPalette.coral).Bold(true).PaddingLeft(1)
 }
 
 func systemStyle() lipgloss.Style {

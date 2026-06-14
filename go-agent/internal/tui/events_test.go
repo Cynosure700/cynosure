@@ -15,8 +15,11 @@ import (
 	"nano_cc/internal/sessions"
 )
 
-var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-var ansiBackgroundPattern = regexp.MustCompile(`\x1b\[[0-9;]*48;[0-9;]*m`)
+var ansiEscapePattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
+var ansiBackgroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*48;[0-9;]*m")
+var ansiBlueForegroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*38;5;39m")
+var ansiSelectedGreyBackgroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*48;5;238[0-9;]*m")
+var ansiReverseVideoPattern = regexp.MustCompile("\x1b\\[[0-9;]*7m")
 
 func plainTerminalText(text string) string {
 	return ansiEscapePattern.ReplaceAllString(text, "")
@@ -38,6 +41,97 @@ func TestAssistantFileTreeDoesNotRenderErrorBackgroundHighlighting(t *testing.T)
 		if !strings.Contains(plain, want) {
 			t.Fatalf("assistant file tree render = %q, want it to contain %q", plain, want)
 		}
+	}
+}
+
+func TestAssistantFileAndDirectoryReferencesRenderBlue(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+	content := "需要检查 go-agent/internal/tui/app.go 和 go-agent/internal/tui/ 目录。"
+
+	rendered := app.renderMessage(Message{Role: "assistant", Content: content})
+
+	for _, want := range []string{"go-agent/internal/tui/app.go", "go-agent/internal/tui/"} {
+		if !strings.Contains(plainTerminalText(rendered), want) {
+			t.Fatalf("assistant render = %q, want visible path %q", rendered, want)
+		}
+	}
+	if got := len(ansiBlueForegroundPattern.FindAllString(rendered, -1)); got < 2 {
+		t.Fatalf("assistant render = %q, want both file and directory references rendered blue", rendered)
+	}
+}
+
+func TestWorkspaceDirectoryRendersBlueInHeader(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+
+	header := model.renderHeader()
+
+	if !strings.Contains(plainTerminalText(header), "/tmp/project") {
+		t.Fatalf("header = %q, want visible workspace directory", header)
+	}
+	if !ansiBlueForegroundPattern.MatchString(header) {
+		t.Fatalf("header = %q, want workspace directory rendered blue", header)
+	}
+}
+
+func TestTypedInputKeepsNormalDisplay(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.input.SetValue("检查 go-agent/internal/tui/app.go 后继续")
+
+	rendered := app.renderInput()
+
+	if !strings.Contains(plainTerminalText(rendered), "检查 go-agent/internal/tui/app.go 后继续") {
+		t.Fatalf("input render = %q, want typed user input visible", rendered)
+	}
+	if ansiReverseVideoPattern.MatchString(rendered) {
+		t.Fatalf("input render = %q, want active input to keep normal display without selected styling", rendered)
+	}
+	if ansiSelectedGreyBackgroundPattern.MatchString(rendered) {
+		t.Fatalf("input render = %q, want active input without selected grey background", rendered)
+	}
+	if !strings.Contains(rendered, "\x1b[0;38;5;255m 后继续") {
+		t.Fatalf("input render = %q, want text after a blue file reference to restore normal white input style", rendered)
+	}
+}
+
+func TestSubmittedUserMessageRendersAsGreySelectedLine(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 56
+
+	rendered := app.renderMessage(Message{Role: "user", Content: "检查 go-agent/internal/tui/app.go 后继续"})
+
+	if !strings.Contains(plainTerminalText(rendered), "检查 go-agent/internal/tui/app.go 后继续") {
+		t.Fatalf("user message render = %q, want submitted user input visible", rendered)
+	}
+	if !ansiSelectedGreyBackgroundPattern.MatchString(rendered) {
+		t.Fatalf("user message render = %q, want submitted user input rendered with a grey selected background", rendered)
+	}
+	if ansiReverseVideoPattern.MatchString(rendered) {
+		t.Fatalf("user message render = %q, want grey selected background instead of reverse video", rendered)
+	}
+	if !strings.Contains(rendered, "\x1b[48;5;238;38;5;255m 后继续") {
+		t.Fatalf("user message render = %q, want text after a blue file reference to stay on the grey selected line", rendered)
+	}
+	line := strings.Split(plainTerminalText(rendered), "\n")[0]
+	if got := lipgloss.Width(line); got != app.messageWidth() {
+		t.Fatalf("selected user line width = %d, want full message width %d: %q", got, app.messageWidth(), line)
+	}
+}
+
+func TestPathHighlightRestoresOuterMessageStyleAfterPath(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+
+	rendered := app.renderMessage(Message{Role: "error", Content: "打开 go-agent/internal/tui/app.go 失败"})
+
+	if !strings.Contains(plainTerminalText(rendered), "打开 go-agent/internal/tui/app.go 失败") {
+		t.Fatalf("error render = %q, want visible error text", rendered)
+	}
+	if !strings.Contains(rendered, "\x1b[0;38;5;209m 失败") {
+		t.Fatalf("error render = %q, want text after a blue file reference to restore error style", rendered)
 	}
 }
 
@@ -203,7 +297,7 @@ func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
 
 	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "先判断是否需要工具"})
 	model := updated.(Model)
-	rendered := model.renderMessages()
+	rendered := plainTerminalText(model.renderMessages())
 
 	for _, want := range []string{"思考", "先判断是否需要工具"} {
 		if !strings.Contains(rendered, want) {
@@ -223,7 +317,7 @@ func TestModelDisplaysOnlyCurrentAssistantReasoningWhileRunning(t *testing.T) {
 
 	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "当前思考"})
 	model := updated.(Model)
-	rendered := model.renderMessages()
+	rendered := plainTerminalText(model.renderMessages())
 
 	if !strings.Contains(rendered, "当前思考") {
 		t.Fatalf("rendered messages = %q, want current reasoning", rendered)
@@ -266,7 +360,7 @@ func TestModelAssistantFinalEventHidesReasoningAfterDoneAndKeepsMeta(t *testing.
 	if strings.Contains(rendered, "分析路径") {
 		t.Fatalf("rendered messages = %q, should hide reasoning after done", rendered)
 	}
-	view := model.View()
+	view := plainTerminalText(model.View())
 	for _, want := range []string{"工具 2", "上下文 45%"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
@@ -323,7 +417,7 @@ func TestModelDisplaysToolCallLifecycle(t *testing.T) {
 	if len(model.messages) != 1 {
 		t.Fatalf("messages = %#v, want tool done to update existing message", model.messages)
 	}
-	rendered = model.renderMessages()
+	rendered = plainTerminalText(model.renderMessages())
 	for _, want := range []string{"✓ Bash", "⎿ success · ok nano_cc/internal/tui 0.42s"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
@@ -347,7 +441,7 @@ func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 	if len(model.messages) != 1 || model.messages[0].Role != "tool" || model.messages[0].ToolCall == nil {
 		t.Fatalf("messages = %#v, want appended completed tool message", model.messages)
 	}
-	rendered := model.renderMessages()
+	rendered := plainTerminalText(model.renderMessages())
 	for _, want := range []string{"✗ Read", "⎿ rejected · Error: outside workspace"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
@@ -377,7 +471,7 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 	}})
 	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "reasoning_delta", Content: "再检查结果"})
 	model := updated.(Model)
-	rendered := model.renderMessages()
+	rendered := plainTerminalText(model.renderMessages())
 	for _, want := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok nano_cc/internal/tui 0.42s"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q visible before assistant reply starts", rendered, want)
@@ -386,7 +480,7 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 
 	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_delta", Content: "完成"})
 	model = updated.(Model)
-	rendered = model.renderMessages()
+	rendered = plainTerminalText(model.renderMessages())
 	for _, want := range []string{"新问题", "完成"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
@@ -396,6 +490,47 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("rendered = %q, should hide %q once assistant reply starts", rendered, forbidden)
 		}
+	}
+}
+
+func TestRunningModelShowsThinkingIndicatorAtTranscriptBottom(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{
+		{Role: "user", Content: "介绍一下当前项目"},
+		{Role: "assistant", Content: "正在整理"},
+	}
+	app.running = true
+	app.thinkingStartedAt = time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	app.thinkingNow = app.thinkingStartedAt
+
+	rendered := plainTerminalText(app.renderMessages())
+
+	if !strings.Contains(rendered, "* Thinking... (1s)") {
+		t.Fatalf("rendered messages = %q, want Thinking indicator with initial elapsed second", rendered)
+	}
+	if strings.LastIndex(rendered, "* Thinking... (1s)") < strings.LastIndex(rendered, "正在整理") {
+		t.Fatalf("rendered messages = %q, want Thinking indicator below the current assistant reply", rendered)
+	}
+}
+
+func TestThinkingIndicatorUpdatesElapsedSecondsAndHidesWhenDone(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{{Role: "user", Content: "hello"}}
+	app.generation = 1
+	app.running = true
+	app.thinkingStartedAt = time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	app.thinkingNow = app.thinkingStartedAt
+
+	updated, _ := app.Update(thinkingTickMsg{generation: 1, at: app.thinkingStartedAt.Add(2 * time.Second)})
+	model := updated.(Model)
+	if rendered := plainTerminalText(model.renderMessages()); !strings.Contains(rendered, "* Thinking... (2s)") {
+		t.Fatalf("rendered messages = %q, want Thinking indicator to advance elapsed seconds", rendered)
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "done"})
+	model = updated.(Model)
+	if rendered := plainTerminalText(model.renderMessages()); strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("rendered messages = %q, should hide Thinking indicator after done", rendered)
 	}
 }
 
@@ -409,7 +544,7 @@ func TestViewUsesClaudeLikeSeparatedTerminalRegions(t *testing.T) {
 	app.appendMessage("assistant", "你好")
 	app.refreshViewport()
 
-	view := app.View()
+	view := plainTerminalText(app.View())
 	for _, want := range []string{"go-agent", "/tmp/project", "› hello", "你好", "工具 0", "上下文 --", "╭", "╰"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
@@ -451,7 +586,7 @@ func TestViewKeepsHeaderInTranscriptAndInputFixedLikeClaudeCode(t *testing.T) {
 	model.appendMessage("assistant", "你好")
 	model.refreshViewport()
 
-	view := model.View()
+	view := plainTerminalText(model.View())
 	for _, want := range []string{"go-agent", "/tmp/project", "╭", "╰", "Enter 发送", "上下文 --"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want Claude-like separated region marker %q", view, want)
@@ -557,7 +692,7 @@ func TestHeaderScrollsAwayWithTranscriptHistory(t *testing.T) {
 	}
 	model.refreshViewport()
 
-	view := model.View()
+	view := plainTerminalText(model.View())
 	for _, forbidden := range []string{"deepseek-v4-flash", "/tmp/project"} {
 		if strings.Contains(view, forbidden) {
 			t.Fatalf("view = %q, should let header metadata %q scroll away with transcript history", view, forbidden)
@@ -599,7 +734,7 @@ func TestViewKeepsWelcomeAndMessagesInScrollableTranscriptWithFixedPrompt(t *tes
 	model.appendMessage("assistant", "你好")
 	model.refreshViewport()
 
-	view := model.View()
+	view := plainTerminalText(model.View())
 	for _, want := range []string{"› hello", "go-agent", "你好", "问 go-agent 一件事"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
@@ -753,7 +888,7 @@ func TestTypingRefreshesInlinePrompt(t *testing.T) {
 	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	model := updated.(Model)
 
-	if !strings.Contains(model.View(), "› h") {
+	if !strings.Contains(plainTerminalText(model.View()), "› h") {
 		t.Fatalf("view = %q, want inline prompt to show typed text", model.View())
 	}
 }
@@ -765,7 +900,7 @@ func TestTypingSpaceRefreshesInlinePrompt(t *testing.T) {
 	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
 	model := updated.(Model)
 
-	if !strings.Contains(model.renderInput(), "h "+inputCursor) {
+	if !strings.Contains(plainTerminalText(model.renderInput()), "h "+inputCursor) {
 		t.Fatalf("input = %q, want typed space to remain visible before cursor", model.renderInput())
 	}
 }
