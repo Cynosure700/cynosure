@@ -423,7 +423,7 @@ func TestViewFitsWithinTerminalHeight(t *testing.T) {
 	}
 }
 
-func TestViewSeparatesHeaderTranscriptAndInputLikeClaudeCode(t *testing.T) {
+func TestViewKeepsHeaderInTranscriptAndInputFixedLikeClaudeCode(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", SkillCount: 2, MCPToolCount: 3})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model := updated.(Model)
@@ -437,8 +437,8 @@ func TestViewSeparatesHeaderTranscriptAndInputLikeClaudeCode(t *testing.T) {
 			t.Fatalf("view = %q, want Claude-like separated region marker %q", view, want)
 		}
 	}
-	if model.viewport.Height > 14 {
-		t.Fatalf("viewport height = %d, want room reserved for header and boxed input", model.viewport.Height)
+	if model.viewport.Height != model.height-model.inputAreaHeight() {
+		t.Fatalf("viewport height = %d, want only fixed input area reserved", model.viewport.Height)
 	}
 	if lipgloss.Height(view) > model.height {
 		t.Fatalf("view height = %d, want <= terminal height %d", lipgloss.Height(view), model.height)
@@ -527,7 +527,7 @@ func TestAssistantMessageRendersContentWithoutGoAgentLead(t *testing.T) {
 	}
 }
 
-func TestHeaderStaysVisibleWhenTranscriptScrolls(t *testing.T) {
+func TestHeaderScrollsAwayWithTranscriptHistory(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
 	model := updated.(Model)
@@ -536,14 +536,15 @@ func TestHeaderStaysVisibleWhenTranscriptScrolls(t *testing.T) {
 		model.appendMessage("assistant", "reply")
 	}
 	model.refreshViewport()
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
-	model = updated.(Model)
 
 	view := model.View()
-	for _, want := range []string{"deepseek-v4-flash", "/tmp/project"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view = %q, want fixed header metadata %q after scrolling transcript", view, want)
+	for _, forbidden := range []string{"deepseek-v4-flash", "/tmp/project"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("view = %q, should let header metadata %q scroll away with transcript history", view, forbidden)
 		}
+	}
+	if model.viewport.Height != model.height-model.inputAreaHeight() {
+		t.Fatalf("viewport height = %d, want only input area reserved from terminal height", model.viewport.Height)
 	}
 }
 

@@ -266,7 +266,7 @@ func (m *Model) updateViewportScroll(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m Model) View() string {
-	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), m.renderConversationFrame(), m.renderInputArea())
+	return lipgloss.JoinVertical(lipgloss.Left, m.renderConversationFrame(), m.renderInputArea())
 }
 
 func (m Model) respond(ctx context.Context, text string, generation int64) tea.Cmd {
@@ -576,7 +576,7 @@ func (m Model) viewportHeight() int {
 	if m.height <= 0 {
 		return 20
 	}
-	return max(0, m.height-m.headerHeight()-m.inputAreaHeight())
+	return max(0, m.height-m.inputAreaHeight())
 }
 
 func (m Model) headerHeight() int {
@@ -589,7 +589,11 @@ func (m Model) inputAreaHeight() int {
 
 func (m Model) renderTranscript() string {
 	var b strings.Builder
-	b.WriteString(m.renderWelcome())
+	b.WriteString(m.renderHeader())
+	if welcome := m.renderWelcome(); welcome != "" {
+		b.WriteString("\n\n")
+		b.WriteString(welcome)
+	}
 	if len(m.messages) > 0 {
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
