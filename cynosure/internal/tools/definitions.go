@@ -1,0 +1,127 @@
+package tools
+
+import (
+	"encoding/json"
+
+	openai "github.com/sashabaranov/go-openai"
+)
+
+func mustMarshal(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+func toolDef(name, desc string, params any) openai.Tool {
+	return openai.Tool{
+		Type: "function",
+		Function: &openai.FunctionDefinition{
+			Name:        name,
+			Description: desc,
+			Parameters:  mustMarshal(params),
+		},
+	}
+}
+
+func strParam(desc string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": desc,
+	}
+}
+
+func intParam(desc string) map[string]any {
+	return map[string]any{
+		"type":        "integer",
+		"description": desc,
+	}
+}
+
+var baseToolDefs = []openai.Tool{
+	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the workspace root; absolute paths outside the workspace and dangerous commands are rejected unless explicitly allowed by configuration.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"command": strParam("The shell command to execute"),
+		},
+		"required": []string{"command"},
+	}),
+	toolDef("read_file", "Read a file from the filesystem", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path":  strParam("Path to the file to read"),
+			"limit": intParam("Maximum number of lines to read"),
+		},
+		"required": []string{"path"},
+	}),
+	toolDef("write_file", "Write content to a file", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path":    strParam("Path to the file to write"),
+			"content": strParam("Content to write to the file"),
+		},
+		"required": []string{"path", "content"},
+	}),
+	toolDef("edit_file", "Replace text in a file by exact match", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path":     strParam("Path to the file to edit"),
+			"old_text": strParam("Exact text to find and replace"),
+			"new_text": strParam("Text to replace it with"),
+		},
+		"required": []string{"path", "old_text", "new_text"},
+	}),
+	toolDef("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill. Skills are loaded from the user's ~/.cynosure/skills and the workspace .cynosure/skills directories, with workspace skills taking precedence.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": strParam("Name of the skill to load"),
+		},
+		"required": []string{"name"},
+	}),
+	toolDef("todo_write", "Create or update the current task plan. Use this tool to track progress on multi-step tasks.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"todos": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"id":      map[string]any{"type": "string"},
+						"content": map[string]any{"type": "string"},
+						"status":  map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},
+					},
+					"required": []string{"id", "content", "status"},
+				},
+			},
+		},
+		"required": []string{"todos"},
+	}),
+}
+
+var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
+		"cwd":  strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace."),
+	},
+	"required": []string{"task"},
+})
+
+// ReadPersistedOutputToolName is exposed automatically alongside context
+// compression so the model can fetch the full content behind a
+// <persisted-output> marker when the inline preview is insufficient.
+const ReadPersistedOutputToolName = "read_persisted_output"
+
+var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a chunk of a persisted tool output by id when a <persisted-output> marker preview is insufficient. Only outputs from the current conversation are accessible.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"id":     strParam("The persisted output id from the <persisted-output> marker, for example po_abc123."),
+		"offset": intParam("Zero-based character offset to start reading from. Defaults to 0."),
+		"limit":  intParam("Maximum characters to return. Defaults to 20000 and is capped by the runtime."),
+	},
+	"required": []string{"id"},
+})
+
+var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, ReadPersistedOutputToolDef)
+var ChildToolDefs = baseToolDefs
