@@ -227,6 +227,10 @@ func (f *fakeSessionResumer) ResumeSession(ctx context.Context, sessionID, curre
 	return f.conv, f.history, nil
 }
 
+func (f *fakeSessionResumer) StartNewConversation(ctx context.Context, user storage.User) (storage.Conversation, error) {
+	return storage.Conversation{ID: "conv-new", SessionID: "session-new", UserID: user.ID}, nil
+}
+
 func TestEventWriterConvertsRuntimeEvents(t *testing.T) {
 	ch := make(chan Event, 4)
 	writer := NewEventWriter(ch)

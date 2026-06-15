@@ -38,6 +38,7 @@ type SessionInfo struct {
 type SessionResumer interface {
 	ListResumableSessions(ctx context.Context, workspaceRoot string) ([]storage.ResumableSession, error)
 	ResumeSession(ctx context.Context, sessionID, currentWorkspace string, user storage.User) (storage.Conversation, []storage.Message, error)
+	StartNewConversation(ctx context.Context, user storage.User) (storage.Conversation, error)
 }
 
 type Message struct {
@@ -322,10 +323,7 @@ func (m *Model) handleSlashCommand(text string) bool {
 		m.appendMessage("system", "命令：/help /clear /cwd /skills /mcp /resume。Enter 发送，Ctrl+C 中断或退出。")
 		return true
 	case "/clear":
-		m.messages = nil
-		m.resumeSelecting = false
-		m.resumeCandidates = nil
-		m.appendMessage("system", "已清空当前 TUI 显示上下文")
+		m.startNewSession()
 		return true
 	case "/cwd":
 		m.appendMessage("system", "当前工作区："+m.session.CWD)
@@ -342,6 +340,32 @@ func (m *Model) handleSlashCommand(text string) bool {
 	}
 	m.appendMessage("system", "未知命令："+text)
 	return true
+}
+
+func (m *Model) startNewSession() {
+	if m.running {
+		m.appendMessage("system", "当前正在生成，请先 Ctrl+C 中断后再执行 /clear")
+		return
+	}
+	if m.session.Resumer == nil {
+		m.messages = nil
+		m.resumeSelecting = false
+		m.resumeCandidates = nil
+		m.appendMessage("system", "已清空当前 TUI 显示上下文")
+		return
+	}
+	conv, err := m.session.Resumer.StartNewConversation(context.Background(), m.session.User)
+	if err != nil {
+		m.appendMessage("error", err.Error())
+		return
+	}
+	m.session.Conversation = conv
+	m.messages = nil
+	m.resumeSelecting = false
+	m.resumeCandidates = nil
+	m.toolCallCount = 0
+	m.contextTokens = 0
+	m.appendMessage("system", "已开启全新对话，上下文已清空")
 }
 
 func (m *Model) startResumeSelection() {
@@ -375,8 +399,7 @@ func (m *Model) handleResumeSelection(text string) bool {
 		m.resumeSelecting = false
 		m.resumeCandidates = nil
 		if text == "/clear" {
-			m.messages = nil
-			m.appendMessage("system", "已清空当前 TUI 显示上下文")
+			m.startNewSession()
 		} else {
 			m.appendMessage("system", "已取消恢复历史会话")
 		}

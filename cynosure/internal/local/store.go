@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nano_cc/internal/agent/storage"
+	"nano_cc/internal/idgen"
 )
 
 type Store struct {
@@ -451,6 +452,24 @@ func (s *Store) ResumeSession(ctx context.Context, sessionID, currentWorkspace s
 	}
 	s.mu.Unlock()
 	return conv, history, nil
+}
+
+// StartNewConversation 在当前进程内创建一个全新的空会话（新 SessionID），用于 /clear。
+// 不删除任何已有会话的内存或磁盘数据，旧会话仍可被 /resume 找回。
+func (s *Store) StartNewConversation(ctx context.Context, user storage.User) (storage.Conversation, error) {
+	conv := storage.Conversation{
+		ID:            idgen.New("conv"),
+		SessionID:     idgen.UUID(),
+		UserID:        user.ID,
+		RootMessageID: idgen.New("msg"),
+		Title:         "TUI 会话",
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	if err := s.CreateConversation(ctx, conv); err != nil {
+		return storage.Conversation{}, err
+	}
+	return conv, nil
 }
 
 func (s *Store) AcquireConversationLock(ctx context.Context, conversationID, token string, ttl, waitTimeout time.Duration) (bool, error) {
