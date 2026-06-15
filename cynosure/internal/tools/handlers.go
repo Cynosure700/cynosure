@@ -62,7 +62,7 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateBashCommandPaths(root, cmd, allowOutsideWorkspaceFromContext(ctx), systemAssetDirsFromContext(ctx)...); err != nil {
+	if err := validateBashCommandPaths(root, cmd, allowOutsideWorkspaceFromContext(ctx)); err != nil {
 		return "", err
 	}
 	return RunBashInDirWithOptions(cmd, workingDir, allowDangerousCommandsFromContext(ctx))

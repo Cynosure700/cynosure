@@ -44,14 +44,6 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
-	binDir, err := CynosureBinDir()
-	if err != nil {
-		return AppConfig{}, err
-	}
-	scriptDir, err := CynosureScriptDir()
-	if err != nil {
-		return AppConfig{}, err
-	}
 	systemPromptPath, err := userSystemPromptOverridePath()
 	if err != nil {
 		return AppConfig{}, err
@@ -64,9 +56,6 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 	return AppConfig{
 		LLM:                         llm,
 		AppHome:                     appHome,
-		BuiltinSkillsDir:            "",
-		CommandBinDir:               binDir,
-		CommandScriptDir:            scriptDir,
 		SystemPromptPath:            systemPromptPath,
 		WorkspaceRoot:               workspaceRoot,
 		LogsDir:                     "",
@@ -199,22 +188,6 @@ func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
 		session = "session"
 	}
 	return filepath.Join(home, ".cynosure", WorkspaceKey(workspaceRoot), session, "logs"), nil
-}
-
-func CynosureBinDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user home: %w", err)
-	}
-	return filepath.Join(home, ".cynosure", "bin"), nil
-}
-
-func CynosureScriptDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user home: %w", err)
-	}
-	return filepath.Join(home, ".cynosure", "cmd"), nil
 }
 
 // sanitizePathSegment 把任意字符串收敛为安全的单层目录名。

@@ -55,11 +55,10 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 - LLM 密钥、模型和 Base URL 从 `~/.cynosure/settings.json` 读取。
 - `system_prompt.md` 与内置 skills 通过 `go:embed` 嵌入二进制；若存在 `~/.cynosure/system_prompt.md`，则优先使用该用户覆盖文件。
 - 内置 skills 来源为 `builtin`，与用户级 `~/.cynosure/skills` 和工作区级 `<cwd>/.cynosure/skills` 合并，优先级 workspace > user > builtin。
-- `command_bin_dir`、`command_script_dir` 固定为 `~/.cynosure/bin`、`~/.cynosure/cmd`。
 - TUI 的工作区为启动 cwd，或由 `--cwd` 指定。
 - 本地配置不包含数据库、Redis、Elasticsearch、JWT 或 Cookie 会话字段。
 
-启动时会自动创建：`~/.cynosure/`、`~/.cynosure/bin`、`~/.cynosure/cmd`、按会话隔离的日志目录和当前工作区目录。
+启动时会自动创建：`~/.cynosure/`、按会话隔离的日志目录和当前工作区目录。
 
 ### `~/.cynosure/settings.json` 示例
 

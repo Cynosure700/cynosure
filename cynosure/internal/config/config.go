@@ -18,9 +18,6 @@ type Config struct {
 type fileConfig struct {
 	Config
 	AppHome                            string `json:"app_home"`
-	BuiltinSkillsDir                   string `json:"builtin_skills_dir"`
-	CommandBinDir                      string `json:"command_bin_dir"`
-	CommandScriptDir                   string `json:"command_script_dir"`
 	SystemPromptPath                   string `json:"system_prompt_path"`
 	WorkspaceRoot                      string `json:"workspace_root"`
 	AllowedTools                       string `json:"allowed_tools"`
@@ -34,9 +31,6 @@ type fileConfig struct {
 type AppConfig struct {
 	LLM                         Config
 	AppHome                     string
-	BuiltinSkillsDir            string
-	CommandBinDir               string
-	CommandScriptDir            string
 	SystemPromptPath            string
 	WorkspaceRoot               string
 	LogsDir                     string
@@ -53,9 +47,6 @@ func defaultFileConfig() fileConfig {
 		AppHome:                    ".",
 		SystemPromptPath:           "system_prompt.md",
 		WorkspaceRoot:              "workspace",
-		BuiltinSkillsDir:           "skills",
-		CommandBinDir:              "bin",
-		CommandScriptDir:           "cmd",
 		AllowedTools:               defaultLocalAllowedTools,
 		BashAllowOutsideWorkspace:  false,
 		BashAllowDangerousCommands: false,

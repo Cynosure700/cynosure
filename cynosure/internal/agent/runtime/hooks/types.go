@@ -96,12 +96,10 @@ type ToolExecutionOutcome struct {
 }
 
 type ToolExecutionAudit struct {
-	ResolvedCWD           string `json:"resolved_cwd,omitempty"`
-	ResolvedCommandPath   string `json:"resolved_command_path,omitempty"`
-	CommandArtifactPath   string `json:"command_artifact_path,omitempty"`
-	CommandArtifactSource string `json:"command_artifact_source,omitempty"`
-	OutcomeSummary        string `json:"outcome_summary,omitempty"`
-	DenialReason          string `json:"denial_reason,omitempty"`
+	ResolvedCWD         string `json:"resolved_cwd,omitempty"`
+	ResolvedCommandPath string `json:"resolved_command_path,omitempty"`
+	OutcomeSummary      string `json:"outcome_summary,omitempty"`
+	DenialReason        string `json:"denial_reason,omitempty"`
 }
 
 func (s *LoopState) NextMessageID() string {
@@ -140,11 +138,9 @@ func (o ToolExecutionOutcome) MessageContent() string {
 func (o ToolExecutionOutcome) AuditSummary() string {
 	data, err := json.Marshal(o.Audit)
 	if err != nil {
-		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"command_artifact_path":%q,"command_artifact_source":%q,"outcome_summary":%q,"denial_reason":%q}`,
+		return fmt.Sprintf(`{"resolved_cwd":%q,"resolved_command_path":%q,"outcome_summary":%q,"denial_reason":%q}`,
 			o.Audit.ResolvedCWD,
 			o.Audit.ResolvedCommandPath,
-			o.Audit.CommandArtifactPath,
-			o.Audit.CommandArtifactSource,
 			o.Audit.OutcomeSummary,
 			o.Audit.DenialReason,
 		)

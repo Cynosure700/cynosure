@@ -1776,10 +1776,8 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContentWithoutRuntimePaths(t *
 	})
 	snapshot := agenttools.NewSkillSnapshot(nil, localSkills)
 	registry := NewToolRegistry(config.AppConfig{
-		AppHome:          "/deploy/app",
-		WorkspaceRoot:    "/deploy/app/workspace",
-		CommandBinDir:    "/deploy/app/workspace/bin",
-		CommandScriptDir: "/deploy/app/workspace/cmd",
+		AppHome:       "/deploy/app",
+		WorkspaceRoot: "/deploy/app/workspace",
 	})
 
 	result, err := registry.Execute(context.Background(), ToolContext{Skills: snapshot}, "load_skill", `{"name":"builtin-skill"}`)
@@ -1801,62 +1799,6 @@ func TestToolRegistryExecute_LoadSkillReturnsSkillContentWithoutRuntimePaths(t *
 	}
 	if _, ok := agenttools.Handlers["load_skill"]; !ok {
 		t.Fatalf("expected load_skill handler to remain registered in shared tool registry")
-	}
-}
-
-func TestToolRegistryExecute_InjectsRuntimeEnvIntoToolHandler(t *testing.T) {
-	original := agenttools.Handlers["bash"]
-	defer func() { agenttools.Handlers["bash"] = original }()
-
-	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
-		env, ok := agenttools.RuntimeEnvFromContext(ctx)
-		if !ok {
-			return "", nil
-		}
-		return env.AppHome + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
-	}
-
-	registry := NewToolRegistry(config.AppConfig{
-		AppHome:          "/deploy/app",
-		WorkspaceRoot:    "/deploy/app/workspace",
-		CommandBinDir:    "/deploy/app/bin",
-		CommandScriptDir: "/deploy/app/cmd",
-		AllowedTools:     []string{"bash"},
-	})
-
-	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if execResult.Output != "/deploy/app|/deploy/app/bin|/deploy/app/cmd" {
-		t.Fatalf("expected runtime env in handler context, got %q", execResult.Output)
-	}
-}
-
-func TestToolRegistryExecute_UsesConfiguredCommandDirs(t *testing.T) {
-	original := agenttools.Handlers["bash"]
-	defer func() { agenttools.Handlers["bash"] = original }()
-
-	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
-		env, ok := agenttools.RuntimeEnvFromContext(ctx)
-		if !ok {
-			return "", nil
-		}
-		return env.WorkspaceRoot + "|" + env.CommandBinDir + "|" + env.CommandScriptDir, nil
-	}
-
-	registry := NewToolRegistry(config.AppConfig{
-		WorkspaceRoot:    "/deploy/app/workspace",
-		CommandBinDir:    "/deploy/app/workspace/bin",
-		CommandScriptDir: "/deploy/app/workspace/cmd",
-		AllowedTools:     []string{"bash"},
-	})
-	execResult, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if execResult.Output != "/deploy/app/workspace|/deploy/app/workspace/bin|/deploy/app/workspace/cmd" {
-		t.Fatalf("expected configured runtime env, got %q", execResult.Output)
 	}
 }
 
@@ -1913,15 +1855,13 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 		if !ok {
 			return "", nil
 		}
-		return env.WorkspaceRoot + "|" + env.CommandBinDir + "|" + env.CommandScriptDir + "|" + env.CurrentWorkingDir, nil
+		return env.WorkspaceRoot + "|" + env.CurrentWorkingDir, nil
 	}
 
 	workspace := t.TempDir()
 	cfg := config.AppConfig{
-		WorkspaceRoot:    workspace,
-		CommandBinDir:    filepath.Join(workspace, "bin"),
-		CommandScriptDir: filepath.Join(workspace, "cmd"),
-		AllowedTools:     []string{"bash"},
+		WorkspaceRoot: workspace,
+		AllowedTools:  []string{"bash"},
 	}
 	registry := NewToolRegistry(cfg)
 
@@ -1929,7 +1869,7 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Clean(workspace) + "|" + filepath.Join(workspace, "bin") + "|" + filepath.Join(workspace, "cmd") + "|" + filepath.Clean(workspace)
+	expected := filepath.Clean(workspace) + "|" + filepath.Clean(workspace)
 	if result.Output != expected {
 		t.Fatalf("expected workspace-derived paths to remain stable, got %q", result.Output)
 	}
@@ -2001,9 +1941,10 @@ func TestRegisteredTools_UsesConfiguredAllowList(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
+func TestExecuteToolCall_AuditCapturesResolvedCommandPath(t *testing.T) {
 	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
+	workspace := filepath.Join(root, "workspace")
+	binDir := filepath.Join(workspace, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
@@ -2012,18 +1953,10 @@ func TestExecuteToolCall_AuditCapturesCommandArtifactPath(t *testing.T) {
 		t.Fatalf("write helper script: %v", err)
 	}
 
-	workspace := filepath.Join(root, "workspace")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("create workspace dir: %v", err)
-	}
-
-	cfg := config.AppConfig{WorkspaceRoot: workspace, CommandBinDir: binDir, AllowedTools: []string{"bash"}}
+	cfg := config.AppConfig{WorkspaceRoot: workspace, AllowedTools: []string{"bash"}}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
 	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+script+` --flag"}`)
 
-	if outcome.Audit.CommandArtifactPath != script {
-		t.Fatalf("expected audit command artifact path %q, got %#v", script, outcome.Audit)
-	}
 	if outcome.Audit.ResolvedCommandPath != script {
 		t.Fatalf("expected audit resolved command path %q, got %#v", script, outcome.Audit)
 	}
@@ -2053,59 +1986,13 @@ func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
 	if outcome.Audit.ResolvedCommandPath != outside {
 		t.Fatalf("expected audit resolved command path %q, got %#v", outside, outcome.Audit)
 	}
-	if outcome.Audit.CommandArtifactPath != "" {
-		t.Fatalf("expected no command artifact path for outside command, got %#v", outcome.Audit)
-	}
 	if !contains(outcome.Audit.DenialReason, "command path escapes workspace") {
 		t.Fatalf("expected denial reason to mention workspace escape, got %#v", outcome.Audit)
 	}
 }
 
-func TestExecuteToolCall_AuditClassifiesWorkspaceCommandArtifactSource(t *testing.T) {
-	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "workspace")
-	binDir := filepath.Join(workspace, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("create workspace bin dir: %v", err)
-	}
-	command := filepath.Join(binDir, "helper")
-	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatalf("write workspace helper: %v", err)
-	}
-
-	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: binDir, AllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
-
-	if outcome.Audit.CommandArtifactSource != "workspace" {
-		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
-	}
-}
-
-func TestExecuteToolCall_AuditClassifiesCustomCommandArtifactSource(t *testing.T) {
-	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "workspace")
-	customRoot := t.TempDir()
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("create workspace dir: %v", err)
-	}
-	command := filepath.Join(customRoot, "helper")
-	if err := os.WriteFile(command, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatalf("write custom helper: %v", err)
-	}
-
-	cfg := config.AppConfig{AppHome: appHome, WorkspaceRoot: workspace, CommandBinDir: customRoot, AllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+command+`"}`)
-
-	if outcome.Audit.CommandArtifactSource != "custom" {
-		t.Fatalf("expected custom artifact source, got %#v", outcome.Audit)
-	}
-}
-
 func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
-	appHome := t.TempDir()
-	workspace := filepath.Join(appHome, "workspace")
+	workspace := t.TempDir()
 	binDir := filepath.Join(workspace, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("create workspace bin dir: %v", err)
@@ -2116,9 +2003,7 @@ func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
 	}
 
 	cfg := config.AppConfig{
-		AppHome:       appHome,
 		WorkspaceRoot: workspace,
-		CommandBinDir: binDir,
 		AllowedTools:  []string{"bash"},
 	}
 	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
@@ -2133,11 +2018,8 @@ func TestExecuteToolCall_AuditCapturesAppWorkspaceResolution(t *testing.T) {
 	if outcome.Audit.ResolvedCWD != workspace {
 		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
 	}
-	if outcome.Audit.CommandArtifactPath != command {
-		t.Fatalf("expected audit command artifact path %q, got %#v", command, outcome.Audit)
-	}
-	if outcome.Audit.CommandArtifactSource != "workspace" {
-		t.Fatalf("expected workspace artifact source, got %#v", outcome.Audit)
+	if outcome.Audit.ResolvedCommandPath != command {
+		t.Fatalf("expected audit resolved command path %q, got %#v", command, outcome.Audit)
 	}
 }
 

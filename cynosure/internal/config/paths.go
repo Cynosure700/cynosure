@@ -14,8 +14,6 @@ func EnsureAppLayout(cfg AppConfig) error {
 		path  string
 	}{
 		{label: "app home", path: cfg.AppHome},
-		{label: "command bin dir", path: cfg.CommandBinDir},
-		{label: "command script dir", path: cfg.CommandScriptDir},
 		{label: "workspace root", path: cfg.WorkspaceRoot},
 	}
 	for _, item := range paths {
@@ -36,8 +34,6 @@ func ValidateAppLayout(cfg AppConfig) error {
 		path  string
 	}{
 		{label: "app home", path: cfg.AppHome},
-		{label: "command bin dir", path: cfg.CommandBinDir},
-		{label: "command script dir", path: cfg.CommandScriptDir},
 		{label: "workspace root", path: cfg.WorkspaceRoot},
 	}
 	for _, item := range paths {

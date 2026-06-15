@@ -119,9 +119,6 @@ func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 		currentWorkingDir = workspaceRoot
 	}
 	return agenttools.RuntimeEnv{
-		AppHome:                env.AppHome,
-		CommandBinDir:          strings.TrimSpace(env.CommandBinDir),
-		CommandScriptDir:       strings.TrimSpace(env.CommandScriptDir),
 		WorkspaceRoot:          workspaceRoot,
 		CurrentWorkingDir:      currentWorkingDir,
 		AllowOutsideWorkspace:  env.AllowOutsideWorkspace,
@@ -181,9 +178,6 @@ func loadAllowedToolNames(cfg config.AppConfig) []string {
 
 func runtimeEnvFromConfig(cfg config.AppConfig) agenttools.RuntimeEnv {
 	return agenttools.RuntimeEnv{
-		AppHome:                strings.TrimSpace(cfg.AppHome),
-		CommandBinDir:          strings.TrimSpace(cfg.CommandBinDir),
-		CommandScriptDir:       strings.TrimSpace(cfg.CommandScriptDir),
 		WorkspaceRoot:          strings.TrimSpace(cfg.WorkspaceRoot),
 		AllowOutsideWorkspace:  cfg.BashAllowOutsideWorkspace,
 		AllowDangerousCommands: cfg.BashAllowDangerousCommands,

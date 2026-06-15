@@ -301,8 +301,7 @@ func TestSafePathFromRoot_RejectsPathEscape(t *testing.T) {
 
 func TestHandleWrite_DoesNotTouchDeploymentCommandDir(t *testing.T) {
 	workspace := t.TempDir()
-	commandDir := filepath.Join(workspace, "..", "cmd")
-	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CommandScriptDir: commandDir})
+	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace})
 
 	_, err := handleWrite(ctx, map[string]any{"path": filepath.Join("..", "cmd", "script.py"), "content": "print('x')"})
 	if err == nil {

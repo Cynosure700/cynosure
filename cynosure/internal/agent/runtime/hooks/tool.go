@@ -13,17 +13,13 @@ import (
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/idgen"
 	"nano_cc/internal/logger"
-	"nano_cc/internal/safety"
 	"nano_cc/internal/textutil"
 )
 
 func toolAuditPreHook(ctx context.Context, h *ToolUseContext) error {
 	runtimeEnv := h.State.RuntimeEnv()
-	resolvedCommandPath, commandArtifactPath := resolveCommandPaths(h.Name, h.RawArgs, runtimeEnv.CommandBinDir, runtimeEnv.CommandScriptDir)
 	h.Outcome.Audit.ResolvedCWD = runtimeEnv.CurrentWorkingDir
-	h.Outcome.Audit.ResolvedCommandPath = resolvedCommandPath
-	h.Outcome.Audit.CommandArtifactPath = commandArtifactPath
-	h.Outcome.Audit.CommandArtifactSource = classifyCommandArtifactSource(runtimeEnv.WorkspaceRoot, commandArtifactPath)
+	h.Outcome.Audit.ResolvedCommandPath = resolveCommandPath(h.Name, h.RawArgs)
 	return nil
 }
 
@@ -83,28 +79,13 @@ func appendToolResultLog(ctx context.Context, h *ToolUseContext) {
 
 func newToolCallID() string { return "tc_" + idgen.Hex() }
 
-func classifyCommandArtifactSource(workspaceRoot, commandArtifactPath string) string {
-	if strings.TrimSpace(commandArtifactPath) == "" {
-		return ""
-	}
-	cleanArtifact := filepath.Clean(commandArtifactPath)
-	cleanWorkspace := strings.TrimSpace(workspaceRoot)
-	if cleanWorkspace != "" {
-		cleanWorkspace = filepath.Clean(cleanWorkspace)
-		if safety.Contains(cleanWorkspace, cleanArtifact) {
-			return "workspace"
-		}
-	}
-	return "custom"
-}
-
-func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, string) {
+func resolveCommandPath(toolName, rawArgs string) string {
 	if toolName != "bash" {
-		return "", ""
+		return ""
 	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
-		return "", ""
+		return ""
 	}
 	command, _ := args["command"].(string)
 	for _, token := range strings.Fields(command) {
@@ -116,21 +97,7 @@ func resolveCommandPaths(toolName, rawArgs string, roots ...string) (string, str
 		if err != nil {
 			continue
 		}
-		cleanResolved := filepath.Clean(resolved)
-		for _, root := range roots {
-			if root == "" {
-				continue
-			}
-			resolvedRoot, err := filepath.Abs(root)
-			if err != nil {
-				continue
-			}
-			cleanRoot := filepath.Clean(resolvedRoot)
-			if safety.Contains(cleanRoot, cleanResolved) {
-				return cleanResolved, cleanResolved
-			}
-		}
-		return cleanResolved, ""
+		return filepath.Clean(resolved)
 	}
-	return "", ""
+	return ""
 }
