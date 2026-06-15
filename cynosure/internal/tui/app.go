@@ -801,13 +801,16 @@ func (m Model) messageWidth() int {
 
 func newMarkdownRenderer(width int) *glamour.TermRenderer {
 	style := styles.DarkStyleConfig
+	inlineReferenceColor := string(tuiPalette.butter)
+	style.Code.Color = &inlineReferenceColor
+	style.Code.BackgroundColor = nil
 	style.CodeBlock.Chroma = nil
 	style.CodeBlock.Theme = ""
 	renderer, _ := glamour.NewTermRenderer(glamour.WithStyles(style), glamour.WithWordWrap(max(10, width)))
 	return renderer
 }
 
-var fileReferencePattern = regexp.MustCompile(`(^|[\s\(\[\{\"'“‘，。；：、])((?:~?/|\./|\.\./)?[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+(?:/)?|[A-Za-z0-9._-]+/|[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9]{0,7})([\s\)\]\}\"'”’。，；：、\x1b]|$)`)
+var fileReferencePattern = regexp.MustCompile(`(^|[\s\(\[\{\"'“‘，。；：、])((?:~?/|\./|\.\./)?[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+(?:/)?|[A-Za-z0-9._-]+/|[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9]{0,7}|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\(\))([\s\)\]\}\"'”’。，；：、\x1b]|$)`)
 
 func colorizeFileReferences(text string) string {
 	return colorizeFileReferencesWithRestore(text, "\x1b[0m")
@@ -842,7 +845,7 @@ func renderFileReferenceWithRestore(text string, restoreSequence string) string 
 	if text == "" {
 		return text
 	}
-	return "\x1b[38;5;" + string(tuiPalette.blue) + "m" + text + restoreSequence
+	return "\x1b[38;5;" + string(tuiPalette.butter) + "m" + text + restoreSequence
 }
 
 func selectedUserLineStart() string {

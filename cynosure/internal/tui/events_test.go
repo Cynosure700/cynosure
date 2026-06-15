@@ -18,6 +18,7 @@ import (
 var ansiEscapePattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
 var ansiBackgroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*48;[0-9;]*m")
 var ansiBlueForegroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*38;5;39m")
+var ansiYellowForegroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*38;5;229m")
 var ansiSelectedGreyBackgroundPattern = regexp.MustCompile("\x1b\\[[0-9;]*48;5;238[0-9;]*m")
 var ansiReverseVideoPattern = regexp.MustCompile("\x1b\\[[0-9;]*7m")
 
@@ -44,7 +45,7 @@ func TestAssistantFileTreeDoesNotRenderErrorBackgroundHighlighting(t *testing.T)
 	}
 }
 
-func TestAssistantFileAndDirectoryReferencesRenderBlue(t *testing.T) {
+func TestAssistantFileAndDirectoryReferencesRenderYellow(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 120
 	app.renderer = newMarkdownRenderer(app.messageWidth())
@@ -57,8 +58,44 @@ func TestAssistantFileAndDirectoryReferencesRenderBlue(t *testing.T) {
 			t.Fatalf("assistant render = %q, want visible path %q", rendered, want)
 		}
 	}
-	if got := len(ansiBlueForegroundPattern.FindAllString(rendered, -1)); got < 2 {
-		t.Fatalf("assistant render = %q, want both file and directory references rendered blue", rendered)
+	if got := len(ansiYellowForegroundPattern.FindAllString(rendered, -1)); got < 2 {
+		t.Fatalf("assistant render = %q, want both file and directory references rendered yellow", rendered)
+	}
+}
+
+func TestAssistantFunctionReferencesRenderYellow(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+	content := "需要检查 renderMessage()、 Model.Update() 和 colorizeFileReferencesWithRestore() 函数。"
+
+	rendered := app.renderMessage(Message{Role: "assistant", Content: content})
+
+	for _, want := range []string{"renderMessage()", "Model.Update()", "colorizeFileReferencesWithRestore()"} {
+		if !strings.Contains(plainTerminalText(rendered), want) {
+			t.Fatalf("assistant render = %q, want visible function reference %q", rendered, want)
+		}
+	}
+	if got := len(ansiYellowForegroundPattern.FindAllString(rendered, -1)); got < 3 {
+		t.Fatalf("assistant render = %q, want function references rendered yellow", rendered)
+	}
+}
+
+func TestAssistantInlineCodeReferencesRenderYellow(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 160
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+	content := "`internal/agent/mcp/config.go` 的 `LoadWorkspaceConfig` 函数在 `mcp.Manager` 中使用。"
+
+	rendered := app.renderMessage(Message{Role: "assistant", Content: content})
+
+	for _, want := range []string{"internal/agent/mcp/config.go", "LoadWorkspaceConfig", "mcp.Manager"} {
+		if !strings.Contains(plainTerminalText(rendered), want) {
+			t.Fatalf("assistant render = %q, want visible inline code reference %q", rendered, want)
+		}
+	}
+	if got := len(ansiYellowForegroundPattern.FindAllString(rendered, -1)); got < 3 {
+		t.Fatalf("assistant render = %q, want inline code references rendered yellow", rendered)
 	}
 }
 
@@ -103,7 +140,7 @@ func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDirectoryRendersBlueInHeader(t *testing.T) {
+func TestWorkspaceDirectoryRendersYellowInHeader(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model := updated.(Model)
@@ -113,8 +150,8 @@ func TestWorkspaceDirectoryRendersBlueInHeader(t *testing.T) {
 	if !strings.Contains(plainTerminalText(header), "/tmp/project") {
 		t.Fatalf("header = %q, want visible workspace directory", header)
 	}
-	if !ansiBlueForegroundPattern.MatchString(header) {
-		t.Fatalf("header = %q, want workspace directory rendered blue", header)
+	if !ansiYellowForegroundPattern.MatchString(header) {
+		t.Fatalf("header = %q, want workspace directory rendered yellow", header)
 	}
 }
 
