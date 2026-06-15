@@ -10,10 +10,6 @@ echo "打包 cynosure..."
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/bin"
-mkdir -p "${OUTPUT_DIR}/skills"
-mkdir -p "${OUTPUT_DIR}/cmd"
-mkdir -p "${OUTPUT_DIR}/logs"
-mkdir -p "${OUTPUT_DIR}/workspace"
 
 (
   cd "${ROOTDIR}"
@@ -30,19 +26,7 @@ if [ -d "${ROOTDIR}/cmd" ]; then
       "${GO_BINARY}" build -o "${OUTPUT_DIR}/bin/${command_name}" "./cmd/${command_name}"
     )
   done
-  cp -R "${ROOTDIR}/cmd/." "${OUTPUT_DIR}/cmd/"
-fi
-
-if [ -f "${ROOTDIR}/config.json" ]; then
-  cp "${ROOTDIR}/config.json" "${OUTPUT_DIR}/config.json"
-fi
-
-if [ -f "${ROOTDIR}/system_prompt.md" ]; then
-  cp "${ROOTDIR}/system_prompt.md" "${OUTPUT_DIR}/system_prompt.md"
-fi
-
-if [ -d "${ROOTDIR}/skills" ]; then
-  cp -R "${ROOTDIR}/skills/." "${OUTPUT_DIR}/skills/"
 fi
 
 echo "打包完成：${OUTPUT_DIR}"
+echo "system_prompt.md 与内置 skills 已嵌入二进制（go:embed），无需随包分发。"

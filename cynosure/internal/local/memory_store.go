@@ -3,8 +3,6 @@ package local
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -462,16 +460,7 @@ func sanitizeName(s string) string {
 }
 
 func workspaceMemoryDirName(workspaceRoot string) string {
-	base := sanitizeName(filepath.Base(filepath.Clean(workspaceRoot)))
-	if base == "" {
-		base = "project"
-	}
-	abs, err := filepath.Abs(workspaceRoot)
-	if err != nil {
-		abs = filepath.Clean(workspaceRoot)
-	}
-	sum := sha256.Sum256([]byte(abs))
-	return base + "-" + hex.EncodeToString(sum[:])[:8]
+	return config.WorkspaceKey(workspaceRoot)
 }
 
 func safeRelativeMemoryPath(path string) bool {

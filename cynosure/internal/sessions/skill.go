@@ -3,6 +3,7 @@ package sessions
 import (
 	"fmt"
 	"html"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -105,6 +106,47 @@ func (sl *SkillLoader) LoadAllFromDirWithSource(dir string, source string) error
 
 func isSkillEntryFile(name string) bool {
 	return strings.EqualFold(name, skillEntryFileName)
+}
+
+// LoadSkillsFromFS 从一个 fs.FS（如 go:embed 文件系统）加载内置 skills，
+// 返回带来源标记的 loader。用于把嵌入二进制的内置 skills 接入加载链。
+func LoadSkillsFromFS(fsys fs.FS, source string) (*SkillLoader, error) {
+	loader := NewSkillLoader()
+	if fsys == nil {
+		return loader, nil
+	}
+	entries := make(map[string]*SkillEntry)
+	seenInDir := make(map[string]string)
+	err := fs.WalkDir(fsys, ".", func(fullPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() || !isSkillEntryFile(d.Name()) {
+			return nil
+		}
+		data, err := fs.ReadFile(fsys, fullPath)
+		if err != nil {
+			return nil
+		}
+		meta, body := parseFrontmatter(string(data))
+		name := canonicalSkillName(fullPath, meta)
+		if previous, exists := seenInDir[name]; exists {
+			return fmt.Errorf("duplicate skill %q in %s and %s", name, previous, fullPath)
+		}
+		seenInDir[name] = fullPath
+		entries[name] = &SkillEntry{
+			Meta:   meta,
+			Body:   body,
+			Path:   fullPath,
+			Source: strings.TrimSpace(source),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	loader.LoadFromEntries(entries)
+	return loader, nil
 }
 
 func LoadSkillsFromDirs(dirs []SkillDir) (*SkillLoader, error) {

@@ -3,8 +3,10 @@ package local
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"nano_cc/assets"
 	"nano_cc/internal/agent/mcp"
 	"nano_cc/internal/agent/runtime"
 	"nano_cc/internal/agent/storage"
@@ -42,21 +44,23 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	if err := config.ValidateAppLayout(cfg); err != nil {
 		return nil, err
 	}
-	if err := logger.InitFileLoggerAt(cfg.LogsDir); err != nil {
+	sessionID := idgen.UUID()
+	logsDir, err := config.CynosureSessionLogsDir(cfg.WorkspaceRoot, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := logger.InitFileLoggerAt(logsDir); err != nil {
 		logger.Warn(fmt.Sprintf("failed to init file logger: %v", err))
 	}
 	userSkillsDir, err := config.CynosureSkillsDir()
 	if err != nil {
 		return nil, err
 	}
-	builtinSkills, err := sessions.LoadSkillsFromDirs([]sessions.SkillDir{
-		{Path: userSkillsDir, Source: "user"},
-		{Path: config.WorkspaceCynosureSkillsDir(cfg.WorkspaceRoot), Source: "workspace"},
-	})
+	builtinSkills, err := loadSkills(cfg.WorkspaceRoot, userSkillsDir)
 	if err != nil {
 		return nil, fmt.Errorf("load cynosure skills: %w", err)
 	}
-	basePrompt, err := assistant.LoadBaseSystemPrompt(cfg.SystemPromptPath)
+	basePrompt, err := loadBasePrompt(cfg.SystemPromptPath)
 	if err != nil {
 		return nil, fmt.Errorf("load system prompt: %w", err)
 	}
@@ -83,7 +87,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	mcpManager.SetWorkspaceServers(ctx, workspaceMCPServers)
 	runtimeService.SetMCPManager(mcpManager)
 	user := storage.User{ID: LocalUserID, Email: "local@cynosure", Username: "local", MemoryEnabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	conversation := storage.Conversation{ID: idgen.New("conv"), SessionID: idgen.UUID(), UserID: user.ID, RootMessageID: idgen.New("msg"), Title: "TUI 会话", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	conversation := storage.Conversation{ID: idgen.New("conv"), SessionID: sessionID, UserID: user.ID, RootMessageID: idgen.New("msg"), Title: "TUI 会话", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := store.CreateConversation(ctx, conversation); err != nil {
 		mcpManager.Close()
 		return nil, err
@@ -99,4 +103,30 @@ func (b *Bundle) Close() {
 	if b != nil && b.MCP != nil {
 		b.MCP.Close()
 	}
+}
+
+// loadSkills 合并内置（嵌入二进制）、用户级与工作区级 skills。
+// 优先级：workspace > user > builtin（后者被前者同名覆盖）。
+func loadSkills(workspaceRoot, userSkillsDir string) (*sessions.SkillLoader, error) {
+	builtin, err := sessions.LoadSkillsFromFS(assets.BuiltinSkillsFS(), "builtin")
+	if err != nil {
+		return nil, err
+	}
+	userAndWorkspace, err := sessions.LoadSkillsFromDirs([]sessions.SkillDir{
+		{Path: userSkillsDir, Source: "user"},
+		{Path: config.WorkspaceCynosureSkillsDir(workspaceRoot), Source: "workspace"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sessions.MergeSkillLoaders(builtin, userAndWorkspace), nil
+}
+
+// loadBasePrompt 优先使用用户覆盖文件（~/.cynosure/system_prompt.md），
+// 否则使用嵌入二进制的内置 system prompt。
+func loadBasePrompt(overridePath string) (string, error) {
+	if strings.TrimSpace(overridePath) != "" {
+		return assistant.LoadBaseSystemPrompt(overridePath)
+	}
+	return assets.SystemPrompt(), nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -47,21 +48,47 @@ type AppConfig struct {
 	ConversationLockWaitTimeout time.Duration
 }
 
+func defaultFileConfig() fileConfig {
+	return fileConfig{
+		AppHome:                    ".",
+		SystemPromptPath:           "system_prompt.md",
+		WorkspaceRoot:              "workspace",
+		BuiltinSkillsDir:           "skills",
+		CommandBinDir:              "bin",
+		CommandScriptDir:           "cmd",
+		AllowedTools:               defaultLocalAllowedTools,
+		BashAllowOutsideWorkspace:  false,
+		BashAllowDangerousCommands: false,
+	}
+}
+
+// loadConfigFile 返回运行配置。默认值内置在代码中，使二进制可在任意目录运行；
+// 若存在 ~/.cynosure/config.json，则用其内容覆盖默认值（可选）。
 func loadConfigFile() (fileConfig, error) {
-	data, err := os.ReadFile(configFilePath())
+	cfg := defaultFileConfig()
+	path, err := configFilePath()
 	if err != nil {
 		return fileConfig{}, err
 	}
-
-	var cfg fileConfig
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return fileConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fileConfig{}, fmt.Errorf("failed to parse workspace config.json: %w", err)
+		return fileConfig{}, fmt.Errorf("failed to parse config %s: %w", path, err)
 	}
 	return cfg, nil
 }
 
-func configFilePath() string {
-	return "config.json"
+func configFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".cynosure", "config.json"), nil
 }
 
 func loadLLMConfig(fileCfg fileConfig) (Config, error) {

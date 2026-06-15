@@ -77,6 +77,8 @@ func runTUI(ctx context.Context, opts Options) error {
 func printHelp(out io.Writer) {
 	_, _ = fmt.Fprintln(out, `cynosure - 本地 TUI 代码助手
 
+在任意项目目录下直接运行 cynosure 即可对当前目录启动 agent。
+
 用法：
   cynosure [--cwd <path>]   启动 TUI，默认工作区为当前目录
   cynosure tui [--cwd <path>] 同上

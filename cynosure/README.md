@@ -19,10 +19,10 @@
 cynosure/
 ├── main.go                  # TUI 默认入口
 ├── build.sh                 # 发布包构建脚本
-├── config.json              # 本地运行配置模板
-├── system_prompt.md         # 基础 identity prompt，启动时必须存在
-├── skills/                  # 内置 Skill
-├── workspace/               # 示例 workspace；TUI 默认使用启动 cwd
+├── assets/                  # go:embed 嵌入资源
+│   ├── embed.go             # 嵌入声明
+│   ├── system_prompt.md     # 基础 identity prompt（嵌入二进制）
+│   └── skills/              # 内置 Skill（嵌入二进制）
 └── internal/
     ├── agent/               # Agent runtime、MCP 与存储模型
     ├── assistant/           # system prompt 拼装
@@ -51,15 +51,15 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ### 读取规则
 
-- 进程从 cynosure 目录读取 `config.json`，用于本地运行路径、工具白名单和安全开关等非敏感配置。
+- 运行配置默认值内置在代码中；若存在 `~/.cynosure/config.json`，其内容会覆盖默认值（可选）。配置用于工具白名单和安全开关等非敏感项。
 - LLM 密钥、模型和 Base URL 从 `~/.cynosure/settings.json` 读取。
-- `app_home` 默认是 `.`，运行资源目录均以 `app_home` 为基准。
-- `system_prompt_path` 默认是 `<app_home>/system_prompt.md`，文件缺失会导致启动失败。
-- `command_bin_dir`、`command_script_dir` 默认分别是 `<app_home>/bin`、`<app_home>/cmd`。
-- TUI 的 `workspace_root` 默认被启动 cwd 或 `--cwd` 覆盖。
+- `system_prompt.md` 与内置 skills 通过 `go:embed` 嵌入二进制；若存在 `~/.cynosure/system_prompt.md`，则优先使用该用户覆盖文件。
+- 内置 skills 来源为 `builtin`，与用户级 `~/.cynosure/skills` 和工作区级 `<cwd>/.cynosure/skills` 合并，优先级 workspace > user > builtin。
+- `command_bin_dir`、`command_script_dir` 固定为 `~/.cynosure/bin`、`~/.cynosure/cmd`。
+- TUI 的工作区为启动 cwd，或由 `--cwd` 指定。
 - 本地配置不包含数据库、Redis、Elasticsearch、JWT 或 Cookie 会话字段。
 
-启动时会自动创建：`app_home`、`logs/`、`skills/`、`bin/`、`cmd/` 和当前工作区目录。
+启动时会自动创建：`~/.cynosure/`、`~/.cynosure/bin`、`~/.cynosure/cmd`、按会话隔离的日志目录和当前工作区目录。
 
 ### `~/.cynosure/settings.json` 示例
 
@@ -81,14 +81,12 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 - **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
-### `config.json` 示例
+### `~/.cynosure/config.json` 示例（可选）
+
+不创建该文件时使用内置默认值。需要自定义工具白名单或安全开关时才创建：
 
 ```json
 {
-  "app_home": ".",
-  "system_prompt_path": "system_prompt.md",
-  "command_bin_dir": "bin",
-  "command_script_dir": "cmd",
   "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,todo_write,spawn_subagent",
   "bash_allow_outside_workspace": false,
   "bash_allow_dangerous_commands": false
@@ -145,15 +143,36 @@ TUI 会在用户目录维护 `~/.cynosure/task_outputs/`，用于保存工具执
 - 模型如需读取完整结果，会通过 `read_persisted_output(id, offset, limit)` 分段读取，读取时会校验会话、用户、conversation 和 sha256。
 - 每次工具执行完成后，都会向 `~/.cynosure/task_outputs/{session_id}/tools.md` 追加工具名、参数、状态、审计摘要和结果内容，便于本地排查；该文件不会自动注入模型上下文。
 
-## 启动 TUI
+## 安装与启动
+
+`cynosure` 是自包含的单一二进制：`system_prompt.md` 与内置 skills 通过 `go:embed` 嵌入二进制，运行配置默认值内置在代码中，无需随包分发资源文件。安装后可在任意项目目录直接运行。
+
+### 安装（推荐）
+
+```bash
+go install nano_cc@latest    # 上传 GitHub 后用对应 module 路径
+# 或在源码目录：
+cd cynosure && go install .
+```
+
+安装后 `cynosure` 进入 `GOBIN`（默认 `~/go/bin`，需在 `PATH` 中）。
+
+### 启动 TUI
+
+```bash
+# 在任意项目目录下，默认工作区为当前目录
+cd /path/to/your/project
+cynosure
+
+# 显式指定用户项目目录作为工作区
+cynosure --cwd /path/to/project
+```
+
+### 开发期运行
 
 ```bash
 cd cynosure
-
-# 默认工作区为当前 shell 所在目录
-go run .
-
-# 显式指定用户项目目录作为工作区
+go run .                      # 默认工作区为当前 shell 所在目录
 go run . --cwd /path/to/project
 ```
 

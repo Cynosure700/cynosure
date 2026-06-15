@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -34,15 +36,23 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
-	appHome, err := resolveAppHome(fileCfg)
-	if err != nil {
-		return AppConfig{}, err
-	}
 	llm, err := loadLocalLLMConfig(fileCfg)
 	if err != nil {
 		return AppConfig{}, err
 	}
-	runtimeDirs, err := resolveRuntimePaths(appHome, fileCfg)
+	appHome, err := cynosureHomeDir()
+	if err != nil {
+		return AppConfig{}, err
+	}
+	binDir, err := CynosureBinDir()
+	if err != nil {
+		return AppConfig{}, err
+	}
+	scriptDir, err := CynosureScriptDir()
+	if err != nil {
+		return AppConfig{}, err
+	}
+	systemPromptPath, err := userSystemPromptOverridePath()
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -54,12 +64,12 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 	return AppConfig{
 		LLM:                         llm,
 		AppHome:                     appHome,
-		BuiltinSkillsDir:            runtimeDirs.builtinSkillsDir,
-		CommandBinDir:               runtimeDirs.commandBinDir,
-		CommandScriptDir:            runtimeDirs.commandScriptDir,
-		SystemPromptPath:            runtimeDirs.systemPromptPath,
+		BuiltinSkillsDir:            "",
+		CommandBinDir:               binDir,
+		CommandScriptDir:            scriptDir,
+		SystemPromptPath:            systemPromptPath,
 		WorkspaceRoot:               workspaceRoot,
-		LogsDir:                     runtimeDirs.logsDir,
+		LogsDir:                     "",
 		AllowedTools:                parseCSVList(allowedTools),
 		BashAllowOutsideWorkspace:   fileCfg.BashAllowOutsideWorkspace,
 		BashAllowDangerousCommands:  fileCfg.BashAllowDangerousCommands,
@@ -67,6 +77,35 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 		MemoryWorkTimeout:           time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
 		ConversationLockWaitTimeout: time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
 	}, nil
+}
+
+func cynosureHomeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".cynosure"), nil
+}
+
+// userSystemPromptOverridePath 返回用户可选覆盖文件 ~/.cynosure/system_prompt.md；
+// 文件不存在时返回空字符串，表示使用内置（embedded）system prompt。
+func userSystemPromptOverridePath() (string, error) {
+	home, err := cynosureHomeDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(home, "system_prompt.md")
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("stat system prompt override %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil
+	}
+	return path, nil
 }
 
 func loadLocalLLMConfig(_ fileConfig) (Config, error) {
@@ -131,6 +170,71 @@ func WorkspaceCynosureMarkdownPath(workspaceRoot string) string {
 
 func WorkspaceMCPConfigPath(workspaceRoot string) string {
 	return filepath.Join(strings.TrimSpace(workspaceRoot), ".cynosure", ".mcp.json")
+}
+
+// WorkspaceKey 由工作区目录名与其绝对路径的 sha256 前 8 位组成，用于在
+// ~/.cynosure/ 下隔离不同项目的运行期数据（记忆、日志等）。
+func WorkspaceKey(workspaceRoot string) string {
+	base := sanitizePathSegment(filepath.Base(filepath.Clean(workspaceRoot)))
+	if base == "" {
+		base = "project"
+	}
+	abs, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		abs = filepath.Clean(workspaceRoot)
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return base + "-" + hex.EncodeToString(sum[:])[:8]
+}
+
+// CynosureSessionLogsDir 返回按工作区与会话隔离的日志目录：
+// ~/.cynosure/<workspace-key>/<session_id>/logs
+func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	session := sanitizePathSegment(sessionID)
+	if session == "" {
+		session = "session"
+	}
+	return filepath.Join(home, ".cynosure", WorkspaceKey(workspaceRoot), session, "logs"), nil
+}
+
+func CynosureBinDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".cynosure", "bin"), nil
+}
+
+func CynosureScriptDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".cynosure", "cmd"), nil
+}
+
+// sanitizePathSegment 把任意字符串收敛为安全的单层目录名。
+func sanitizePathSegment(s string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.TrimSpace(s) {
+		allowed := r == '.' || r == '_' || r == '-' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if allowed {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-._")
 }
 
 func loadLinkLLMConfig() (Config, error) {

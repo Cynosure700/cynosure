@@ -3,137 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
-type runtimePaths struct {
-	workspaceRoot    string
-	builtinSkillsDir string
-	commandBinDir    string
-	commandScriptDir string
-	systemPromptPath string
-	logsDir          string
-}
-
-type runtimeAssetSpec struct {
-	label     string
-	fileValue string
-	subdir    string
-}
-
-func resolveAppHome(fileCfg fileConfig) (string, error) {
-	appHome := firstNonEmpty(fileCfg.AppHome, ".")
-	resolved, err := filepath.Abs(appHome)
-	if err != nil {
-		return "", fmt.Errorf("resolve app_home: %w", err)
-	}
-	return filepath.Clean(resolved), nil
-}
-
-func resolvePath(appHome, pathValue string) (string, error) {
-	if strings.TrimSpace(pathValue) == "" {
-		pathValue = "."
-	}
-	if !filepath.IsAbs(pathValue) {
-		pathValue = filepath.Join(appHome, pathValue)
-	}
-	resolved, err := filepath.Abs(pathValue)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(resolved), nil
-}
-
-func resolveWorkspaceRoot(appHome, configured string) (string, error) {
-	configured = strings.TrimSpace(configured)
-	if configured != "" {
-		return resolvePath(appHome, configured)
-	}
-	return resolvePath(appHome, "workspace")
-}
-
-func resolveSystemPromptPath(appHome string, fileCfg fileConfig) (string, error) {
-	configured := strings.TrimSpace(fileCfg.SystemPromptPath)
-	if configured == "" {
-		configured = "system_prompt.md"
-	}
-	return resolvePath(appHome, configured)
-}
-
-func resolveRuntimePaths(appHome string, fileCfg fileConfig) (runtimePaths, error) {
-	workspaceRoot, err := resolveWorkspaceRoot(appHome, strings.TrimSpace(fileCfg.WorkspaceRoot))
-	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve workspace root: %w", err)
-	}
-	systemPromptPath, err := resolveSystemPromptPath(appHome, fileCfg)
-	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve system prompt path: %w", err)
-	}
-	logsDir, err := resolvePath(appHome, "logs")
-	if err != nil {
-		return runtimePaths{}, fmt.Errorf("resolve logs dir: %w", err)
-	}
-	paths := runtimePaths{workspaceRoot: workspaceRoot, systemPromptPath: systemPromptPath, logsDir: logsDir}
-	for _, spec := range []runtimeAssetSpec{
-		{label: "builtin skills dir", fileValue: fileCfg.BuiltinSkillsDir, subdir: "skills"},
-		{label: "command bin dir", fileValue: fileCfg.CommandBinDir, subdir: "bin"},
-		{label: "command script dir", fileValue: fileCfg.CommandScriptDir, subdir: "cmd"},
-	} {
-		resolved, err := resolveRuntimeAssetFromSpec(appHome, spec)
-		if err != nil {
-			return runtimePaths{}, err
-		}
-		switch spec.subdir {
-		case "skills":
-			paths.builtinSkillsDir = resolved
-		case "bin":
-			paths.commandBinDir = resolved
-		case "cmd":
-			paths.commandScriptDir = resolved
-		}
-	}
-	return paths, nil
-}
-
-func resolveRuntimeAssetFromSpec(appHome string, spec runtimeAssetSpec) (string, error) {
-	configured := strings.TrimSpace(spec.fileValue)
-	resolved, err := resolveRuntimeAssetDir(appHome, configured, spec.subdir)
-	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", spec.label, err)
-	}
-	return resolved, nil
-}
-
-func resolveRuntimeAssetDir(appHome, configured, subdir string) (string, error) {
-	expected, err := resolvePath(appHome, subdir)
-	if err != nil {
-		return "", err
-	}
-
-	configured = strings.TrimSpace(configured)
-	if configured == "" {
-		return expected, nil
-	}
-
-	resolved, err := resolvePath(appHome, configured)
-	if err != nil {
-		return "", err
-	}
-	if resolved != expected {
-		return "", fmt.Errorf("runtime asset dir must stay under app home: expected %q", expected)
-	}
-	return resolved, nil
-}
-
+// EnsureAppLayout 创建运行期需要的可写目录。所有运行期目录都在 ~/.cynosure/ 下，
+// 与二进制位置和启动目录无关，从而支持在任意项目目录运行。
 func EnsureAppLayout(cfg AppConfig) error {
 	paths := []struct {
 		label string
 		path  string
 	}{
 		{label: "app home", path: cfg.AppHome},
-		{label: "logs", path: cfg.LogsDir},
-		{label: "builtin skills dir", path: cfg.BuiltinSkillsDir},
 		{label: "command bin dir", path: cfg.CommandBinDir},
 		{label: "command script dir", path: cfg.CommandScriptDir},
 		{label: "workspace root", path: cfg.WorkspaceRoot},
@@ -149,13 +29,13 @@ func EnsureAppLayout(cfg AppConfig) error {
 	return nil
 }
 
+// ValidateAppLayout 校验运行期关键目录存在且为目录。
 func ValidateAppLayout(cfg AppConfig) error {
 	paths := []struct {
 		label string
 		path  string
 	}{
 		{label: "app home", path: cfg.AppHome},
-		{label: "builtin skills dir", path: cfg.BuiltinSkillsDir},
 		{label: "command bin dir", path: cfg.CommandBinDir},
 		{label: "command script dir", path: cfg.CommandScriptDir},
 		{label: "workspace root", path: cfg.WorkspaceRoot},
