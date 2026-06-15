@@ -62,6 +62,47 @@ func TestAssistantFileAndDirectoryReferencesRenderBlue(t *testing.T) {
 	}
 }
 
+func TestToolMessageFileAndDirectoryReferencesKeepToolStyle(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:          "Read",
+		ArgsPreview:   "file_path=go-agent/internal/tui/app.go",
+		Status:        "success",
+		ResultPreview: "listed go-agent/internal/tui/",
+	}}
+
+	rendered := app.renderMessage(msg)
+
+	if !strings.Contains(plainTerminalText(rendered), "go-agent/internal/tui/app.go") || !strings.Contains(plainTerminalText(rendered), "go-agent/internal/tui/") {
+		t.Fatalf("tool render = %q, want visible file and directory references", rendered)
+	}
+	if got := len(ansiBlueForegroundPattern.FindAllString(rendered, -1)); got != 1 {
+		t.Fatalf("tool render = %q, want only the leading tool bullet rendered blue, got %d blue foreground sequences", rendered, got)
+	}
+}
+
+func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:          "Glob",
+		ArgsPreview:   `path="/Users/bytedance/golang_pro/nano_cc", pattern="**/README*"`,
+		Status:        "success",
+		ResultPreview: "Found 1 file(s).",
+	}}
+
+	rendered := app.renderMessage(msg)
+	plain := plainTerminalText(rendered)
+
+	if !strings.Contains(plain, "● ✓ Glob") {
+		t.Fatalf("tool render = %q, want tool call line prefixed with a small bullet", rendered)
+	}
+	if !strings.Contains(rendered, ansiForeground(tuiPalette.blue)+"●") {
+		t.Fatalf("tool render = %q, want leading bullet rendered blue", rendered)
+	}
+}
+
 func TestWorkspaceDirectoryRendersBlueInHeader(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

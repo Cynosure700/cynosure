@@ -735,7 +735,7 @@ func (m Model) renderMessageAt(index int, msg Message, showReasoning bool) strin
 
 func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	if msg.ToolCall == nil {
-		return toolStyleForStatus("").Render("⏺ Tool")
+		return renderToolBullet() + toolStyleForStatus("").Render("⏺ Tool")
 	}
 	tool := msg.ToolCall
 	status := strings.TrimSpace(tool.Status)
@@ -753,7 +753,7 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 		result += " · " + tool.ResultPreview
 	}
 	body := line + "\n  ⎿ " + result
-	return toolStyleForStatus(status).Render(wrapText(colorizeFileReferencesWithRestore(body, ansiToolStatus(status)), m.messageWidth()-2))
+	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
 }
 
 func toolIcon(status string) string {
@@ -859,17 +859,6 @@ func ansiForeground(color lipgloss.Color) string {
 
 func ansiThinking() string {
 	return "\x1b[0;3;38;5;242m"
-}
-
-func ansiToolStatus(status string) string {
-	switch status {
-	case "success":
-		return ansiForeground(tuiPalette.mint)
-	case "rejected", "error", "failed":
-		return ansiForeground(tuiPalette.coral)
-	default:
-		return ansiForeground(lipgloss.Color("245"))
-	}
 }
 
 func renderSelectedUserMessage(content string, width int) string {
@@ -1146,6 +1135,10 @@ func toolStyleForStatus(status string) lipgloss.Style {
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")).PaddingLeft(1)
 	}
+}
+
+func renderToolBullet() string {
+	return ansiForeground(tuiPalette.blue) + "●" + "\x1b[0m"
 }
 
 func promptLineStyle() lipgloss.Style {
