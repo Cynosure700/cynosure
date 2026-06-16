@@ -90,3 +90,19 @@ func TestBuildSystemPromptOmitsEmptyCynosureMarkdownContext(t *testing.T) {
 		t.Fatalf("expected empty link markdown context to be omitted, got %q", prompt)
 	}
 }
+
+func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
+	for _, want := range []string{
+		"## 定义角色",
+		"## 安全性声明",
+		"## 帮助文档",
+		"## 输出风格",
+		"## 任务管理",
+		"## 工具调用",
+		"## 环境信息",
+	} {
+		if !strings.Contains(DefaultBaseSystemPrompt, want) {
+			t.Fatalf("expected default base prompt to contain domain section %q", want)
+		}
+	}
+}

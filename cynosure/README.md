@@ -212,14 +212,16 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 每轮请求模型前，`assistant.BuildSystemPrompt` 会把基础 identity 提示词与运行期动态段落拼成最终 system prompt：
 
-- `<identity>`：基础提示词，来自嵌入二进制的 `assets/system_prompt.md`，若存在 `~/.cynosure/system_prompt.md` 则优先使用该覆盖文件。内容覆盖身份定位、产物交付、隐私边界、语气风格、主动性、遵循约定、代码风格、任务执行、工具使用与安全边界等行为约束。
+- `<identity>`：基础提示词，来自嵌入二进制的 `assets/system_prompt.md`，若存在 `~/.cynosure/system_prompt.md` 则优先使用该覆盖文件。内容参考 `cn/system.md` 的分域设计，并按 Cynosure 当前能力划分为 `定义角色`、`安全性声明`、`帮助文档`、`输出风格`、`任务管理`、`工具调用`、`环境信息` 七类；其中工具与环境部分只描述 Cynosure 当前真实存在的能力和运行期动态注入边界。
 - `<workspace>`：注入 Surface 与当前工作目录。
 - `<system-reminder>`：在存在 `CYNOSURE.MD` 时注入用户级与工作区级说明，以及重要指令提醒。
 - `<tools>`：注入本次会话实际可用的工具名清单（含 MCP 工具）。
 - `<skills>`：注入加载到的 Skill 摘要，模型按需 `load_skill` 加载正文。
 - `<memory>`：开启记忆时注入按当前对话筛选出的项目记忆。
 
-基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
+基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
+
+基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索优先 `grep`、文件名匹配优先 `glob`、目录浏览使用 `ls`，文件读取和修改分别使用 `read_file`、`edit_file`、`multi_edit`、`write_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`spawn_subagent` 仅用于隔离子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
 
 ## 工具系统
 
