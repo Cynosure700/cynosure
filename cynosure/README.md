@@ -224,6 +224,14 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - `bash_allow_outside_workspace=false` 时拒绝访问工作区外路径。
 - `bash_allow_dangerous_commands=false` 时拒绝危险命令。
 
+超时机制：
+
+- **主 Agent 单轮会话**：上限 24 小时，在会话循环每轮入口做截止时间检查的软边界，超时后结束本轮会话。
+- **子 Agent 单轮会话**：上限 1 小时，同样为循环间的截止时间检查。
+- **终端工具（`bash`）**：上限 120 秒，超时通过 `time.AfterFunc` + `Process.Kill()` 看门狗终止子进程。
+- **其他普通工具**（`read_file`/`write_file`/`edit_file`/`load_skill`/`todo_write`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
+- 以上阈值均为代码内硬编码常量，超时机制不依赖 `context`，不影响现有 `ctx` 透传链路。
+
 ## Skill 系统
 
 - 用户级 Skill 从 `~/.cynosure/skills` 加载。
@@ -312,4 +320,10 @@ TUI 化设计文档位于：
 
 ```text
 TUI化改造设计文档.md
+```
+
+超时机制设计文档位于：
+
+```text
+docs/超时机制设计文档.md
 ```

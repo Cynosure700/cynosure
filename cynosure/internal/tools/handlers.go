@@ -3,11 +3,16 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // TodoWriteToolName is the tool that updates the task plan and returns
 // structured todo items in addition to a textual summary.
 const TodoWriteToolName = "todo_write"
+
+// normalToolTimeout bounds the execution of non-terminal tools. The terminal
+// tool (bash) enforces its own timeout in bash.go.
+const normalToolTimeout = 60 * time.Second
 
 // ExecResult is the unified result of executing a stateless tool. Todos is
 // populated only by the todo_write tool.
@@ -30,7 +35,19 @@ var Handlers = map[string]ToolHandler{
 // Dispatch is the single entry point for executing a stateless tool by name.
 // It is the authority for tool execution semantics, including todo_write's
 // structured output.
+//
+// The terminal tool (bash) enforces its own 120s timeout internally; all other
+// tools are bounded by normalToolTimeout via a watchdog here.
 func Dispatch(ctx context.Context, name string, args map[string]any) (ExecResult, error) {
+	if name == "bash" {
+		return dispatchOnce(ctx, name, args)
+	}
+	return runWithTimeout(normalToolTimeout, name, func() (ExecResult, error) {
+		return dispatchOnce(ctx, name, args)
+	})
+}
+
+func dispatchOnce(ctx context.Context, name string, args map[string]any) (ExecResult, error) {
 	if name == TodoWriteToolName {
 		result, err := ExecuteTodoWrite(ctx, args)
 		if err != nil {
@@ -47,6 +64,27 @@ func Dispatch(ctx context.Context, name string, args map[string]any) (ExecResult
 		return ExecResult{}, err
 	}
 	return ExecResult{Output: output}, nil
+}
+
+// runWithTimeout executes fn in a goroutine and abandons the wait after d,
+// returning a timeout error. The result channel is buffered so the goroutine
+// never blocks on send even after a timeout.
+func runWithTimeout(d time.Duration, name string, fn func() (ExecResult, error)) (ExecResult, error) {
+	type result struct {
+		out ExecResult
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		out, err := fn()
+		ch <- result{out: out, err: err}
+	}()
+	select {
+	case r := <-ch:
+		return r.out, r.err
+	case <-time.After(d):
+		return ExecResult{}, fmt.Errorf("tool %s timed out after %v", name, d)
+	}
 }
 
 func handleBash(ctx context.Context, args map[string]any) (string, error) {

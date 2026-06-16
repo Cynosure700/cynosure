@@ -1,10 +1,10 @@
 package tools
 
 import (
-	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,7 +25,7 @@ var dangerousSnippets = []string{
 }
 
 const maxOutputLen = 50000
-const defaultTimeout = 120 * time.Second
+const terminalToolTimeout = 120 * time.Second
 
 func RunBash(command string) (string, error) {
 	return RunBashInDir(command, "")
@@ -45,17 +45,23 @@ func RunBashInDirWithOptions(command, dir string, allowDangerous bool) (string, 
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd := exec.Command("bash", "-c", command)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	output, err := cmd.CombinedOutput()
 
-	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("command timed out after %v", defaultTimeout)
+	var timedOut atomic.Bool
+	timer := time.AfterFunc(terminalToolTimeout, func() {
+		timedOut.Store(true)
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
+	output, err := cmd.CombinedOutput()
+	timer.Stop()
+
+	if timedOut.Load() {
+		return "", fmt.Errorf("command timed out after %v", terminalToolTimeout)
 	}
 
 	result := strings.TrimSpace(string(output))

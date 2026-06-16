@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -18,6 +19,10 @@ import (
 )
 
 const defaultSubagentMaxRounds = 20
+
+// subAgentTurnTimeout bounds a single subagent turn. It is a soft boundary
+// checked between rounds.
+const subAgentTurnTimeout = 1 * time.Hour
 
 type spawnSubagentArgs struct {
 	Task string `json:"task"`
@@ -79,7 +84,11 @@ func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agentto
 
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, trace *subagentTrace, maxRounds int) (openai.ChatCompletionMessage, error) {
 	roundsSinceTodoWrite := 0
+	turnStart := time.Now()
 	for round := 1; round <= maxRounds; round++ {
+		if time.Since(turnStart) > subAgentTurnTimeout {
+			return openai.ChatCompletionMessage{}, fmt.Errorf("subagent turn timed out after %v", subAgentTurnTimeout)
+		}
 		req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, Tools: tools.Definitions(), MaxTokens: defaultMaxTokens}
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)

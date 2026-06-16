@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -26,6 +27,10 @@ const (
 	maxRound             = 50
 	toolArgsPreviewMax   = 160
 	toolResultPreviewMax = 300
+
+	// mainAgentTurnTimeout bounds a single main-agent turn. It is a soft
+	// boundary checked between rounds.
+	mainAgentTurnTimeout = 24 * time.Hour
 
 	// defaultMaxTokens is the per-request output budget; on the first
 	// truncation it is upgraded to truncationMaxTokens.
@@ -100,6 +105,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	toolDefs := s.toolDefinitionsForUser(ctx, user.ID)
 	round := 0
 	roundsSinceTodoWrite := 0
+	turnStart := time.Now()
 	var cumulativeReasoning strings.Builder
 	var lastRequestHistory []storage.Message
 
@@ -107,6 +113,9 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		round++
 		if round > maxRound {
 			return storage.Message{}, fmt.Errorf("conversation round limit %d exceeded", maxRound)
+		}
+		if time.Since(turnStart) > mainAgentTurnTimeout {
+			return storage.Message{}, fmt.Errorf("main agent turn timed out after %v", mainAgentTurnTimeout)
 		}
 		requestHistory, err := s.compressContextBeforeLLM(ctx, state)
 		if err != nil {
