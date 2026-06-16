@@ -205,6 +205,19 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - `/mcp`：显示工作区 MCP server 状态、连接信息、工具数量和错误摘要。
 - `/resume`：展示当前工作区可恢复的历史会话列表，输入序号后恢复所选会话；输入 `/cancel` 取消选择。
 
+## 系统提示词
+
+每轮请求模型前，`assistant.BuildSystemPrompt` 会把基础 identity 提示词与运行期动态段落拼成最终 system prompt：
+
+- `<identity>`：基础提示词，来自嵌入二进制的 `assets/system_prompt.md`，若存在 `~/.cynosure/system_prompt.md` 则优先使用该覆盖文件。内容覆盖身份定位、产物交付、隐私边界、语气风格、主动性、遵循约定、代码风格、任务执行、工具使用与安全边界等行为约束。
+- `<workspace>`：注入 Surface 与当前工作目录。
+- `<system-reminder>`：在存在 `CYNOSURE.MD` 时注入用户级与工作区级说明，以及重要指令提醒。
+- `<tools>`：注入本次会话实际可用的工具名清单（含 MCP 工具）。
+- `<skills>`：注入加载到的 Skill 摘要，模型按需 `load_skill` 加载正文。
+- `<memory>`：开启记忆时注入按当前对话筛选出的项目记忆。
+
+基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
+
 ## 工具系统
 
 | 工具 | 说明 |
