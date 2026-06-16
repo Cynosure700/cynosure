@@ -60,6 +60,11 @@ type Service struct {
 	ContextCompressor *compression.Compressor
 	EnableMemory      bool
 	MCP               *mcp.Manager
+	Approver          ApprovalDecider
+}
+
+func (s *Service) SetApprover(approver ApprovalDecider) {
+	s.Approver = approver
 }
 
 func NewService(store conversationStore, cfg config.AppConfig, client llm.Client) *Service {

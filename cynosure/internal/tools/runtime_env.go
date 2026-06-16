@@ -8,10 +8,8 @@ import (
 type ToolHandler func(ctx context.Context, args map[string]any) (string, error)
 
 type RuntimeEnv struct {
-	WorkspaceRoot          string
-	CurrentWorkingDir      string
-	AllowOutsideWorkspace  bool
-	AllowDangerousCommands bool
+	WorkspaceRoot     string
+	CurrentWorkingDir string
 }
 
 type contextKey string
@@ -44,16 +42,6 @@ func currentWorkingDirFromContext(ctx context.Context) string {
 		return env.CurrentWorkingDir
 	}
 	return env.WorkspaceRoot
-}
-
-func allowOutsideWorkspaceFromContext(ctx context.Context) bool {
-	env, ok := RuntimeEnvFromContext(ctx)
-	return ok && env.AllowOutsideWorkspace
-}
-
-func allowDangerousCommandsFromContext(ctx context.Context) bool {
-	env, ok := RuntimeEnvFromContext(ctx)
-	return ok && env.AllowDangerousCommands
 }
 
 // WebProcessor processes fetched web content with an LLM given a user prompt.

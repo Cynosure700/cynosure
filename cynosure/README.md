@@ -7,6 +7,7 @@
 - **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
 - **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
 - **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
+- **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
 - **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace-key>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
@@ -76,7 +77,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ### 本地存储边界
 
-- **项目级文件**：`<cwd>/.cynosure/skills` 与 `<cwd>/.cynosure/.mcp.json` 分别提供工作区 Skills 与 MCP 配置。
+- **项目级文件**：`<cwd>/.cynosure/skills` 与 `<cwd>/.cynosure/.mcp.json` 分别提供工作区 Skills 与 MCP 配置；`<cwd>/.cynosure/settings.json` 保存工作区命令权限配置（`permissions.defaultMode` 与 `permissions.allowedRules`）。
 - **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
@@ -205,6 +206,8 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - `/mcp`：显示工作区 MCP server 状态、连接信息、工具数量和错误摘要。
 - `/resume`：展示当前工作区可恢复的历史会话列表，输入序号后恢复所选会话；输入 `/cancel` 取消选择。
 
+命令权限审批面板出现时，使用 `↑/↓` 移动光标、`Enter` 确认所选项，或直接按 `1`/`2`/`3` 选择放行/记住放行/拒绝，`Ctrl+C`、`Esc` 等同于拒绝。
+
 ## 系统提示词
 
 每轮请求模型前，`assistant.BuildSystemPrompt` 会把基础 identity 提示词与运行期动态段落拼成最终 system prompt：
@@ -223,11 +226,11 @@ cwd /path/to/project · skills 6 · mcp tools 4
 | 工具 | 说明 |
 | --- | --- |
 | `load_skill` | 加载 Skill 正文与元数据 |
-| `bash` | 在工作区内执行 shell 命令，受越权路径与危险命令限制 |
+| `bash` | 在工作区内执行 shell 命令，受越权路径与危险命令限制，执行前需用户审批 |
 | `read_file` | 读取工作区内文件 |
-| `write_file` | 写入工作区内文件 |
-| `edit_file` | 按精确文本替换编辑文件 |
-| `multi_edit` | 对单个文件一次性顺序执行多处查找替换，全部成功才写盘 |
+| `write_file` | 写入工作区内文件，执行前需用户审批 |
+| `edit_file` | 按精确文本替换编辑文件，执行前需用户审批 |
+| `multi_edit` | 对单个文件一次性顺序执行多处查找替换，全部成功才写盘，执行前需用户审批 |
 | `grep` | 纯 Go 正则内容搜索，支持 `files_with_matches`/`content`/`count` 三种输出模式 |
 | `glob` | 文件名 glob 模式匹配，结果按修改时间倒序返回 |
 | `ls` | 列出指定绝对路径下的文件与目录，支持 `ignore` glob 过滤 |
@@ -252,6 +255,33 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - **终端工具（`bash`）**：上限 120 秒，超时通过 `time.AfterFunc` + `Process.Kill()` 看门狗终止子进程。
 - **其他普通工具**（`read_file`/`write_file`/`edit_file`/`multi_edit`/`grep`/`glob`/`ls`/`web_fetch`/`web_search`/`load_skill`/`todo_write`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
 - 以上阈值均为代码内硬编码常量，超时机制不依赖 `context`，不影响现有 `ctx` 透传链路。
+
+## 命令权限审批
+
+为避免变更类操作未经确认即执行，TUI 在工具执行前引入交互式权限审批：
+
+- **免审批（查询/搜索）**：`read_file`、`grep`、`glob`、`ls`、`web_search`、`web_fetch`、`load_skill`、`todo_write`、`read_persisted_output`、`spawn_subagent` 等工具直接执行，无需确认。
+- **需审批（变更类）**：`bash`（含 `curl`、写入、删除等任意命令）以及 `write_file`、`edit_file`、`multi_edit` 在执行前弹出审批面板，提供三个选项：
+  - `1. Yes`：本次放行。
+  - `2. Yes, and don't ask again for: <rule>`：本次放行并把放行规则写入工作区 `settings.json`，后续同类操作不再询问。`bash` 规则按命令名通配（如 `curl *`），写工具规则按工具名通配（如 `write_file *`）。
+  - `3. No`：拒绝。该轮对话立即结束，且**不进行记忆与对话历史的收尾落库**。
+- **判定优先级**：是否需审批 → `bypassPermissions` 全放行 → 命中已放行规则 → 弹出审批面板。权限配置在**每次审批时实时读取**工作区 `settings.json`，运行中修改即时生效。
+- **子 Agent 一致**：`spawn_subagent` 派生的子 Agent 执行变更类工具时走同一套审批逻辑，共用工作区放行规则与 bypass 模式；子 Agent 中被拒绝会使该次子任务失败并结束父轮。
+
+### `<cwd>/.cynosure/settings.json` 示例（可选）
+
+```json
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allowedRules": ["curl *", "write_file *"]
+  }
+}
+```
+
+- `permissions.defaultMode` 为 `bypassPermissions` 时，一切命令直接放行、不再审批；其它取值或缺省时走正常审批流程。
+- `permissions.allowedRules` 是已放行规则列表，命中则免审批；选择审批选项 2 时会自动追加去重写入。
+- 不创建该文件或缺省 `permissions` 时，对 `bash` 与写工具均会审批（默认安全行为）。
 
 ## Skill 系统
 
@@ -347,4 +377,10 @@ TUI化改造设计文档.md
 
 ```text
 docs/超时机制设计文档.md
+```
+
+命令权限审批机制设计文档位于：
+
+```text
+docs/终端命令权限审批机制设计文档.md
 ```

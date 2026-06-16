@@ -63,7 +63,6 @@ func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
 	allowed := withoutTool(loadAllowedToolNames(cfg), "spawn_subagent")
 	env := runtimeEnvFromConfig(cfg)
 	env.CurrentWorkingDir = strings.TrimSpace(cwd)
-	env.AllowOutsideWorkspace = false
 	return &ToolRegistry{definitions: buildToolDefinitions(allowed), baseEnv: env}
 }
 
@@ -119,10 +118,8 @@ func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
 		currentWorkingDir = workspaceRoot
 	}
 	return agenttools.RuntimeEnv{
-		WorkspaceRoot:          workspaceRoot,
-		CurrentWorkingDir:      currentWorkingDir,
-		AllowOutsideWorkspace:  env.AllowOutsideWorkspace,
-		AllowDangerousCommands: env.AllowDangerousCommands,
+		WorkspaceRoot:     workspaceRoot,
+		CurrentWorkingDir: currentWorkingDir,
 	}
 }
 
@@ -178,9 +175,7 @@ func loadAllowedToolNames(cfg config.AppConfig) []string {
 
 func runtimeEnvFromConfig(cfg config.AppConfig) agenttools.RuntimeEnv {
 	return agenttools.RuntimeEnv{
-		WorkspaceRoot:          strings.TrimSpace(cfg.WorkspaceRoot),
-		AllowOutsideWorkspace:  cfg.BashAllowOutsideWorkspace,
-		AllowDangerousCommands: cfg.BashAllowDangerousCommands,
+		WorkspaceRoot: strings.TrimSpace(cfg.WorkspaceRoot),
 	}
 }
 

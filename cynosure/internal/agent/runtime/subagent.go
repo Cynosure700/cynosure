@@ -14,7 +14,6 @@ import (
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/idgen"
 	"nano_cc/internal/logger"
-	"nano_cc/internal/safety"
 	agenttools "nano_cc/internal/tools"
 )
 
@@ -116,6 +115,9 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
 				return openai.ChatCompletionMessage{}, err
 			}
+			if approved, _ := s.approveToolCall(ctx, tc); !approved {
+				return openai.ChatCompletionMessage{}, fmt.Errorf("subagent tool %s rejected by user", tc.Function.Name)
+			}
 			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, parent, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
@@ -170,9 +172,6 @@ func resolveSubagentCWD(workspaceRoot, cwd string) (string, error) {
 			return "", fmt.Errorf("resolve subagent cwd: %w", err)
 		}
 		resolved = filepath.Clean(resolved)
-	}
-	if !safety.Contains(root, resolved) {
-		return "", fmt.Errorf("subagent cwd escapes workspace: %s", cwd)
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {

@@ -178,6 +178,13 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
 				return storage.Message{}, err
 			}
+			if approved, _ := s.approveToolCall(ctx, tc); !approved {
+				// 用户拒绝：展示被拒状态后立即结束本轮，且不进行收尾（记忆/历史落库）。
+				toolCtx.Outcome = toolExecutionOutcome{Status: "rejected", Result: "Error: user rejected this operation", Audit: toolCtx.Outcome.Audit}
+				emitToolCallStart(state, toolCtx)
+				emitToolCallDone(state, toolCtx)
+				return storage.Message{Role: "assistant", Content: "操作已被拒绝，已结束本轮。"}, nil
+			}
 			emitToolCallStart(state, toolCtx)
 			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID)}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {

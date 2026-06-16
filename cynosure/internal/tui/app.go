@@ -99,6 +99,10 @@ type Model struct {
 	generation        int64
 	resumeSelecting   bool
 	resumeCandidates  []storage.ResumableSession
+	approving         bool
+	approvalView      approvalView
+	approvalCursor    int
+	approvalReplies   chan runtime.ApprovalDecision
 	toolCallCount     int
 	contextTokens     int
 	contextBudget     int
@@ -130,6 +134,10 @@ func Run(ctx context.Context, runtimeService *runtime.Service, session SessionIn
 	previousConsole := logger.SetConsoleEnabled(false)
 	defer logger.SetConsoleEnabled(previousConsole)
 	config := newRunConfig(ctx, NewModel(runtimeService, session))
+	if runtimeService != nil {
+		// 注入审批前端：Decide 通过共享的 events 通道与主循环交互（值拷贝共享 channel）。
+		runtimeService.SetApprover(config.model)
+	}
 	program := tea.NewProgram(config.model, config.options...)
 	_, err := program.Run()
 	return err
@@ -162,6 +170,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			if m.approving {
+				m.resolveApproval(runtime.ApprovalNo)
+			}
 			if m.running && m.cancel != nil {
 				m.cancel()
 				m.generation++
@@ -170,6 +181,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		}
+		if m.approving {
+			if m.handleApprovalKey(msg.String()) {
+				m.refreshViewport()
+				if m.running {
+					return m, m.waitEvent()
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+		switch msg.String() {
 		case "enter":
 			text := m.input.Value()
 			if strings.TrimSpace(text) == "" || m.running {
@@ -222,6 +245,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch msg.Name {
+		case "approval_request":
+			if req, ok := msg.Data.(approvalRequestMsg); ok {
+				m.beginApproval(req)
+			}
 		case "assistant_delta":
 			m.appendAssistantDelta(msg.Content)
 		case "reasoning_delta":
@@ -649,6 +676,12 @@ func (m Model) renderTranscript() string {
 			b.WriteString("\n\n")
 		}
 		b.WriteString(m.renderMessages())
+	}
+	if m.approving {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(m.renderApprovalPanel())
 	}
 	return b.String()
 }

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"nano_cc/internal/safety"
 )
 
 func TestHandleRead_UsesWorkspaceRootForRelativePath(t *testing.T) {
@@ -163,41 +161,6 @@ func TestHandleEdit_UsesCurrentWorkingDirForRelativePath(t *testing.T) {
 	}
 }
 
-func TestHandleBash_RejectsSkillDirOutsideWorkspace(t *testing.T) {
-	workspace := t.TempDir()
-	outside := t.TempDir()
-	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CurrentWorkingDir: outside}), map[string]any{"command": "pwd"})
-	if err == nil {
-		t.Fatalf("expected outside skill dir to be rejected")
-	}
-	if !strings.Contains(err.Error(), "current working directory escapes workspace") {
-		t.Fatalf("expected skill-dir escape error, got %v", err)
-	}
-}
-
-func TestHandleRead_RejectsSkillDirOutsideWorkspace(t *testing.T) {
-	workspace := t.TempDir()
-	outside := t.TempDir()
-	_, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace, CurrentWorkingDir: outside}), map[string]any{"path": "note.txt"})
-	if err == nil {
-		t.Fatalf("expected outside skill dir to be rejected")
-	}
-	if !strings.Contains(err.Error(), "current working directory escapes workspace") {
-		t.Fatalf("expected skill-dir escape error, got %v", err)
-	}
-}
-
-func TestHandleBash_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
-	root := t.TempDir()
-	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "cat /tmp/outside.txt"})
-	if err == nil {
-		t.Fatalf("expected absolute path outside workspace to be rejected")
-	}
-	if !strings.Contains(err.Error(), "command path escapes workspace") {
-		t.Fatalf("expected workspace escape error, got %v", err)
-	}
-}
-
 func TestHandleBash_AllowsCommonCommandsWithoutPathArguments(t *testing.T) {
 	root := t.TempDir()
 	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "echo hello"})
@@ -209,7 +172,7 @@ func TestHandleBash_AllowsCommonCommandsWithoutPathArguments(t *testing.T) {
 	}
 }
 
-func TestHandleBash_AllowsOutsideWorkspacePathWhenConfigured(t *testing.T) {
+func TestHandleBash_AllowsOutsideWorkspacePath(t *testing.T) {
 	root := t.TempDir()
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "outside.txt")
@@ -217,95 +180,12 @@ func TestHandleBash_AllowsOutsideWorkspacePathWhenConfigured(t *testing.T) {
 		t.Fatalf("write outside fixture: %v", err)
 	}
 
-	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root, AllowOutsideWorkspace: true}), map[string]any{"command": "cat " + outsideFile})
+	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "cat " + outsideFile})
 	if err != nil {
-		t.Fatalf("expected configured outside path to be allowed: %v", err)
+		t.Fatalf("expected outside path to be allowed: %v", err)
 	}
 	if result != "outside ok" {
 		t.Fatalf("expected outside file content, got %q", result)
-	}
-}
-
-func TestHandleBash_RejectsDangerousCommandByDefault(t *testing.T) {
-	root := t.TempDir()
-	_, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "rm temp.txt"})
-	if err == nil {
-		t.Fatalf("expected dangerous command to be rejected")
-	}
-	if !strings.Contains(err.Error(), "dangerous command blocked") {
-		t.Fatalf("expected dangerous command error, got %v", err)
-	}
-}
-
-func TestDangerousCommandPattern_IgnoresNonCommandArguments(t *testing.T) {
-	if pattern, ok := dangerousCommandPattern("echo rm"); ok {
-		t.Fatalf("expected non-command argument to be allowed, got dangerous pattern %q", pattern)
-	}
-	if pattern, ok := dangerousCommandPattern("echo ok; rm temp.txt"); !ok || pattern != "rm" {
-		t.Fatalf("expected command after separator to be dangerous, got pattern=%q ok=%v", pattern, ok)
-	}
-}
-
-func TestHandleRead_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "outside.txt")
-	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
-		t.Fatalf("write outside fixture: %v", err)
-	}
-
-	_, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside})
-	if err == nil {
-		t.Fatalf("expected absolute path outside workspace to be rejected")
-	}
-	if !strings.Contains(err.Error(), "path escapes workspace") {
-		t.Fatalf("expected workspace escape error, got %v", err)
-	}
-}
-
-func TestHandleWrite_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "outside.txt")
-
-	_, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside, "content": "blocked"})
-	if err == nil {
-		t.Fatalf("expected absolute path outside workspace to be rejected")
-	}
-	if !strings.Contains(err.Error(), "path escapes workspace") {
-		t.Fatalf("expected workspace escape error, got %v", err)
-	}
-}
-
-func TestHandleEdit_RejectsAbsolutePathOutsideWorkspace(t *testing.T) {
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "outside.txt")
-	if err := os.WriteFile(outside, []byte("before"), 0o644); err != nil {
-		t.Fatalf("write outside fixture: %v", err)
-	}
-
-	_, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": outside, "old_text": "before", "new_text": "after"})
-	if err == nil {
-		t.Fatalf("expected absolute path outside workspace to be rejected")
-	}
-	if !strings.Contains(err.Error(), "path escapes workspace") {
-		t.Fatalf("expected workspace escape error, got %v", err)
-	}
-}
-
-func TestSafePathFromRoot_RejectsPathEscape(t *testing.T) {
-	root := t.TempDir()
-	_, err := safety.SafePathFromRoot(root, "../escape.txt")
-	if err == nil {
-		t.Fatalf("expected path escape to be rejected")
-	}
-}
-
-func TestHandleWrite_DoesNotTouchDeploymentCommandDir(t *testing.T) {
-	workspace := t.TempDir()
-	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: workspace})
-
-	_, err := handleWrite(ctx, map[string]any{"path": filepath.Join("..", "cmd", "script.py"), "content": "print('x')"})
-	if err == nil {
-		t.Fatalf("expected write escaping workspace to be rejected")
 	}
 }
 

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allowedRules": [
+      "ls *",
+      "write_file *"
+    ]
+  }
+}

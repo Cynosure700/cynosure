@@ -55,7 +55,7 @@ func stringArrayParam(desc string) map[string]any {
 }
 
 var baseToolDefs = []openai.Tool{
-	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the workspace root; absolute paths outside the workspace and dangerous commands are rejected unless explicitly allowed by configuration.", map[string]any{
+	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the current working directory. Mutating commands (write, delete, curl, etc.) require user approval before running.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"command": strParam("The shell command to execute"),

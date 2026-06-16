@@ -21,8 +21,6 @@ type fileConfig struct {
 	SystemPromptPath                   string `json:"system_prompt_path"`
 	WorkspaceRoot                      string `json:"workspace_root"`
 	AllowedTools                       string `json:"allowed_tools"`
-	BashAllowOutsideWorkspace          bool   `json:"bash_allow_outside_workspace"`
-	BashAllowDangerousCommands         bool   `json:"bash_allow_dangerous_commands"`
 	ConversationLockTTLSeconds         int    `json:"conversation_lock_ttl_seconds"`
 	MemoryWorkTimeoutSeconds           int    `json:"memory_work_timeout_seconds"`
 	ConversationLockWaitTimeoutSeconds int    `json:"conversation_lock_wait_timeout_seconds"`
@@ -35,8 +33,6 @@ type AppConfig struct {
 	WorkspaceRoot               string
 	LogsDir                     string
 	AllowedTools                []string
-	BashAllowOutsideWorkspace   bool
-	BashAllowDangerousCommands  bool
 	ConversationLockTTL         time.Duration
 	MemoryWorkTimeout           time.Duration
 	ConversationLockWaitTimeout time.Duration
@@ -44,12 +40,10 @@ type AppConfig struct {
 
 func defaultFileConfig() fileConfig {
 	return fileConfig{
-		AppHome:                    ".",
-		SystemPromptPath:           "system_prompt.md",
-		WorkspaceRoot:              "workspace",
-		AllowedTools:               defaultLocalAllowedTools,
-		BashAllowOutsideWorkspace:  false,
-		BashAllowDangerousCommands: false,
+		AppHome:          ".",
+		SystemPromptPath: "system_prompt.md",
+		WorkspaceRoot:    "workspace",
+		AllowedTools:     defaultLocalAllowedTools,
 	}
 }
 

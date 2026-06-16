@@ -100,18 +100,11 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if cmd == "" {
 		return "", fmt.Errorf("command is required")
 	}
-	root, err := validatedWorkspaceRootFromContext(ctx)
-	if err != nil {
-		return "", err
-	}
 	workingDir, err := validatedCurrentWorkingDirFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
-	if err := validateBashCommandPaths(root, cmd, allowOutsideWorkspaceFromContext(ctx)); err != nil {
-		return "", err
-	}
-	return RunBashInDirWithOptions(cmd, workingDir, allowDangerousCommandsFromContext(ctx))
+	return RunBashInDir(cmd, workingDir)
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {

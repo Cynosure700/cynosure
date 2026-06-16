@@ -1875,35 +1875,6 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 	}
 }
 
-func TestToolRegistryExecute_PropagatesBashSafetyFlags(t *testing.T) {
-	original := agenttools.Handlers["bash"]
-	defer func() { agenttools.Handlers["bash"] = original }()
-	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
-		env, ok := agenttools.RuntimeEnvFromContext(ctx)
-		if !ok {
-			return "", nil
-		}
-		return boolString(env.AllowOutsideWorkspace) + "|" + boolString(env.AllowDangerousCommands), nil
-	}
-
-	workspace := t.TempDir()
-	cfg := config.AppConfig{
-		WorkspaceRoot:              workspace,
-		AllowedTools:               []string{"bash"},
-		BashAllowOutsideWorkspace:  true,
-		BashAllowDangerousCommands: true,
-	}
-	registry := NewToolRegistry(cfg)
-
-	result, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":"pwd"}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Output != "true|true" {
-		t.Fatalf("expected safety flags in runtime env, got %q", result.Output)
-	}
-}
-
 func TestExecuteToolCall_AuditUsesWorkspaceRootAsResolvedCWD(t *testing.T) {
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, "skills", "demo-skill")
@@ -1959,35 +1930,6 @@ func TestExecuteToolCall_AuditCapturesResolvedCommandPath(t *testing.T) {
 
 	if outcome.Audit.ResolvedCommandPath != script {
 		t.Fatalf("expected audit resolved command path %q, got %#v", script, outcome.Audit)
-	}
-}
-
-func TestExecuteToolCall_AuditCapturesRejectedWorkspaceEscape(t *testing.T) {
-	root := t.TempDir()
-	workspace := filepath.Join(root, "workspace")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("create workspace dir: %v", err)
-	}
-	outside := filepath.Join(root, "outside.sh")
-	if err := os.WriteFile(outside, []byte("#!/bin/sh\necho no\n"), 0o755); err != nil {
-		t.Fatalf("write outside script: %v", err)
-	}
-
-	cfg := config.AppConfig{WorkspaceRoot: workspace, AllowedTools: []string{"bash"}}
-	service := &Service{Cfg: cfg, Tools: NewToolRegistry(cfg)}
-	outcome := executeToolCallWithDefaultHooks(t, service, "bash", `{"command":"`+outside+`"}`)
-
-	if outcome.Status != "rejected" {
-		t.Fatalf("expected rejected outcome, got %#v", outcome)
-	}
-	if outcome.Audit.ResolvedCWD != workspace {
-		t.Fatalf("expected audit cwd %q, got %#v", workspace, outcome.Audit)
-	}
-	if outcome.Audit.ResolvedCommandPath != outside {
-		t.Fatalf("expected audit resolved command path %q, got %#v", outside, outcome.Audit)
-	}
-	if !contains(outcome.Audit.DenialReason, "command path escapes workspace") {
-		t.Fatalf("expected denial reason to mention workspace escape, got %#v", outcome.Audit)
 	}
 }
 
@@ -2097,13 +2039,6 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
-}
-
-func boolString(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
 }
 
 func toolNamesInclude(tools []openai.Tool, name string) bool {

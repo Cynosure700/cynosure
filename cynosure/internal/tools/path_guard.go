@@ -49,11 +49,7 @@ func validatedCurrentWorkingDirFromContext(ctx context.Context) (string, error) 
 	if !info.IsDir() {
 		return "", fmt.Errorf("current working directory is not a directory")
 	}
-	resolved = filepath.Clean(resolved)
-	if !safety.Contains(workspaceRoot, resolved) {
-		return "", fmt.Errorf("current working directory escapes workspace: %s", workingDir)
-	}
-	return resolved, nil
+	return filepath.Clean(resolved), nil
 }
 
 func resolvePathFromContext(ctx context.Context, path string) (string, string, error) {
@@ -74,53 +70,6 @@ func resolvePathFromContext(ctx context.Context, path string) (string, string, e
 		return "", "", err
 	}
 	return workspaceRoot, resolvedPath, nil
-}
-
-func validateBashCommandPaths(root, command string, allowOutsideWorkspace bool, allowedDirs ...string) error {
-	cleanRoot := filepath.Clean(root)
-	cleanAllowed := make([]string, 0, len(allowedDirs))
-	for _, dir := range allowedDirs {
-		if strings.TrimSpace(dir) == "" {
-			continue
-		}
-		if abs, err := filepath.Abs(dir); err == nil {
-			cleanAllowed = append(cleanAllowed, filepath.Clean(abs))
-		}
-	}
-	for _, token := range splitShellFields(command) {
-		candidate := cleanShellPathToken(token)
-		if candidate == "" || !isShellPathArgument(candidate) {
-			continue
-		}
-		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(cleanRoot, candidate)
-		}
-		resolved, err := filepath.Abs(candidate)
-		if err != nil {
-			return fmt.Errorf("resolve command path: %w", err)
-		}
-		cleanResolved := filepath.Clean(resolved)
-		if allowOutsideWorkspace {
-			continue
-		}
-		if safety.Contains(cleanRoot, cleanResolved) {
-			continue
-		}
-		if isUnderAnyDir(cleanResolved, cleanAllowed) {
-			continue
-		}
-		return fmt.Errorf("command path escapes workspace: %s", token)
-	}
-	return nil
-}
-
-func isUnderAnyDir(target string, dirs []string) bool {
-	for _, dir := range dirs {
-		if safety.Contains(dir, target) {
-			return true
-		}
-	}
-	return false
 }
 
 func splitShellFields(command string) []string {
@@ -174,28 +123,4 @@ func appendShellField(fields *[]string, current *strings.Builder) {
 	}
 	*fields = append(*fields, current.String())
 	current.Reset()
-}
-
-func cleanShellPathToken(token string) string {
-	trimmed := strings.Trim(token, "\"'`;,()[]{}")
-	if strings.Contains(trimmed, "://") {
-		return ""
-	}
-	if idx := strings.IndexAny(trimmed, "<>|"); idx >= 0 {
-		trimmed = trimmed[:idx]
-	}
-	if strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "/") {
-		return ""
-	}
-	return strings.TrimSpace(trimmed)
-}
-
-func isShellPathArgument(token string) bool {
-	if token == "" || strings.HasPrefix(token, "-") || token == "." || token == ".." {
-		return false
-	}
-	if filepath.IsAbs(token) || strings.HasPrefix(token, "./") || strings.HasPrefix(token, "../") || strings.ContainsRune(token, os.PathSeparator) {
-		return true
-	}
-	return strings.ContainsRune(token, '.')
 }

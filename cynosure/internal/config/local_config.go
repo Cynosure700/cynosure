@@ -60,8 +60,6 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 		WorkspaceRoot:               workspaceRoot,
 		LogsDir:                     "",
 		AllowedTools:                parseCSVList(allowedTools),
-		BashAllowOutsideWorkspace:   fileCfg.BashAllowOutsideWorkspace,
-		BashAllowDangerousCommands:  fileCfg.BashAllowDangerousCommands,
 		ConversationLockTTL:         time.Duration(intOrDefault(fileCfg.ConversationLockTTLSeconds, 30)) * time.Second,
 		MemoryWorkTimeout:           time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
 		ConversationLockWaitTimeout: time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
