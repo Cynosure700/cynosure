@@ -92,3 +92,61 @@ func RunEditFromRoot(root, path, oldText, newText string) (string, error) {
 
 	return fmt.Sprintf("Edited %s", path), nil
 }
+
+// Edit is a single find-and-replace operation for RunMultiEditFromRoot.
+type Edit struct {
+	OldString  string
+	NewString  string
+	ReplaceAll bool
+}
+
+// RunMultiEditFromRoot applies multiple edits to a single file atomically: all
+// edits are applied to an in-memory copy in order, and the file is written
+// back only if every edit succeeds. Any failure aborts without touching disk.
+func RunMultiEditFromRoot(root, path string, edits []Edit) (string, error) {
+	if len(edits) == 0 {
+		return "", fmt.Errorf("edits is required")
+	}
+	resolved, err := safety.SafePathFromRoot(root, path)
+	if err != nil {
+		return "", err
+	}
+
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	content := string(data)
+	for i, e := range edits {
+		updated, err := applyEdit(content, e.OldString, e.NewString, e.ReplaceAll)
+		if err != nil {
+			return "", fmt.Errorf("edit %d: %w", i+1, err)
+		}
+		content = updated
+	}
+
+	if err := os.WriteFile(resolved, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return fmt.Sprintf("Applied %d edits to %s", len(edits), path), nil
+}
+
+// applyEdit performs a single in-memory find-and-replace, returning an error
+// when oldText is empty, equals newText, or is not present in content.
+func applyEdit(content, oldText, newText string, replaceAll bool) (string, error) {
+	if oldText == "" {
+		return "", fmt.Errorf("old_string is required")
+	}
+	if oldText == newText {
+		return "", fmt.Errorf("old_string and new_string must differ")
+	}
+	if !strings.Contains(content, oldText) {
+		return "", fmt.Errorf("text not found: %q", oldText)
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, oldText, newText), nil
+	}
+	return strings.Replace(content, oldText, newText, 1), nil
+}

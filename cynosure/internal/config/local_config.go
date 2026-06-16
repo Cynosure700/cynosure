@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const defaultLocalAllowedTools = "load_skill,bash,read_file,write_file,edit_file,todo_write,spawn_subagent"
+const defaultLocalAllowedTools = "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,spawn_subagent"
 
 type linkSettings struct {
 	Env linkSettingsEnv `json:"env"`

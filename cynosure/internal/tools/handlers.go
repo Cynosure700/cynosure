@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,12 @@ var Handlers = map[string]ToolHandler{
 	"read_file":             handleRead,
 	"write_file":            handleWrite,
 	"edit_file":             handleEdit,
+	"multi_edit":            handleMultiEdit,
+	"grep":                  handleGrep,
+	"glob":                  handleGlob,
+	"ls":                    handleLs,
+	"web_fetch":             handleWebFetch,
+	"web_search":            handleWebSearch,
 	"load_skill":            handleLoadSkill,
 	"read_persisted_output": handleReadPersistedOutput,
 }
@@ -147,4 +155,125 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 		return "", err
 	}
 	return RunEditFromRoot(root, resolvedPath, oldText, newText)
+}
+
+func handleMultiEdit(ctx context.Context, args map[string]any) (string, error) {
+	path, _ := args["file_path"].(string)
+	if path == "" {
+		return "", fmt.Errorf("file_path is required")
+	}
+	rawEdits, ok := args["edits"].([]any)
+	if !ok || len(rawEdits) == 0 {
+		return "", fmt.Errorf("edits is required")
+	}
+	edits := make([]Edit, 0, len(rawEdits))
+	for i, raw := range rawEdits {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("edit %d is not an object", i+1)
+		}
+		oldStr, _ := m["old_string"].(string)
+		newStr, _ := m["new_string"].(string)
+		replaceAll, _ := m["replace_all"].(bool)
+		edits = append(edits, Edit{OldString: oldStr, NewString: newStr, ReplaceAll: replaceAll})
+	}
+	root, resolvedPath, err := resolvePathFromContext(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	return RunMultiEditFromRoot(root, resolvedPath, edits)
+}
+
+func handleGrep(ctx context.Context, args map[string]any) (string, error) {
+	pattern, _ := args["pattern"].(string)
+	if pattern == "" {
+		return "", fmt.Errorf("pattern is required")
+	}
+	root, resolvedPath, err := resolveSearchPathFromContext(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	globPattern, _ := args["glob"].(string)
+	outputMode, _ := args["output_mode"].(string)
+	ignoreCase, _ := args["-i"].(bool)
+	showLineNumbers, _ := args["-n"].(bool)
+	headLimit := 0
+	if l, ok := args["head_limit"].(float64); ok {
+		headLimit = int(l)
+	}
+	return RunGrepFromRoot(root, resolvedPath, pattern, globPattern, outputMode, ignoreCase, showLineNumbers, headLimit)
+}
+
+func handleGlob(ctx context.Context, args map[string]any) (string, error) {
+	pattern, _ := args["pattern"].(string)
+	if pattern == "" {
+		return "", fmt.Errorf("pattern is required")
+	}
+	_, resolvedPath, err := resolveSearchPathFromContext(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	headLimit := 0
+	if l, ok := args["head_limit"].(float64); ok {
+		headLimit = int(l)
+	}
+	return RunGlobFromRoot(resolvedPath, pattern, headLimit)
+}
+
+func handleLs(ctx context.Context, args map[string]any) (string, error) {
+	path, _ := args["path"].(string)
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("path must be an absolute path: %s", path)
+	}
+	_, resolvedPath, err := resolvePathFromContext(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	ignore := stringSliceArg(args["ignore"])
+	return RunLsFromRoot(resolvedPath, ignore)
+}
+
+func handleWebFetch(ctx context.Context, args map[string]any) (string, error) {
+	url, _ := args["url"].(string)
+	if url == "" {
+		return "", fmt.Errorf("url is required")
+	}
+	prompt, _ := args["prompt"].(string)
+	return RunWebFetch(ctx, url, prompt)
+}
+
+func handleWebSearch(ctx context.Context, args map[string]any) (string, error) {
+	query, _ := args["query"].(string)
+	if query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+	return RunWebSearch(ctx, query)
+}
+
+// resolveSearchPathFromContext resolves the optional path argument for grep and
+// glob, defaulting to the current working directory and constraining the result
+// to the workspace.
+func resolveSearchPathFromContext(ctx context.Context, args map[string]any) (string, string, error) {
+	path, _ := args["path"].(string)
+	if strings.TrimSpace(path) == "" {
+		path = "."
+	}
+	return resolvePathFromContext(ctx, path)
+}
+
+func stringSliceArg(value any) []string {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }

@@ -5,7 +5,7 @@
 ## 核心能力
 
 - **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
-- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`todo_write`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
+- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
 - **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
@@ -86,7 +86,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ```json
 {
-  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,todo_write,spawn_subagent",
+  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,spawn_subagent",
   "bash_allow_outside_workspace": false,
   "bash_allow_dangerous_commands": false
 }
@@ -227,13 +227,21 @@ cwd /path/to/project · skills 6 · mcp tools 4
 | `read_file` | 读取工作区内文件 |
 | `write_file` | 写入工作区内文件 |
 | `edit_file` | 按精确文本替换编辑文件 |
+| `multi_edit` | 对单个文件一次性顺序执行多处查找替换，全部成功才写盘 |
+| `grep` | 纯 Go 正则内容搜索，支持 `files_with_matches`/`content`/`count` 三种输出模式 |
+| `glob` | 文件名 glob 模式匹配，结果按修改时间倒序返回 |
+| `ls` | 列出指定绝对路径下的文件与目录，支持 `ignore` glob 过滤 |
+| `web_fetch` | 抓取 URL，将 HTML 转为文本后用 LLM 按 prompt 处理；未配置 LLM 时返回清洗文本 |
+| `web_search` | 联网搜索（占位）；未配置搜索后端时返回提示，默认不启用 |
 | `todo_write` | 维护多步骤任务清单 |
 | `spawn_subagent` | 派生隔离子 Agent |
 | `read_persisted_output` | 自动暴露，用于读取上下文压缩落盘的大工具结果 |
 
 安全边界：
 
-- 文件读写、编辑和命令执行都以 TUI 工作区为默认边界。
+- 文件读写、编辑、内容/文件名检索、目录列举和命令执行都以 TUI 工作区为默认边界。
+- `grep`/`glob` 的 `path` 默认是当前工作目录，会被约束在工作区内；`ls` 要求传入绝对路径且同样受工作区约束。
+- `web_fetch` 会将 `http://` 升级为 `https://`，限制响应体大小并复用普通工具的 60 秒看门狗；`web_search` 当前为占位实现。
 - `bash_allow_outside_workspace=false` 时拒绝访问工作区外路径。
 - `bash_allow_dangerous_commands=false` 时拒绝危险命令。
 
@@ -242,7 +250,7 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - **主 Agent 单轮会话**：上限 24 小时，在会话循环每轮入口做截止时间检查的软边界，超时后结束本轮会话。
 - **子 Agent 单轮会话**：上限 1 小时，同样为循环间的截止时间检查。
 - **终端工具（`bash`）**：上限 120 秒，超时通过 `time.AfterFunc` + `Process.Kill()` 看门狗终止子进程。
-- **其他普通工具**（`read_file`/`write_file`/`edit_file`/`load_skill`/`todo_write`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
+- **其他普通工具**（`read_file`/`write_file`/`edit_file`/`multi_edit`/`grep`/`glob`/`ls`/`web_fetch`/`web_search`/`load_skill`/`todo_write`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
 - 以上阈值均为代码内硬编码常量，超时机制不依赖 `context`，不影响现有 `ctx` 透传链路。
 
 ## Skill 系统

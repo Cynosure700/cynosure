@@ -55,3 +55,19 @@ func allowDangerousCommandsFromContext(ctx context.Context) bool {
 	env, ok := RuntimeEnvFromContext(ctx)
 	return ok && env.AllowDangerousCommands
 }
+
+// WebProcessor processes fetched web content with an LLM given a user prompt.
+// It is injected by the runtime layer so the tools package does not depend on
+// the llm/runtime packages.
+type WebProcessor func(ctx context.Context, prompt, content string) (string, error)
+
+const webProcessorContextKey contextKey = "web_processor"
+
+func WithWebProcessor(ctx context.Context, fn WebProcessor) context.Context {
+	return context.WithValue(ctx, webProcessorContextKey, fn)
+}
+
+func webProcessorFromContext(ctx context.Context) (WebProcessor, bool) {
+	fn, ok := ctx.Value(webProcessorContextKey).(WebProcessor)
+	return fn, ok && fn != nil
+}

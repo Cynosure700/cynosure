@@ -245,9 +245,36 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
 	}
-	execResult, err := s.Tools.Execute(ctx, toolCtx, name, rawArgs)
+	execResult, err := s.Tools.Execute(s.withWebProcessor(ctx), toolCtx, name, rawArgs)
 	if err != nil {
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
 	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
+}
+
+// withWebProcessor injects an LLM-backed processor used by the web_fetch tool
+// to summarize/extract from fetched content. When no LLM is configured the
+// context is returned unchanged and web_fetch falls back to raw text.
+func (s *Service) withWebProcessor(ctx context.Context) context.Context {
+	if s.LLM == nil {
+		return ctx
+	}
+	processor := func(ctx context.Context, prompt, content string) (string, error) {
+		messages := []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: "You analyze web page content and answer the user's prompt using only the provided content."},
+			{Role: openai.ChatMessageRoleUser, Content: fmt.Sprintf("%s\n\nWeb page content:\n%s", prompt, content)},
+		}
+		resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+			Model:    s.Cfg.LLM.ModelID,
+			Messages: messages,
+		})
+		if err != nil {
+			return "", err
+		}
+		if len(resp.Choices) == 0 {
+			return "", fmt.Errorf("empty response from model")
+		}
+		return resp.Choices[0].Message.Content, nil
+	}
+	return agenttools.WithWebProcessor(ctx, processor)
 }

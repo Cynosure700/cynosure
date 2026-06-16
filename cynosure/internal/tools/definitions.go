@@ -39,6 +39,21 @@ func intParam(desc string) map[string]any {
 	}
 }
 
+func boolParam(desc string) map[string]any {
+	return map[string]any{
+		"type":        "boolean",
+		"description": desc,
+	}
+}
+
+func stringArrayParam(desc string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string"},
+		"description": desc,
+	}
+}
+
 var baseToolDefs = []openai.Tool{
 	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the workspace root; absolute paths outside the workspace and dangerous commands are rejected unless explicitly allowed by configuration.", map[string]any{
 		"type": "object",
@@ -97,7 +112,78 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"todos"},
 	}),
+	toolDef("grep", "A fast content search tool that works in any size codebase. Searches file contents using a Go regular expression. Always use this tool for search tasks; never invoke grep or rg via bash.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"pattern":     strParam("The regular expression pattern to search for in file contents (Go regexp syntax)."),
+			"path":        strParam("File or directory to search in. Defaults to the current working directory."),
+			"glob":        strParam("Glob pattern to filter files by name, e.g. *.go."),
+			"output_mode": map[string]any{"type": "string", "enum": []string{"content", "files_with_matches", "count"}, "description": "Output mode: content shows matching lines, files_with_matches shows file paths (default), count shows match counts."},
+			"-i":          boolParam("Case insensitive search."),
+			"-n":          boolParam("Show line numbers in content output mode."),
+			"head_limit":  intParam("Limit output to the first N entries. Defaults to 100."),
+		},
+		"required": []string{"pattern"},
+	}),
+	toolDef("glob", "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like **/*.js or src/**/*.ts and returns matching file paths sorted by modification time.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"pattern":    strParam("The glob pattern to match files against."),
+			"path":       strParam("The directory to search in. Defaults to the current working directory."),
+			"head_limit": intParam("Limit output to the first N entries. Defaults to 100."),
+		},
+		"required": []string{"pattern"},
+	}),
+	toolDef("ls", "List files and directories in a given path. The path must be an absolute path. You can optionally provide an array of glob patterns to ignore. Prefer glob and grep when you know which directories to search.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path":   strParam("The absolute path to the directory to list (must be absolute, not relative)."),
+			"ignore": stringArrayParam("List of glob patterns to ignore."),
+		},
+		"required": []string{"path"},
+	}),
+	toolDef("multi_edit", "Make multiple edits to a single file in one operation, built on the edit_file tool. Prefer this over edit_file when making several edits to the same file. Edits are applied sequentially and atomically: if any edit fails, none are applied.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"file_path": strParam("The absolute path to the file to modify (must be absolute, not relative)."),
+			"edits": map[string]any{
+				"type":        "array",
+				"description": "Array of edit operations to perform sequentially on the file.",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"old_string":  strParam("The text to replace (must match the file contents exactly, including whitespace and indentation)."),
+						"new_string":  strParam("The text to replace old_string with."),
+						"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
+					},
+					"required": []string{"old_string", "new_string"},
+				},
+				"minItems": 1,
+			},
+		},
+		"required": []string{"file_path", "edits"},
+	}),
+	toolDef("web_fetch", "Fetch content from a URL and process it with an AI model. Fetches the URL, converts HTML to text, and runs the prompt over the content. Use this to retrieve and analyze web content.", map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"url":    strParam("The URL to fetch content from. http URLs are upgraded to https."),
+			"prompt": strParam("The prompt describing what to extract or analyze from the page."),
+		},
+		"required": []string{"url", "prompt"},
+	}),
 }
+
+// webSearchToolDef is defined separately because it is not enabled by default;
+// it is exposed in AllToolDefs so users can opt in via configuration.
+var webSearchToolDef = toolDef("web_search", "Search the web and use the results to inform responses. Provides up-to-date information for current events and recent data.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"query":           strParam("The search query to use."),
+		"allowed_domains": stringArrayParam("Only include search results from these domains."),
+		"blocked_domains": stringArrayParam("Never include search results from these domains."),
+	},
+	"required": []string{"query"},
+})
 
 var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
 	"type": "object",
@@ -123,5 +209,5 @@ var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a ch
 	"required": []string{"id"},
 })
 
-var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, ReadPersistedOutputToolDef)
+var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, webSearchToolDef, ReadPersistedOutputToolDef)
 var ChildToolDefs = baseToolDefs
