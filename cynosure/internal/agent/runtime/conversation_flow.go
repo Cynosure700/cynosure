@@ -24,7 +24,7 @@ const (
 	reasoningDeltaEvent  = "reasoning_delta"
 	toolCallStartEvent   = "tool_call_start"
 	toolCallDoneEvent    = "tool_call_done"
-	maxRound             = 50
+	maxRound             = 300
 	toolArgsPreviewMax   = 160
 	toolResultPreviewMax = 300
 

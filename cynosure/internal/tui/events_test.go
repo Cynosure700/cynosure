@@ -507,6 +507,35 @@ func TestModelDisplaysToolCallLifecycle(t *testing.T) {
 	}
 }
 
+func TestTodoWriteToolMessageRendersCheckboxList(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+	rawArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"},{"id":"3","content":"运行测试","status":"pending"}]}`
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_todo",
+		"tool_name":      "todoWrite",
+		"raw_args":       rawArgs,
+		"args_preview":   "todos: 3 items",
+		"status":         "success",
+		"result_preview": "Todo list updated: 3 items",
+	}})
+	model := updated.(Model)
+
+	rendered := plainTerminalText(model.renderMessages())
+	for _, want := range []string{"✓ Update Todos", "⎿ [✓] 梳理需求", "  [ ] 实现功能", "  [ ] 运行测试"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	for _, forbidden := range []string{"todos: 3 items", "Todo list updated"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("rendered = %q, should hide generic todoWrite preview %q", rendered, forbidden)
+		}
+	}
+}
+
 func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1

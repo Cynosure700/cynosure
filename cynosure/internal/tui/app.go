@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -51,6 +52,7 @@ type Message struct {
 type ToolCallView struct {
 	ID            string
 	Name          string
+	RawArgs       string
 	ArgsPreview   string
 	Status        string
 	ResultPreview string
@@ -609,6 +611,7 @@ func (m *Model) updateToolCallDone(data any) {
 		}
 		if tool.ID != "" && m.messages[i].ToolCall.ID == tool.ID {
 			m.messages[i].ToolCall.Name = firstNonEmpty(tool.Name, m.messages[i].ToolCall.Name)
+			m.messages[i].ToolCall.RawArgs = firstNonEmpty(tool.RawArgs, m.messages[i].ToolCall.RawArgs)
 			m.messages[i].ToolCall.ArgsPreview = firstNonEmpty(tool.ArgsPreview, m.messages[i].ToolCall.ArgsPreview)
 			m.messages[i].ToolCall.Status = firstNonEmpty(tool.Status, m.messages[i].ToolCall.Status)
 			m.messages[i].ToolCall.ResultPreview = tool.ResultPreview
@@ -622,6 +625,7 @@ func toolCallViewFromEvent(data any) ToolCallView {
 	return ToolCallView{
 		ID:            eventString(data, "tool_call_id"),
 		Name:          eventString(data, "tool_name"),
+		RawArgs:       eventString(data, "raw_args"),
 		ArgsPreview:   eventString(data, "args_preview"),
 		Status:        eventString(data, "status"),
 		ResultPreview: eventString(data, "result_preview"),
@@ -798,6 +802,9 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	if status == "" {
 		status = "running"
 	}
+	if isTodoWriteTool(tool.Name) {
+		return m.renderTodoWriteToolMessage(tool, status)
+	}
 	icon := toolIcon(status)
 	name := displayToolName(tool.Name)
 	line := icon + " " + name
@@ -810,6 +817,51 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	}
 	body := line + "\n  ⎿ " + result
 	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
+}
+
+func (m Model) renderTodoWriteToolMessage(tool *ToolCallView, status string) string {
+	body := toolIcon(status) + " Update Todos"
+	if todos, ok := parseTodoWriteTodos(tool.RawArgs); ok {
+		for i, todo := range todos {
+			prefix := "    "
+			if i == 0 {
+				prefix = "  ⎿ "
+			}
+			body += "\n" + prefix + todo.checkbox() + " " + todo.Content
+		}
+	} else if strings.TrimSpace(tool.ResultPreview) != "" {
+		body += "\n  ⎿ " + status + " · " + tool.ResultPreview
+	} else {
+		body += "\n  ⎿ " + status
+	}
+	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
+}
+
+type todoDisplayItem struct {
+	Content string `json:"content"`
+	Status  string `json:"status"`
+}
+
+func (t todoDisplayItem) checkbox() string {
+	if t.Status == "completed" {
+		return "[✓]"
+	}
+	return "[ ]"
+}
+
+func parseTodoWriteTodos(rawArgs string) ([]todoDisplayItem, bool) {
+	var args struct {
+		Todos []todoDisplayItem `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err != nil {
+		return nil, false
+	}
+	return args.Todos, true
+}
+
+func isTodoWriteTool(name string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
+	return normalized == "todowrite"
 }
 
 func toolIcon(status string) string {
