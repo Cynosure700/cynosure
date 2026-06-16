@@ -47,6 +47,7 @@ func (m Model) Decide(ctx context.Context, req runtime.ApprovalRequest) (runtime
 // beginApproval 进入审批选择态。
 func (m *Model) beginApproval(msg approvalRequestMsg) {
 	m.approving = true
+	m.autoFollow = true
 	m.approvalCursor = 0
 	m.approvalReplies = msg.reply
 	m.approvalView = approvalView{

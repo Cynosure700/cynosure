@@ -1,8 +1,10 @@
 {
   "permissions": {
     "allowedRules": [
-      "ls *",
-      "write_file *"
+      "write_file *",
+      "cp *",
+      "find *",
+      "ls *"
     ]
   }
 }

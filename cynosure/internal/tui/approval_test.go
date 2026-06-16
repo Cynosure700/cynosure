@@ -32,6 +32,41 @@ func TestApprovalRequestEntersSelectingAndRendersPanel(t *testing.T) {
 	}
 }
 
+func TestApprovalRequestForcesViewportToBottomWhenHistoryScrolledUp(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 60, Height: 8})
+	model := updated.(Model)
+	model.running = true
+	for i := 0; i < 10; i++ {
+		model.appendMessage("user", "hello")
+		model.appendMessage("assistant", "reply")
+	}
+	model.refreshViewport()
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(Model)
+	if model.viewport.AtBottom() {
+		t.Fatal("expected viewport to be scrolled away from bottom before approval")
+	}
+	reply := make(chan runtime.ApprovalDecision, 1)
+
+	updated, _ = model.Update(Event{Name: "approval_request", Data: approvalRequestMsg{
+		req:   runtime.ApprovalRequest{ToolName: "bash", Title: "Bash command", CommandText: "curl https://x.com", Rule: "curl *"},
+		reply: reply,
+	}})
+	model = updated.(Model)
+
+	if !model.approving {
+		t.Fatal("expected approving state after approval_request")
+	}
+	if !model.viewport.AtBottom() {
+		t.Fatalf("expected approval request to scroll viewport to bottom, offset=%d", model.viewport.YOffset)
+	}
+	if rendered := plainTerminalText(model.View()); !strings.Contains(rendered, "❯ 1. Yes") {
+		t.Fatalf("view = %q, want visible approval options", rendered)
+	}
+}
+
 func TestApprovalKeySelectsYesAndRepliesDecision(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.running = true
