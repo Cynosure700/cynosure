@@ -1,0 +1,5 @@
+- 通过ID终止正在运行的后台bash shell
+- 接受标识要终止的shell的shell_id参数
+- 返回成功或失败状态
+- 当您需要终止长时间运行的shell时使用此工具
+- 可以使用/bashes命令找到Shell ID

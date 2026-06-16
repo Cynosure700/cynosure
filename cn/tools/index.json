@@ -1,0 +1,444 @@
+[
+  {
+    "name": "Task",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "任务的简短描述（3-5个词）"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "代理需要执行的任务"
+        },
+        "subagent_type": {
+          "type": "string",
+          "description": "用于此任务的专业代理类型"
+        }
+      },
+      "required": ["description", "prompt", "subagent_type"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Bash",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "要执行的命令"
+        },
+        "timeout": {
+          "type": "number",
+          "description": "可选的超时时间（毫秒，最大600000）"
+        },
+        "description": {
+          "type": "string",
+          "description": "清晰简洁地描述此命令的作用，5-10个词。示例：\n输入：ls\n输出：列出当前目录中的文件\n\n输入：git status\n输出：显示工作树状态\n\n输入：npm install\n输出：安装包依赖\n\n输入：mkdir foo\n输出：创建目录'foo'"
+        },
+        "run_in_background": {
+          "type": "boolean",
+          "description": "设置为true以在后台运行此命令。使用BashOutput稍后读取输出。"
+        }
+      },
+      "required": ["command"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Glob",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "用于匹配文件的glob模式"
+        },
+        "path": {
+          "type": "string",
+          "description": "要搜索的目录。如果未指定，将使用当前工作目录。重要：省略此字段以使用默认目录。不要输入\"undefined\"或\"null\" - 只需省略它以获得默认行为。如果提供，必须是有效的目录路径。"
+        }
+      },
+      "required": ["pattern"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Grep",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "在文件内容中搜索的正则表达式模式"
+        },
+        "path": {
+          "type": "string",
+          "description": "要搜索的文件或目录（rg PATH）。默认为当前工作目录。"
+        },
+        "glob": {
+          "type": "string",
+          "description": "用于过滤文件的Glob模式（例如\"*.js\"、\"*.{ts,tsx}\"）- 映射到rg --glob"
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": ["content", "files_with_matches", "count"],
+          "description": "输出模式：\"content\"显示匹配行（支持-A/-B/-C上下文、-n行号、head_limit），\"files_with_matches\"显示文件路径（支持head_limit），\"count\"显示匹配计数（支持head_limit）。默认为\"files_with_matches\"。"
+        },
+        "-B": {
+          "type": "number",
+          "description": "在每个匹配项之前显示的行数（rg -B）。需要output_mode: \"content\"，否则忽略。"
+        },
+        "-A": {
+          "type": "number",
+          "description": "在每个匹配项之后显示的行数（rg -A）。需要output_mode: \"content\"，否则忽略。"
+        },
+        "-C": {
+          "type": "number",
+          "description": "在每个匹配项前后显示的行数（rg -C）。需要output_mode: \"content\"，否则忽略。"
+        },
+        "-n": {
+          "type": "boolean",
+          "description": "在输出中显示行号（rg -n）。需要output_mode: \"content\"，否则忽略。"
+        },
+        "-i": {
+          "type": "boolean",
+          "description": "不区分大小写搜索（rg -i）"
+        },
+        "type": {
+          "type": "string",
+          "description": "要搜索的文件类型（rg --type）。常见类型：js、py、rust、go、java等。对于标准文件类型比include更高效。"
+        },
+        "head_limit": {
+          "type": "number",
+          "description": "将输出限制为前N行/条目，等同于\"| head -N\"。适用于所有输出模式：content（限制输出行），files_with_matches（限制文件路径），count（限制计数条目）。未指定时，显示ripgrep的所有结果。"
+        },
+        "multiline": {
+          "type": "boolean",
+          "description": "启用多行模式，其中.匹配换行符，模式可以跨行（rg -U --multiline-dotall）。默认：false。"
+        }
+      },
+      "required": ["pattern"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "LS",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "要列出的目录的绝对路径（必须是绝对路径，不是相对路径）"
+        },
+        "ignore": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "要忽略的glob模式列表"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "ExitPlanMode",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "string",
+          "description": "您制定的计划，希望向用户提交以获得批准。支持markdown。计划应该相当简洁。"
+        }
+      },
+      "required": ["plan"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Read",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "要读取的文件的绝对路径"
+        },
+        "offset": {
+          "type": "number",
+          "description": "开始读取的行号。仅在文件太大无法一次读取时提供"
+        },
+        "limit": {
+          "type": "number",
+          "description": "要读取的行数。仅在文件太大无法一次读取时提供。"
+        }
+      },
+      "required": ["file_path"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Edit",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "要修改的文件的绝对路径"
+        },
+        "old_string": {
+          "type": "string",
+          "description": "要替换的文本"
+        },
+        "new_string": {
+          "type": "string",
+          "description": "要替换成的文本（必须与old_string不同）"
+        },
+        "replace_all": {
+          "type": "boolean",
+          "default": false,
+          "description": "替换所有出现的old_string（默认false）"
+        }
+      },
+      "required": ["file_path", "old_string", "new_string"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "MultiEdit",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "要修改的文件的绝对路径"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "old_string": {
+                "type": "string",
+                "description": "要替换的文本"
+              },
+              "new_string": {
+                "type": "string",
+                "description": "要替换成的文本"
+              },
+              "replace_all": {
+                "type": "boolean",
+                "default": false,
+                "description": "替换所有出现的old_string（默认false）。"
+              }
+            },
+            "required": ["old_string", "new_string"],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "要在文件上顺序执行的编辑操作数组"
+        }
+      },
+      "required": ["file_path", "edits"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "Write",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "要写入的文件的绝对路径（必须是绝对路径，不是相对路径）"
+        },
+        "content": {
+          "type": "string",
+          "description": "要写入文件的内容"
+        }
+      },
+      "required": ["file_path", "content"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "NotebookEdit",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "notebook_path": {
+          "type": "string",
+          "description": "要编辑的Jupyter笔记本文件的绝对路径（必须是绝对路径，不是相对路径）"
+        },
+        "cell_id": {
+          "type": "string",
+          "description": "要编辑的单元格ID。插入新单元格时，新单元格将插入到具有此ID的单元格之后，如果未指定则插入到开头。"
+        },
+        "new_source": {
+          "type": "string",
+          "description": "单元格的新源代码"
+        },
+        "cell_type": {
+          "type": "string",
+          "enum": ["code", "markdown"],
+          "description": "单元格的类型（code或markdown）。如果未指定，默认为当前单元格类型。如果使用edit_mode=insert，则此项为必需。"
+        },
+        "edit_mode": {
+          "type": "string",
+          "enum": ["replace", "insert", "delete"],
+          "description": "要进行的编辑类型（replace、insert、delete）。默认为replace。"
+        }
+      },
+      "required": ["notebook_path", "new_source"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "WebFetch",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "要获取内容的URL"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "要在获取的内容上运行的提示"
+        }
+      },
+      "required": ["url", "prompt"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "TodoWrite",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "todos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "in_progress", "completed"]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": ["content", "status", "id"],
+            "additionalProperties": false
+          },
+          "description": "更新的待办事项列表"
+        }
+      },
+      "required": ["todos"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "WebSearch",
+    "description": "\n- 允许Claude搜索网络并使用结果来提供响应\n- 为当前事件和最新数据提供最新信息\n- 返回格式化为搜索结果块的搜索结果信息\n- 使用此工具访问Claude知识截止日期之外的信息\n- 搜索在单个API调用中自动执行\n\n使用说明：\n  - 支持域过滤以包含或阻止特定网站\n  - 网络搜索仅在美国可用\n  - 考虑<env>中的\"今天的日期\"。例如，如果<env>说\"今天的日期：2025-07-01\"，用户想要最新文档，不要在搜索查询中使用2024。使用2025。\n",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "description": "要使用的搜索查询"
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "仅包含来自这些域的搜索结果"
+        },
+        "blocked_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "永远不包含来自这些域的搜索结果"
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "BashOutput",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bash_id": {
+          "type": "string",
+          "description": "要从中检索输出的后台shell的ID"
+        },
+        "filter": {
+          "type": "string",
+          "description": "用于过滤输出行的可选正则表达式。只有匹配此正则表达式的行才会包含在结果中。任何不匹配的行将不再可读取。"
+        }
+      },
+      "required": ["bash_id"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "KillBash",
+    "description": "${{description}}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "shell_id": {
+          "type": "string",
+          "description": "要终止的后台shell的ID"
+        }
+      },
+      "required": ["shell_id"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  }
+]
