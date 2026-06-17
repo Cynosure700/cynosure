@@ -1,0 +1,21 @@
+cynosure/internal/tools/approval.go
+  s_45b7da42102687::t_fe6c367e27d249 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d063073e7afacb1f84050cdb5a0d5e4255712d56",
+  "prompts": {},
+  "sessions": {
+    "s_45b7da42102687": {
+      "agent_id": {
+        "tool": "trae-cue",
+        "id": "ai_tab-icr-5fea137c-7107-47e9-9e5e-8dc0f0518fa4",
+        "model": "default"
+      },
+      "human_author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
