@@ -1199,7 +1199,7 @@ func TestBuildSystemPromptIncludesCynosureMarkdownContext(t *testing.T) {
 	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_link", Username: "link-user"}, nil, "")
 	for _, want := range []string{
 		"<system-reminder>",
-		"# linkMd",
+		"# cynosureMd",
 		"/home/alice/.cynosure/CYNOSURE.MD 的内容（用户为所有项目配置的私人全局说明）：",
 		"# User Rule\n全局说明",
 		filepath.Join(cfg.WorkspaceRoot, ".cynosure", "CYNOSURE.MD") + " 的内容（项目说明，已提交到代码库或工作区）：",

@@ -64,6 +64,10 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load system prompt: %w", err)
 	}
+	functionalPrompts, err := runtime.LoadFunctionalPrompts()
+	if err != nil {
+		return nil, err
+	}
 	cynosureMarkdown, err := config.LoadCynosureMarkdownContext(cfg.WorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("load CYNOSURE.MD context: %w", err)
@@ -74,6 +78,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	}
 	client := llm.NewDeepseekClient(cfg.LLM.BaseURL, cfg.LLM.APIKey)
 	runtimeService := runtime.NewService(store, cfg, client)
+	runtimeService.Prompts = functionalPrompts
 	runtimeService.EnableMemory = true
 	runtimeService.SetBuiltinSkills(builtinSkills)
 	runtimeService.SetBasePrompt(basePrompt)

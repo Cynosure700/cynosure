@@ -55,6 +55,7 @@ type Service struct {
 	Tools             *ToolRegistry
 	BuiltinSkills     *sessions.SkillLoader
 	BasePrompt        string
+	Prompts           FunctionalPrompts
 	CynosureMarkdown  config.CynosureMarkdownContext
 	Hooks             *HookManager
 	ContextCompressor *compression.Compressor
@@ -68,7 +69,7 @@ func (s *Service) SetApprover(approver ApprovalDecider) {
 }
 
 func NewService(store conversationStore, cfg config.AppConfig, client llm.Client) *Service {
-	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Hooks: NewDefaultHookManager(), EnableMemory: true}
+	return &Service{Store: store, Cfg: cfg, LLM: client, Tools: NewToolRegistry(cfg), Prompts: defaultFunctionalPrompts(), Hooks: NewDefaultHookManager(), EnableMemory: true}
 }
 
 func (s *Service) hookManager() *HookManager {

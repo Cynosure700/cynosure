@@ -39,37 +39,19 @@ func validMemoryType(t string) bool {
 	return false
 }
 
-const memoryExtractionSystemPrompt = `You are a project-scoped long-term memory extraction engine for a personal assistant named Cynosure.
-All memories are valid ONLY for the current project. Do not create memories that should be reused in other projects.
-From the dialogue, extract durable memories worth keeping for the current project. Use the "type" field for three kinds:
-- "episodic_memory": a concrete event/experience in this project session. Preserve factual integrity and temporal order; summarize what happened, not raw messages.
-- "user_preference": a stable user preference, constraint, or recurring habit that applies to this project.
-- "project_fact": a reusable fact about the current project, such as architecture, commands, conventions, dependencies, known constraints, or implementation decisions. It is not general world knowledge and must not be treated as valid outside this project.
+func (s *Service) memoryExtractionSystemPrompt() string {
+	return s.Prompts.withDefaults().MemoryExtraction
+}
 
-Rules:
-- Only extract NEW information not already covered by "Existing memories".
-- Do not store one-off, trivial, or sensitive private data (passwords, payment, health).
-- Do not extract facts about other projects.
-- "name": short title (<=80 chars). "description": one-sentence gist (<=300 chars). "body": supporting detail (<=2000 chars).
-- Output ONLY a JSON array: [{"name","type","description","body"}].
-- If nothing new or everything is already covered, output exactly [].`
+func (s *Service) memorySelectionSystemPrompt() string {
+	return s.Prompts.withDefaults().MemorySelection
+}
 
-const memorySelectionSystemPrompt = `You are a project-scoped memory retrieval engine. Given the current project conversation context and a numbered list of candidate memories from this project's memory index, select the ones RELEVANT and USEFUL for answering the user right now.
-- Candidate memories are valid only for the current project.
-- Select at most 10.
-- Prefer specific, on-topic memories; ignore unrelated ones.
-- Output ONLY a JSON array of the selected memory indices, e.g. [0,3,7]. If none, output [].`
-
-func memoryConsolidationSystemPrompt(typeLabel, typeValue string) string {
-	return fmt.Sprintf(`You are a project-scoped memory consolidation engine. You are given the FULL current list of "%s" memories for the current project.
-Rewrite them into a clean, minimal set:
-- Merge duplicates and near-duplicates into a single entry.
-- Reconcile contradictions, keeping the most recent / most reliable statement.
-- Drop outdated or superseded memories.
-- Keep only facts, preferences, and events that are valid for the current project; do not create cross-project memories.
-- Never invent new facts; only reorganize what is given.
-- Keep limits: name <=80, description <=300, body <=2000 chars.
-Output ONLY a JSON array [{"name","type","description","body"}] representing the COMPLETE refined list (it fully replaces the old list). All entries must have type "%s".`, typeLabel, typeValue)
+func (s *Service) memoryConsolidationSystemPrompt(typeLabel, typeValue string) string {
+	template := s.Prompts.withDefaults().MemoryConsolidation
+	template = strings.ReplaceAll(template, "{{type_label}}", typeLabel)
+	template = strings.ReplaceAll(template, "{{type_value}}", typeValue)
+	return template
 }
 
 type extractedMemory struct {
@@ -98,7 +80,7 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: memoryExtractionSystemPrompt},
+			{Role: "system", Content: s.memoryExtractionSystemPrompt()},
 			{Role: "user", Content: buildExtractionUserPrompt(existing, dialogue)},
 		},
 	})
@@ -196,7 +178,7 @@ func (s *Service) consolidateViaLLM(ctx context.Context, typeLabel, typeValue st
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: memoryConsolidationSystemPrompt(typeLabel, typeValue)},
+			{Role: "system", Content: s.memoryConsolidationSystemPrompt(typeLabel, typeValue)},
 			{Role: "user", Content: buildConsolidationUserPrompt(items)},
 		},
 	})
@@ -242,7 +224,7 @@ func (s *Service) selectRelevantMemories(ctx context.Context, user storage.User,
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: memorySelectionSystemPrompt},
+			{Role: "system", Content: s.memorySelectionSystemPrompt()},
 			{Role: "user", Content: buildSelectionUserPrompt(all, renderDialogueForMemory(history))},
 		},
 	})

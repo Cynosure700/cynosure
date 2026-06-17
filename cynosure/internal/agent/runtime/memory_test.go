@@ -109,18 +109,36 @@ func TestProjectFactPromptsAreProjectScoped(t *testing.T) {
 	if MemoryTypeProjectFact != "project_fact" {
 		t.Fatalf("MemoryTypeProjectFact = %q", MemoryTypeProjectFact)
 	}
+	service := &Service{}
+	extractionPrompt := service.memoryExtractionSystemPrompt()
+	selectionPrompt := service.memorySelectionSystemPrompt()
 	for _, forbidden := range []string{
 		strings.Join([]string{"seman", "tic"}, ""),
 		strings.Join([]string{"shared", " across", " users"}, ""),
 		strings.Join([]string{"通用", "知识"}, ""),
 	} {
-		if strings.Contains(memoryExtractionSystemPrompt, forbidden) || strings.Contains(memorySelectionSystemPrompt, forbidden) {
+		if strings.Contains(extractionPrompt, forbidden) || strings.Contains(selectionPrompt, forbidden) {
 			t.Fatalf("memory prompts should not contain %q", forbidden)
 		}
 	}
 	for _, want := range []string{"project_fact", "current project", "ONLY for the current project"} {
-		if !strings.Contains(memoryExtractionSystemPrompt, want) {
+		if !strings.Contains(extractionPrompt, want) {
 			t.Fatalf("extraction prompt should contain %q", want)
+		}
+	}
+}
+
+func TestMemoryConsolidationPromptReplacesTemplateValues(t *testing.T) {
+	service := &Service{}
+	prompt := service.memoryConsolidationSystemPrompt("project_fact", MemoryTypeProjectFact)
+	for _, want := range []string{`"project_fact" memories`, `type "project_fact"`} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected consolidation prompt to contain %q, got %q", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{"{{type_label}}", "{{type_value}}"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("expected consolidation prompt to replace %q, got %q", forbidden, prompt)
 		}
 	}
 }

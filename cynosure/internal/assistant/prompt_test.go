@@ -48,7 +48,7 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"除非运行时另有说明，默认以工作目录作为运行时文件与 Shell 操作的根目录。",
 		"</workspace>",
 		"<system-reminder>",
-		"# linkMd",
+		"# cynosureMd",
 		"/home/alice/.cynosure/CYNOSURE.MD 的内容（用户为所有项目配置的私人全局说明）：",
 		"# User Rule\n全局说明",
 		"/workspace/.cynosure/CYNOSURE.MD 的内容（项目说明，已提交到代码库或工作区）：",
@@ -66,6 +66,7 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"不要仅凭摘要臆测完整的工作流。",
 		"可用技能：\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
 		"<memory>",
+		"记忆（Memory）仅用于提供历史上下文，不代表当前真实状态，不具有事实优先级。",
 		"Remember user preference.",
 		"</memory>",
 	} {
@@ -86,7 +87,7 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 
 func TestBuildSystemPromptOmitsEmptyCynosureMarkdownContext(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
-	if strings.Contains(prompt, "# linkMd") || strings.Contains(prompt, "<system-reminder>") {
+	if strings.Contains(prompt, "# cynosureMd") || strings.Contains(prompt, "<system-reminder>") {
 		t.Fatalf("expected empty link markdown context to be omitted, got %q", prompt)
 	}
 }
@@ -98,11 +99,23 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 		"## 帮助文档",
 		"## 输出风格",
 		"## 任务管理",
+		"复杂任务、多步骤任务、用户提供多个目标或需要持续验证的任务，必须在开始执行前调用 todo_write",
+		"每完成一个待办事项，必须立即调用 todo_write 将该项标记为 completed",
 		"## 工具调用",
 		"## 环境信息",
 	} {
 		if !strings.Contains(DefaultBaseSystemPrompt, want) {
 			t.Fatalf("expected default base prompt to contain domain section %q", want)
 		}
+	}
+	if strings.Contains(DefaultBaseSystemPrompt, "记忆（Memory）仅用于提供历史上下文") {
+		t.Fatalf("expected memory guidance to be injected dynamically, not embedded in default base prompt")
+	}
+}
+
+func TestBuildSystemPromptOmitsMemoryGuidanceWhenMemorySectionIsEmpty(t *testing.T) {
+	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）仅用于提供历史上下文") {
+		t.Fatalf("expected empty memory section to omit dynamic memory guidance, got %q", prompt)
 	}
 }

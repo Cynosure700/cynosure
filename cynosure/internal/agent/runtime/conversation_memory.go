@@ -15,17 +15,14 @@ import (
 	"nano_cc/internal/logger"
 )
 
-const conversationMemorySystemPrompt = `你是“当前会话记忆”维护引擎。给你“已有会话记忆条目”和“最新一轮对话”，
-请输出更新后的【完整】会话记忆条目列表，使其准确反映本场会话至今的主干信息：
-- 覆盖：当前用户目标、关键决策与结论、已完成/已产出的内容、重要约束与上下文、待办与下一步。
-- 合并重复、用新信息更新旧条目、删除已过时或被推翻的内容；只重组已知信息，不编造。
-- name：短标题(<=80字，可用 [目标]/[决策]/[产出]/[待办] 等前缀)。description：一句话要点(<=300字)。body：支撑细节(<=2000字)。
-- 仅输出 JSON 数组：[{"name","description","body"}]。无可记录时输出 []。`
-
 type extractedConversationMemory struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Body        string `json:"body"`
+}
+
+func (s *Service) conversationMemorySystemPrompt() string {
+	return s.Prompts.withDefaults().ConversationMemoryUpdate
 }
 
 // updateConversationMemory runs once at the end of a conversation turn: it asks
@@ -49,7 +46,7 @@ func (s *Service) updateConversationMemory(ctx context.Context, conversation sto
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: conversationMemorySystemPrompt},
+			{Role: "system", Content: s.conversationMemorySystemPrompt()},
 			{Role: "user", Content: buildConversationMemoryUserPrompt(existing, dialogue)},
 		},
 	})
