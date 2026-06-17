@@ -1016,6 +1016,28 @@ func TestTypingSpaceRefreshesInlinePrompt(t *testing.T) {
 	}
 }
 
+func TestLeftArrowMovesVisibleInputCursorForMiddleEditing(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("abc")})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model := updated.(Model)
+
+	if !strings.Contains(plainTerminalText(model.renderInput()), "ab"+inputCursor+"c") {
+		t.Fatalf("input = %q, want cursor rendered before final character after left arrow", model.renderInput())
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	model = updated.(Model)
+
+	if model.input.Value() != "abXc" {
+		t.Fatalf("input value = %q, want inserted rune at moved cursor", model.input.Value())
+	}
+	if !strings.Contains(plainTerminalText(model.renderInput()), "abX"+inputCursor+"c") {
+		t.Fatalf("input = %q, want cursor rendered after inserted rune", model.renderInput())
+	}
+}
+
 func TestSubmittingInputPreservesTypedSpaces(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

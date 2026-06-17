@@ -1088,9 +1088,23 @@ func (m Model) renderInput() string {
 	if text == "" {
 		text = inputPromptStyle().Render(inputCursor) + " " + subtleStyle().Render(m.input.Placeholder)
 	} else {
-		text = userInputTextStart() + colorizeFileReferencesForInput(text) + "\x1b[0m" + inputPromptStyle().Render(inputCursor)
+		lineInfo := m.input.LineInfo()
+		beforeCursor, afterCursor := splitInputAtCursor(text, lineInfo.StartColumn+lineInfo.ColumnOffset)
+		text = userInputTextStart() +
+			colorizeFileReferencesForInput(beforeCursor) +
+			"\x1b[0m" +
+			inputPromptStyle().Render(inputCursor) +
+			userInputTextStart() +
+			colorizeFileReferencesForInput(afterCursor) +
+			"\x1b[0m"
 	}
 	return inputLineStyle().Width(max(10, m.width-4)).Render(prompt + " " + text)
+}
+
+func splitInputAtCursor(text string, cursorOffset int) (string, string) {
+	runes := []rune(text)
+	cursorOffset = min(max(0, cursorOffset), len(runes))
+	return string(runes[:cursorOffset]), string(runes[cursorOffset:])
 }
 
 func (m Model) renderInputArea() string {
