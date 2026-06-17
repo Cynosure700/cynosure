@@ -3,7 +3,9 @@
     "allowedRules": [
       "write_file *",
       "cp *",
-      "cd *"
+      "cd *",
+      "sed *",
+      "ls *"
     ]
   }
 }
