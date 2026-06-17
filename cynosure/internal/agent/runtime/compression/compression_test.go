@@ -191,10 +191,13 @@ func TestMessageWindow_NoopAtLimit(t *testing.T) {
 }
 
 func TestMessageWindow_TrimsMiddleKeepingHeadTail(t *testing.T) {
+	// Latest user at index 0 followed by many assistant messages, so the
+	// current turn count (60) exceeds the limit and trimming triggers.
 	const n = 60
 	history := make([]storage.Message, n)
-	for i := range history {
-		history[i] = storage.Message{Role: "user", Content: string(rune('A' + i%26))}
+	history[0] = storage.Message{Role: "user", Content: "latest-user"}
+	for i := 1; i < n; i++ {
+		history[i] = storage.Message{Role: "assistant", Content: string(rune('A' + i%26))}
 	}
 	first := history[0].Content
 	lastTailFirst := history[n-messageWindowTail].Content
@@ -207,24 +210,54 @@ func TestMessageWindow_TrimsMiddleKeepingHeadTail(t *testing.T) {
 		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
 	}
 	if got[0].Content != first {
-		t.Fatalf("expected head preserved")
+		t.Fatalf("expected head to start at latest user")
 	}
 	if got[messageWindowHead].Content != lastTailFirst {
 		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
 	}
 }
 
-func TestMessageWindow_DropsOrphanToolAtCut(t *testing.T) {
-	// Build 60 messages; ensure the tail boundary starts with an orphan tool.
-	history := make([]storage.Message, 0, 60)
-	history = append(history, storage.Message{Role: "user", Content: "u0"})
-	history = append(history, storage.Message{Role: "user", Content: "u1"})
-	history = append(history, storage.Message{Role: "user", Content: "u2"})
-	for i := 3; i < 60; i++ {
-		history = append(history, storage.Message{Role: "user", Content: "filler"})
+func TestMessageWindow_KeepsLatestUserPlusTwoAsHead(t *testing.T) {
+	// 60 messages, latest user at index 5 with only non-user messages after it.
+	// Current turn count is 60-5=55 > 50, so trimming triggers and head keeps
+	// "latest user + 2" while tail keeps the most recent 46.
+	const n = 60
+	history := make([]storage.Message, n)
+	for i := range history {
+		history[i] = storage.Message{Role: "assistant", Content: string(rune('A' + i%26))}
 	}
-	// Make the first tail message an orphan tool (no preceding assistant call in window).
-	history[60-messageWindowTail] = storage.Message{Role: "tool", ToolCallID: "orphan", Content: `{"status":"success","result":"x"}`}
+	history[5] = storage.Message{Role: "user", Content: "latest-user"}
+	req := &Request{RequestHistory: history}
+	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got := req.RequestHistory
+	if len(got) != messageWindowHead+messageWindowTail {
+		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
+	}
+	// head = history[5:8], so latest user is the first kept message.
+	if got[0].Content != "latest-user" {
+		t.Fatalf("expected latest user as first head message, got %q", got[0].Content)
+	}
+	if got[1].Content != history[6].Content || got[2].Content != history[7].Content {
+		t.Fatalf("expected the two messages after latest user preserved")
+	}
+	// tail = history[n-46:], so head (3) is followed by original index n-46.
+	if got[messageWindowHead].Content != history[n-messageWindowTail].Content {
+		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
+	}
+}
+
+func TestMessageWindow_DropsOrphanToolAtCut(t *testing.T) {
+	// Latest user at index 0 so trimming triggers; make the first tail message
+	// an orphan tool (no preceding assistant call in the window).
+	const n = 60
+	history := make([]storage.Message, n)
+	history[0] = storage.Message{Role: "user", Content: "latest-user"}
+	for i := 1; i < n; i++ {
+		history[i] = storage.Message{Role: "assistant", Content: "filler"}
+	}
+	history[n-messageWindowTail] = storage.Message{Role: "tool", ToolCallID: "orphan", Content: `{"status":"success","result":"x"}`}
 	req := &Request{RequestHistory: history}
 	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -233,6 +266,51 @@ func TestMessageWindow_DropsOrphanToolAtCut(t *testing.T) {
 		if msg.Role == "tool" && msg.ToolCallID == "orphan" {
 			t.Fatalf("expected orphan tool message to be dropped")
 		}
+	}
+}
+
+func TestMessageWindow_NoopWhenCurrentTurnWithinLimit(t *testing.T) {
+	// 80 messages total but the latest user turn is short (10 messages after the
+	// latest user), so the current turn count (10) is within the limit and no
+	// trimming happens despite the large earlier history.
+	const n = 80
+	history := make([]storage.Message, n)
+	for i := range history {
+		history[i] = storage.Message{Role: "assistant", Content: "old"}
+	}
+	history[n-10] = storage.Message{Role: "user", Content: "latest-user"}
+	req := &Request{RequestHistory: history}
+	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(req.RequestHistory) != n {
+		t.Fatalf("expected no trim when current turn within limit, got %d", len(req.RequestHistory))
+	}
+}
+
+func TestMessageWindow_FallsBackToFirstThreeWhenNoUser(t *testing.T) {
+	// No user message at all: turn count = whole history. With 60 messages the
+	// fallback keeps the first message of the turn plus the following 2, then the
+	// most recent 46.
+	const n = 60
+	history := make([]storage.Message, n)
+	for i := range history {
+		history[i] = storage.Message{Role: "assistant", Content: string(rune('A' + i%26))}
+	}
+	first := history[0].Content
+	req := &Request{RequestHistory: history}
+	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got := req.RequestHistory
+	if len(got) != messageWindowHead+messageWindowTail {
+		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
+	}
+	if got[0].Content != first {
+		t.Fatalf("expected head to start at the first message, got %q", got[0].Content)
+	}
+	if got[messageWindowHead].Content != history[n-messageWindowTail].Content {
+		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
 	}
 }
 

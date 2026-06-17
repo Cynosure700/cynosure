@@ -53,7 +53,7 @@ type bufferedModelDelta struct {
 }
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
-	// 记忆业务开关：系统级能力开启 且 用户个人偏好开启 时才注入/提取记忆。
+	// 记忆业务开关：系统级能力开启 默认开启
 	// 注意：它只控制记忆注入与提取，不控制会话锁与模型历史持久化。
 	memoryOn := s.EnableMemory && user.MemoryEnabled
 	// 入口获取会话锁：上一轮收尾未完成时阻塞等待，直到拿到锁或等待超时。

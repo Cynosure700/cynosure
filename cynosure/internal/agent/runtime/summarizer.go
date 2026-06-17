@@ -11,16 +11,22 @@ import (
 	"nano_cc/internal/agent/storage"
 )
 
-const summarizerSystemPrompt = `You are a context compaction engine. Summarize the conversation so far into a structured Markdown brief that another AI agent can use to continue the task without losing critical information.
+const summarizerSystemPrompt = `你是上下文压缩引擎。请把目前为止的对话压缩成结构化的 Markdown 简报，使另一个 AI 助手在不丢失关键信息的前提下继续完成任务。
 
-Rules:
-- Do NOT call tools or invent information that is not present.
-- Preserve concrete details: current user goal, completed actions and key conclusions, important file paths, function names, commands, errors, and decisions.
-- For any <persisted-output ...> marker you see, keep its id and note that read_persisted_output can fetch the full content.
-- If a tool result shows "[Earlier result compacted. Re-run if needed]", note that it must be re-run if needed.
-- List unfinished items, things to verify, and next steps.
+必须覆盖以下部分（用对应小标题，无内容则写"无"）：
+1. 用户最新问题：用户当前最想解决的问题 / 目标。
+2. 已完成的工作：做了哪些事、得到了哪些关键结论；改动过的文件务必保留完整路径。
+3. 关键决策与原因：做了哪些技术选择，为什么。
+4. 当前进展与待办：已完成到哪一步、还没做完的部分、明确的下一步 / TODO。
+5. 重要报错、命令输出结论与约定：关键报错信息、命令输出的结论性信息、双方达成的约定。
 
-Output only the Markdown summary.`
+规则：
+- 不要调用工具，不要编造不存在的信息。
+- 保留具体细节：文件路径、函数名、命令、报错、关键数值。
+- 遇到 <persisted-output ...> 标记，保留其 id 并说明可用 read_persisted_output 取回完整内容。
+- 工具结果若显示 "[Earlier result compacted. Re-run if needed]"，需注明该结果如有需要应重新执行。
+
+只输出 Markdown 简报本身。`
 
 // summarizeHistoryForContext runs a single non-tool LLM call to summarize the
 // request-state history. It never mutates state.History.

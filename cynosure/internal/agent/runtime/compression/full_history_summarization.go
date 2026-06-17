@@ -16,6 +16,7 @@ const fullHistorySummarizationStrategyName = "full_history_summarization"
 const (
 	summaryTargetTokens   = 8 * 1024
 	recentTailMinTokens   = 16 * 1024
+	recentTailMessages    = 5
 	summarySystemPreamble = "以下是为满足上下文窗口限制生成的会话摘要，仅用于本次模型推理，不是用户发送的真实消息。请把它当作已发生对话的可靠浓缩。"
 )
 
@@ -51,14 +52,21 @@ func (s *FullHistorySummarizationStrategy) Apply(ctx context.Context, req *Reque
 	if before <= budget {
 		return nil
 	}
-	// The last message is always preserved verbatim; only the earlier history
-	// is summarized. With a single message there is nothing to summarize.
+	// At least one message must remain summarizable; with a single message
+	// there is nothing to summarize.
 	if len(req.RequestHistory) < 2 {
 		return nil
 	}
 
-	lastMessage := req.RequestHistory[len(req.RequestHistory)-1]
-	summarizable := req.RequestHistory[:len(req.RequestHistory)-1]
+	// Keep the most recent N messages verbatim; summarize everything before.
+	// Cap the tail so at least one message stays summarizable.
+	n := len(req.RequestHistory)
+	tailCount := recentTailMessages
+	if tailCount > n-1 {
+		tailCount = n - 1
+	}
+	summarizable := req.RequestHistory[:n-tailCount]
+	tail := req.RequestHistory[n-tailCount:]
 	sourceHash := historyHash(summarizable)
 
 	// Try cache first.
@@ -89,10 +97,7 @@ func (s *FullHistorySummarizationStrategy) Apply(ctx context.Context, req *Reque
 		})
 	}
 
-	tail := selectRecentTail(req, summarizable, summary, budget)
-	// Tail plus the always-kept last message are repaired together so the last
-	// message is never dropped as an orphan tool result.
-	kept := repairToolCallBoundaries(append(append([]storage.Message{}, tail...), lastMessage))
+	kept := repairToolCallBoundaries(tail)
 	req.RequestHistory = buildSummaryHistory(summary, kept)
 	return nil
 }

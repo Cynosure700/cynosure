@@ -15,10 +15,11 @@ const (
 	// toolResultPreviewRunes is how many leading runes of an oversized
 	// tool_result remain inline as a preview.
 	toolResultPreviewRunes = 2000
-	// messageWindowLimit triggers head/tail trimming when exceeded.
+	// messageWindowLimit triggers head/tail trimming when the latest user turn
+	// exceeds it (message count of the current turn, excluding earlier history).
 	messageWindowLimit = 50
 	messageWindowHead  = 3
-	messageWindowTail  = 47
+	messageWindowTail  = 46
 	// recentToolResultRetention keeps the most recent N full tool results.
 	recentToolResultRetention = 3
 

@@ -20,11 +20,37 @@ func (s *MessageWindowCompressionStrategy) Name() string {
 
 func (s *MessageWindowCompressionStrategy) Apply(ctx context.Context, req *Request) error {
 	history := req.RequestHistory
-	if len(history) <= messageWindowLimit {
+
+	// Locate the latest user message (scan from the tail).
+	lastUser := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			lastUser = i
+			break
+		}
+	}
+
+	// Trigger on the current turn's message count (from the latest user message
+	// to the tail), excluding earlier history. Without a user message, fall back
+	// to counting the whole history.
+	turnStart := lastUser
+	if turnStart < 0 {
+		turnStart = 0
+	}
+	if len(history)-turnStart <= messageWindowLimit {
 		return nil
 	}
-	head := history[:messageWindowHead]
+
+	// head keeps the latest user message plus the following 2 messages (3 total).
+	// Without a user message, fall back to the first message of this turn plus
+	// the following 2 (the system prompt is injected separately by the caller).
+	headStart := lastUser
+	if headStart < 0 {
+		headStart = 0
+	}
+	head := history[headStart : headStart+messageWindowHead]
 	tail := history[len(history)-messageWindowTail:]
+
 	windowed := make([]storage.Message, 0, messageWindowHead+messageWindowTail)
 	windowed = append(windowed, head...)
 	windowed = append(windowed, tail...)
