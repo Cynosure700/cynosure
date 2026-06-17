@@ -3,7 +3,7 @@ package tools
 import "testing"
 
 func TestRequiresApprovalReadOnlyTools(t *testing.T) {
-	readOnly := []string{"read_file", "grep", "glob", "ls", "web_search", "web_fetch", "load_skill", "todo_write", "read_persisted_output", "spawn_subagent"}
+	readOnly := []string{"read_file", "grep", "glob", "ls", "web_search", "web_fetch", "load_skill", "todo_write", "todo_list", "read_persisted_output", "spawn_subagent"}
 	for _, name := range readOnly {
 		need, _ := RequiresApproval(name, map[string]any{})
 		if need {

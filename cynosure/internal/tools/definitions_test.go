@@ -23,3 +23,22 @@ func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 	}
 	t.Fatalf("expected AllToolDefs to include load_skill")
 }
+
+func TestTodoListToolDefinitionIsNoArgumentReadOnlyQuery(t *testing.T) {
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil || tool.Function.Name != "todo_list" {
+			continue
+		}
+		if !strings.Contains(tool.Function.Description, "current task plan") {
+			t.Fatalf("expected todo_list description to mention current task plan, got %q", tool.Function.Description)
+		}
+		schema := string(RawSchemaFromParameters(tool.Function.Parameters))
+		for _, want := range []string{`"type":"object"`, `"properties":{}`, `"additionalProperties":false`} {
+			if !strings.Contains(schema, want) {
+				t.Fatalf("expected todo_list schema to contain %s, got %s", want, schema)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected AllToolDefs to include todo_list")
+}

@@ -742,6 +742,43 @@ func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_TodoListReadsLatestTodoWriteState(t *testing.T) {
+	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"}]}`
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "todo_write_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: todoArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "todo_list_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_list", Arguments: `{}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "已查询计划"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"todo_write", "todo_list"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_todo_list", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "查询当前 todo", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %#v", store.toolCalls)
+	}
+	result := store.toolCalls[1].Result
+	for _, want := range []string{
+		"Todo list: 2 items (pending: 0, in_progress: 1, completed: 1).",
+		"[completed] 1: 梳理需求",
+		"[in_progress] 2: 实现功能",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("expected todo_list result to contain %q, got %q", want, result)
+		}
+	}
+}
+
 func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTodoWrite(t *testing.T) {
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		bashToolRound("tool_1"),

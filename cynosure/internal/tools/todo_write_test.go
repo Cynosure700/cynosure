@@ -69,3 +69,47 @@ func TestHandleTodoWrite_RejectsMissingContent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestHandleTodoList_ReturnsCurrentTodosFromContext(t *testing.T) {
+	ctx := WithTodoSnapshot(context.Background(), []TodoItem{
+		{ID: "1", Content: "梳理需求", Status: "completed"},
+		{ID: "2", Content: "实现功能", Status: "in_progress"},
+		{ID: "3", Content: "运行测试", Status: "pending"},
+	})
+
+	output, err := handleTodoList(ctx, map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"Todo list: 3 items (pending: 1, in_progress: 1, completed: 1).",
+		"[completed] 1: 梳理需求",
+		"[in_progress] 2: 实现功能",
+		"[pending] 3: 运行测试",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestHandleTodoList_ReturnsEmptyMessageWithoutTodos(t *testing.T) {
+	output, err := handleTodoList(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if output != "Todo list is empty. Use todo_write to create or update the current task plan." {
+		t.Fatalf("unexpected output: %q", output)
+	}
+}
+
+func TestHandleTodoList_RejectsArguments(t *testing.T) {
+	ctx := WithTodoSnapshot(context.Background(), []TodoItem{{ID: "1", Content: "x", Status: "pending"}})
+	_, err := handleTodoList(ctx, map[string]any{"unused": "value"})
+	if err == nil {
+		t.Fatalf("expected unexpected argument error")
+	}
+	if !strings.Contains(err.Error(), "todo_list does not accept arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
