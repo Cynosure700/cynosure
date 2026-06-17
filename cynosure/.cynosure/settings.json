@@ -5,7 +5,9 @@
       "cp *",
       "cd *",
       "sed *",
-      "ls *"
+      "ls *",
+      "edit_file *",
+      "multi_edit *"
     ]
   }
 }
