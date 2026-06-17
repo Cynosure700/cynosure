@@ -10,11 +10,11 @@ import (
 
 const (
 	// 128KB 上下文限制
-	defaultModelContextLimit = 128 * 1024
+	defaultModelContextLimit = 200 * 1024
 	// 8KB 最大响应 token 数
 	defaultMaxResponseTokens = 8 * 1024
-	// 4KB 安全余量
-	defaultSafetyMargin = 4 * 1024
+	// 8KB 安全余量
+	defaultSafetyMargin = 8 * 1024
 )
 
 // TokenEstimator estimates the token footprint of an outgoing request.
