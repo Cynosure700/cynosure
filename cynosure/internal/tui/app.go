@@ -1028,16 +1028,16 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderHeaderLine(width int) string {
-	return titleStyle().Render(centerHeaderLine("Cynosure version: 0.0.1", width))
+	return titleStyle().Render(centerHeaderLine("cynosure version: 0.0.1", width))
 }
 
 func (m Model) renderCompactHeader(width int) string {
-	return titleStyle().Render(centerHeaderLine("Cynosure version: 0.0.1", width)) + "\n" + titleStyle().Render(centerHeaderLine("Welcome back", width)) + "\n" + subtleStyle().Render(centerHeaderLine("model "+m.modelLabel()+" · "+renderFileReference(m.workspaceLabel()), width))
+	return titleStyle().Render(centerHeaderLine("cynosure version: 0.0.1", width)) + "\n" + titleStyle().Render(centerHeaderLine("Welcome back", width)) + "\n" + subtleStyle().Render(centerHeaderLine("model "+m.modelLabel()+" · "+renderFileReference(m.workspaceLabel()), width))
 }
 
 func (m Model) renderFullHeader(width int) string {
 	lines := []string{
-		titleStyle().Render(centerHeaderLine(`Cynosure version: 0.0.1`, width)),
+		titleStyle().Render(centerHeaderLine(`cynosure version: 0.0.1`, width)),
 		mascotStyle().Render(centerHeaderLine(`/^ ^\`, width)),
 		mascotStyle().Render(centerHeaderLine(`/ 0 0 \`, width)),
 		mascotStyle().Render(centerHeaderLine(`V\ Y /V`, width)),
