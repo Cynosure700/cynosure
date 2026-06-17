@@ -767,7 +767,12 @@ func TestRespondToConversation_TodoListReadsLatestTodoWriteState(t *testing.T) {
 	if len(store.toolCalls) != 2 {
 		t.Fatalf("expected 2 tool calls, got %#v", store.toolCalls)
 	}
-	result := store.toolCalls[1].Result
+	toolMessage := findToolMessageByID(t, llm.reqs[2].Messages, "todo_list_1")
+	var outcome toolExecutionOutcome
+	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
+		t.Fatalf("expected JSON tool message content, got error: %v, content: %q", err, toolMessage.Content)
+	}
+	result := outcome.Result
 	for _, want := range []string{
 		"Todo list: 2 items (pending: 0, in_progress: 1, completed: 1).",
 		"[completed] 1: 梳理需求",

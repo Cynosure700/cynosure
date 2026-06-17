@@ -15,6 +15,7 @@ type RuntimeEnv struct {
 type contextKey string
 
 const runtimeEnvContextKey contextKey = "runtime_env"
+const todoSnapshotContextKey contextKey = "todo_snapshot"
 
 func WithRuntimeEnv(ctx context.Context, env RuntimeEnv) context.Context {
 	return context.WithValue(ctx, runtimeEnvContextKey, env)
@@ -23,6 +24,18 @@ func WithRuntimeEnv(ctx context.Context, env RuntimeEnv) context.Context {
 func RuntimeEnvFromContext(ctx context.Context) (RuntimeEnv, bool) {
 	env, ok := ctx.Value(runtimeEnvContextKey).(RuntimeEnv)
 	return env, ok
+}
+
+func WithTodoSnapshot(ctx context.Context, todos []TodoItem) context.Context {
+	return context.WithValue(ctx, todoSnapshotContextKey, append([]TodoItem(nil), todos...))
+}
+
+func TodoSnapshotFromContext(ctx context.Context) ([]TodoItem, bool) {
+	todos, ok := ctx.Value(todoSnapshotContextKey).([]TodoItem)
+	if !ok {
+		return nil, false
+	}
+	return append([]TodoItem(nil), todos...), true
 }
 
 func workspaceRootFromContext(ctx context.Context) string {

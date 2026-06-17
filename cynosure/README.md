@@ -5,7 +5,7 @@
 ## 核心能力
 
 - **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
-- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
+- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`todo_list`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
 - **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
 - **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
@@ -87,7 +87,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ```json
 {
-  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,spawn_subagent",
+  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent",
   "bash_allow_outside_workspace": false,
   "bash_allow_dangerous_commands": false
 }
@@ -219,9 +219,9 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - `<skills>`：注入加载到的 Skill 摘要，模型按需 `load_skill` 加载正文。
 - `<memory>`：开启记忆时注入按当前对话筛选出的项目记忆。
 
-基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
+基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
 
-基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索优先 `grep`、文件名匹配优先 `glob`、目录浏览使用 `ls`，文件读取和修改分别使用 `read_file`、`edit_file`、`multi_edit`、`write_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`spawn_subagent` 仅用于隔离子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
+基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索优先 `grep`、文件名匹配优先 `glob`、目录浏览使用 `ls`，文件读取和修改分别使用 `read_file`、`edit_file`、`multi_edit`、`write_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 仅用于隔离子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
 
 ## 工具系统
 
@@ -239,6 +239,7 @@ cwd /path/to/project · skills 6 · mcp tools 4
 | `web_fetch` | 抓取 URL，将 HTML 转为文本后用 LLM 按 prompt 处理；未配置 LLM 时返回清洗文本 |
 | `web_search` | 联网搜索（占位）；未配置搜索后端时返回提示，默认不启用 |
 | `todo_write` | 维护多步骤任务清单 |
+| `todo_list` | 查询当前任务清单状态，不修改任务 |
 | `spawn_subagent` | 派生隔离子 Agent |
 | `read_persisted_output` | 自动暴露，用于读取上下文压缩落盘的大工具结果 |
 
@@ -255,14 +256,14 @@ cwd /path/to/project · skills 6 · mcp tools 4
 - **主 Agent 单轮会话**：上限 24 小时，在会话循环每轮入口做截止时间检查的软边界，超时后结束本轮会话。
 - **子 Agent 单轮会话**：上限 1 小时，同样为循环间的截止时间检查。
 - **终端工具（`bash`）**：上限 120 秒，超时通过 `time.AfterFunc` + `Process.Kill()` 看门狗终止子进程。
-- **其他普通工具**（`read_file`/`write_file`/`edit_file`/`multi_edit`/`grep`/`glob`/`ls`/`web_fetch`/`web_search`/`load_skill`/`todo_write`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
+- **其他普通工具**（`read_file`/`write_file`/`edit_file`/`multi_edit`/`grep`/`glob`/`ls`/`web_fetch`/`web_search`/`load_skill`/`todo_write`/`todo_list`/`read_persisted_output`）：上限 60 秒，在 `Dispatch` 层以 goroutine + `time.After` 看门狗兜底。
 - 以上阈值均为代码内硬编码常量，超时机制不依赖 `context`，不影响现有 `ctx` 透传链路。
 
 ## 命令权限审批
 
 为避免变更类操作未经确认即执行，TUI 在工具执行前引入交互式权限审批：
 
-- **免审批（查询/搜索）**：`read_file`、`grep`、`glob`、`ls`、`web_search`、`web_fetch`、`load_skill`、`todo_write`、`read_persisted_output`、`spawn_subagent` 等工具直接执行，无需确认。
+- **免审批（查询/搜索）**：`read_file`、`grep`、`glob`、`ls`、`web_search`、`web_fetch`、`load_skill`、`todo_write`、`todo_list`、`read_persisted_output`、`spawn_subagent` 等工具直接执行，无需确认。
 - **需审批（变更类）**：`bash`（含 `curl`、写入、删除等任意命令）以及 `write_file`、`edit_file`、`multi_edit` 在执行前弹出审批面板，提供三个选项：
   - `1. Yes`：本次放行。
   - `2. Yes, and don't ask again for: <rule>`：本次放行并把放行规则写入工作区 `settings.json`，后续同类操作不再询问。`bash` 规则按命令名通配（如 `curl *`），写工具规则按工具名通配（如 `write_file *`）。

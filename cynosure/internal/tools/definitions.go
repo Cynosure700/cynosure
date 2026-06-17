@@ -112,6 +112,11 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"todos"},
 	}),
+	toolDef("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"additionalProperties": false,
+	}),
 	toolDef("grep", "A fast content search tool that works in any size codebase. Searches file contents using a Go regular expression. Always use this tool for search tasks; never invoke grep or rg via bash.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{

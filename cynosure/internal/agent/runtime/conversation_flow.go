@@ -186,7 +186,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 				return storage.Message{Role: "assistant", Content: "操作已被拒绝，已结束本轮。"}, nil
 			}
 			emitToolCallStart(state, toolCtx)
-			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID)}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID), Todos: state.Todos}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
 			}

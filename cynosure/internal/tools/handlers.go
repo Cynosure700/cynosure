@@ -12,6 +12,9 @@ import (
 // structured todo items in addition to a textual summary.
 const TodoWriteToolName = "todo_write"
 
+// TodoListToolName is the read-only tool that returns the current task plan.
+const TodoListToolName = "todo_list"
+
 // normalToolTimeout bounds the execution of non-terminal tools. The terminal
 // tool (bash) enforces its own timeout in bash.go.
 const normalToolTimeout = 60 * time.Second
@@ -37,6 +40,7 @@ var Handlers = map[string]ToolHandler{
 	"web_fetch":             handleWebFetch,
 	"web_search":            handleWebSearch,
 	"load_skill":            handleLoadSkill,
+	"todo_list":             handleTodoList,
 	"read_persisted_output": handleReadPersistedOutput,
 }
 

@@ -118,7 +118,9 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 			if approved, _ := s.approveToolCall(ctx, tc); !approved {
 				return openai.ChatCompletionMessage{}, fmt.Errorf("subagent tool %s rejected by user", tc.Function.Name)
 			}
-			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, parent, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			childToolContext := parent
+			childToolContext.Todos = state.Todos
+			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, childToolContext, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
 			}

@@ -61,6 +61,26 @@ func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult
 	}, nil
 }
 
+func handleTodoList(ctx context.Context, args map[string]any) (string, error) {
+	if len(args) > 0 {
+		return "", fmt.Errorf("todo_list does not accept arguments")
+	}
+	todos, _ := TodoSnapshotFromContext(ctx)
+	if len(todos) == 0 {
+		return "Todo list is empty. Use todo_write to create or update the current task plan.", nil
+	}
+	counts := map[string]int{TodoStatusPending: 0, TodoStatusInProgress: 0, TodoStatusCompleted: 0}
+	var b strings.Builder
+	for _, todo := range todos {
+		counts[todo.Status]++
+	}
+	fmt.Fprintf(&b, "Todo list: %d items (pending: %d, in_progress: %d, completed: %d).", len(todos), counts[TodoStatusPending], counts[TodoStatusInProgress], counts[TodoStatusCompleted])
+	for _, todo := range todos {
+		fmt.Fprintf(&b, "\n[%s] %s: %s", todo.Status, todo.ID, todo.Content)
+	}
+	return b.String(), nil
+}
+
 func isValidTodoStatus(status string) bool {
 	switch status {
 	case TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted:

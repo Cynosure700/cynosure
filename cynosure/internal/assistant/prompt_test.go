@@ -101,6 +101,7 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 		"## 任务管理",
 		"复杂任务、多步骤任务、用户提供多个目标或需要持续验证的任务，必须在开始执行前调用 todo_write",
 		"每完成一个待办事项，必须立即调用 todo_write 将该项标记为 completed",
+		"调用 todo_list 查询当前待办列表",
 		"## 工具调用",
 		"## 环境信息",
 	} {

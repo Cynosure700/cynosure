@@ -24,6 +24,7 @@ type ToolContext struct {
 	Skills                *agenttools.SkillSnapshot
 	ParentToolCallID      string
 	PersistedOutputReader agenttools.PersistedOutputReader
+	Todos                 []agenttools.TodoItem
 }
 
 type ToolExecutionResult struct {
@@ -100,6 +101,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	}
 	ctx = agenttools.WithRuntimeEnv(ctx, r.runtimeEnv())
 	ctx = agenttools.WithSkillSnapshot(ctx, toolCtx.Skills)
+	ctx = agenttools.WithTodoSnapshot(ctx, toolCtx.Todos)
 	if toolCtx.PersistedOutputReader != nil {
 		ctx = agenttools.WithPersistedOutputReader(ctx, toolCtx.PersistedOutputReader)
 	}
