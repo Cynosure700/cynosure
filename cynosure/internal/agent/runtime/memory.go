@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -14,33 +15,47 @@ import (
 )
 
 const (
-	MemoryTypeEpisodicMemory = "episodic_memory"
-	MemoryTypeUserPreference = "user_preference"
-	MemoryTypeProjectFact    = "project_fact"
+	// MemoryTypePreference 记录用户长期偏好、习惯与项目相关的稳定描述。
+	MemoryTypePreference = "preference"
+	// MemoryTypeFeedback 记录对 Agent 行为的纠正与肯定（行为指导）。
+	MemoryTypeFeedback = "feedback"
+	// MemoryTypeProject 记录项目进展、决策、截止日期等不可从代码推导的项目动态。
+	MemoryTypeProject = "project"
+	// MemoryTypeReference 记录外部系统中信息的定位信息。
+	MemoryTypeReference = "reference"
 )
 
 const (
-	maxPreferenceMemories    = 20
-	maxSessionSummaries      = 20
-	sessionSummaryPruneCount = 10
-	maxProjectFactMemories   = 50
-	maxInjectedMemories      = 10
-	maxMemoryDialogueChars   = 4000
-	maxMemoryNameRunes       = 80
-	maxMemoryDescRunes       = 300
-	maxMemoryBodyRunes       = 2000
+	maxPreferenceMemories  = 20
+	maxFeedbackMemories    = 30
+	maxProjectMemories     = 30
+	maxReferenceMemories   = 30
+	maxInjectedMemories    = 10
+	maxMemoryDialogueChars = 4000
+	maxMemoryNameRunes     = 80
+	maxMemoryDescRunes     = 300
+	maxMemoryBodyRunes     = 2000
 )
+
+// consolidationThresholds 给出每类长期记忆触发 LLM 合并的条目数阈值。
+var consolidationThresholds = map[string]int{
+	MemoryTypePreference: maxPreferenceMemories,
+	MemoryTypeFeedback:   maxFeedbackMemories,
+	MemoryTypeProject:    maxProjectMemories,
+	MemoryTypeReference:  maxReferenceMemories,
+}
 
 func validMemoryType(t string) bool {
 	switch t {
-	case MemoryTypeEpisodicMemory, MemoryTypeUserPreference, MemoryTypeProjectFact:
+	case MemoryTypePreference, MemoryTypeFeedback, MemoryTypeProject, MemoryTypeReference:
 		return true
 	}
 	return false
 }
 
 func (s *Service) memoryExtractionSystemPrompt() string {
-	return s.Prompts.withDefaults().MemoryExtraction
+	template := s.Prompts.withDefaults().MemoryExtraction
+	return strings.ReplaceAll(template, "{{current_date}}", time.Now().Format("2006-01-02"))
 }
 
 func (s *Service) memorySelectionSystemPrompt() string {
@@ -62,9 +77,9 @@ type extractedMemory struct {
 }
 
 // extractMemories runs once at the end of a conversation turn: it asks the LLM
-// to extract the three kinds of memories from the dialogue, persists them, and
-// triggers consolidation/pruning by type. It is best-effort: failures are
-// logged and swallowed so the user-facing response is never affected.
+// to extract the four kinds of long-term memories from the dialogue, persists
+// them, and triggers consolidation/pruning by type. It is best-effort: failures
+// are logged and swallowed so the user-facing response is never affected.
 func (s *Service) extractMemories(ctx context.Context, user storage.User, history []storage.Message) {
 	if s.LLM == nil {
 		return
@@ -96,7 +111,7 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 		return
 	}
 
-	var touchedPref, touchedSession, touchedProjectFact bool
+	touched := make(map[string]bool)
 	for _, it := range items {
 		uid := user.ID
 		if err := s.Store.InsertMemory(ctx, storage.Memory{
@@ -110,61 +125,29 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 			logger.Warn(fmt.Sprintf("memory: insert failed: %v", err))
 			continue
 		}
-		switch it.Type {
-		case MemoryTypeUserPreference:
-			touchedPref = true
-		case MemoryTypeEpisodicMemory:
-			touchedSession = true
-		case MemoryTypeProjectFact:
-			touchedProjectFact = true
+		touched[it.Type] = true
+	}
+	for memType := range touched {
+		if max, ok := consolidationThresholds[memType]; ok {
+			s.maybeConsolidateType(ctx, user.ID, memType, max)
 		}
 	}
-	if touchedPref {
-		s.maybeConsolidateUserPreferences(ctx, user.ID)
-	}
-	if touchedSession {
-		s.maybePruneSessionSummaries(ctx, user.ID)
-	}
-	if touchedProjectFact {
-		s.maybeConsolidateProjectFacts(ctx, user.ID)
-	}
 }
 
-func (s *Service) maybeConsolidateUserPreferences(ctx context.Context, userID string) {
-	items, err := s.Store.ListMemoriesByUserAndType(ctx, userID, MemoryTypeUserPreference)
-	if err != nil || len(items) < maxPreferenceMemories {
+// maybeConsolidateType collapses one memory type into a clean, minimal set via
+// the LLM once it grows past max entries. Best-effort: leaves data untouched on
+// any failure.
+func (s *Service) maybeConsolidateType(ctx context.Context, userID, memType string, max int) {
+	items, err := s.Store.ListMemoriesByUserAndType(ctx, userID, memType)
+	if err != nil || len(items) < max {
 		return
 	}
-	refined := s.consolidateViaLLM(ctx, "user_preference", MemoryTypeUserPreference, items)
+	refined := s.consolidateViaLLM(ctx, memType, memType, items)
 	if refined == nil {
 		return
 	}
-	if err := s.Store.ReplaceMemoriesByUserAndType(ctx, userID, MemoryTypeUserPreference, refined); err != nil {
-		logger.Warn(fmt.Sprintf("memory: replace user preferences failed: %v", err))
-	}
-}
-
-func (s *Service) maybeConsolidateProjectFacts(ctx context.Context, userID string) {
-	items, err := s.Store.ListProjectFactMemories(ctx, userID)
-	if err != nil || len(items) < maxProjectFactMemories {
-		return
-	}
-	refined := s.consolidateViaLLM(ctx, "project_fact", MemoryTypeProjectFact, items)
-	if refined == nil {
-		return
-	}
-	if err := s.Store.ReplaceProjectFactMemories(ctx, userID, refined); err != nil {
-		logger.Warn(fmt.Sprintf("memory: replace project fact memories failed: %v", err))
-	}
-}
-
-func (s *Service) maybePruneSessionSummaries(ctx context.Context, userID string) {
-	n, err := s.Store.CountMemoriesByUserAndType(ctx, userID, MemoryTypeEpisodicMemory)
-	if err != nil || n < maxSessionSummaries {
-		return
-	}
-	if err := s.Store.DeleteOldestMemories(ctx, userID, MemoryTypeEpisodicMemory, sessionSummaryPruneCount); err != nil {
-		logger.Warn(fmt.Sprintf("memory: prune session summaries failed: %v", err))
+	if err := s.Store.ReplaceMemoriesByUserAndType(ctx, userID, memType, refined); err != nil {
+		logger.Warn(fmt.Sprintf("memory: replace %s memories failed: %v", memType, err))
 	}
 }
 
@@ -304,29 +287,41 @@ func pickMemoriesByIndex(all []storage.Memory, indices []int, max int) []storage
 }
 
 // renderMemorySection groups selected project-scoped memories by type and
-// renders a Markdown block. Returns "" when empty.
+// renders a Markdown block. Returns "" when empty. Unknown or legacy types are
+// skipped silently.
 func renderMemorySection(memories []storage.Memory) string {
 	if len(memories) == 0 {
 		return ""
 	}
-	var userLines, projectFactLines []string
+	var preferenceLines, feedbackLines, projectLines, referenceLines []string
 	for _, m := range memories {
 		switch m.Type {
-		case MemoryTypeUserPreference:
-			userLines = append(userLines, memoryBlock("(喜好) ", m))
-		case MemoryTypeEpisodicMemory:
-			userLines = append(userLines, memoryBlock("(经历) ", m))
-		case MemoryTypeProjectFact:
-			projectFactLines = append(projectFactLines, memoryBlock("", m))
+		case MemoryTypePreference:
+			preferenceLines = append(preferenceLines, memoryBlock("", m))
+		case MemoryTypeFeedback:
+			feedbackLines = append(feedbackLines, memoryBlock("", m))
+		case MemoryTypeProject:
+			projectLines = append(projectLines, memoryBlock("", m))
+		case MemoryTypeReference:
+			referenceLines = append(referenceLines, memoryBlock("", m))
 		}
 	}
-	sections := make([]string, 0, 3)
+	sections := make([]string, 0, 5)
 	sections = append(sections, "### 当前项目记忆\n以下记忆仅适用于当前项目；不要迁移到其他项目会话。")
-	if len(userLines) > 0 {
-		sections = append(sections, "#### 关于用户的长期记忆\n"+strings.Join(userLines, "\n"))
+	if len(preferenceLines) > 0 {
+		sections = append(sections, "#### 用户喜好与约束\n"+strings.Join(preferenceLines, "\n"))
 	}
-	if len(projectFactLines) > 0 {
-		sections = append(sections, "#### 当前项目事实\n"+strings.Join(projectFactLines, "\n"))
+	if len(feedbackLines) > 0 {
+		sections = append(sections, "#### 行为指导\n"+strings.Join(feedbackLines, "\n"))
+	}
+	if len(projectLines) > 0 {
+		sections = append(sections, "#### 项目动态\n"+strings.Join(projectLines, "\n"))
+	}
+	if len(referenceLines) > 0 {
+		sections = append(sections, "#### 外部引用\n"+strings.Join(referenceLines, "\n"))
+	}
+	if len(sections) == 1 {
+		return ""
 	}
 	return strings.Join(sections, "\n\n")
 }

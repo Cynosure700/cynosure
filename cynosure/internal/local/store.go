@@ -288,13 +288,6 @@ func (s *Store) ListMemoriesByUserAndType(ctx context.Context, userID, memType s
 	return result, nil
 }
 
-func (s *Store) ListProjectFactMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
-	if s.memory != nil {
-		return s.memory.ListProjectFactMemories(ctx, userID)
-	}
-	return s.ListMemoriesByUserAndType(ctx, userID, "project_fact")
-}
-
 func (s *Store) InsertMemory(ctx context.Context, m storage.Memory) error {
 	if s.memory != nil {
 		return s.memory.InsertMemory(ctx, m)
@@ -313,13 +306,6 @@ func (s *Store) CountMemoriesByUserAndType(ctx context.Context, userID, memType 
 	return len(items), err
 }
 
-func (s *Store) CountProjectFactMemories(ctx context.Context, userID string) (int, error) {
-	if s.memory != nil {
-		return s.memory.CountProjectFactMemories(ctx, userID)
-	}
-	items, err := s.ListProjectFactMemories(ctx, userID)
-	return len(items), err
-}
 func (s *Store) DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error {
 	if s.memory != nil {
 		return s.memory.DeleteOldestMemories(ctx, userID, memType, n)
@@ -329,12 +315,6 @@ func (s *Store) DeleteOldestMemories(ctx context.Context, userID, memType string
 func (s *Store) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
 	if s.memory != nil {
 		return s.memory.ReplaceMemoriesByUserAndType(ctx, userID, memType, items)
-	}
-	return nil
-}
-func (s *Store) ReplaceProjectFactMemories(ctx context.Context, userID string, items []storage.Memory) error {
-	if s.memory != nil {
-		return s.memory.ReplaceProjectFactMemories(ctx, userID, items)
 	}
 	return nil
 }

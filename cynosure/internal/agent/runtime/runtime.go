@@ -32,13 +32,10 @@ type conversationStore interface {
 	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
 	ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error)
 	ListMemoriesByUserAndType(ctx context.Context, userID, memType string) ([]storage.Memory, error)
-	ListProjectFactMemories(ctx context.Context, userID string) ([]storage.Memory, error)
 	InsertMemory(ctx context.Context, m storage.Memory) error
 	CountMemoriesByUserAndType(ctx context.Context, userID, memType string) (int, error)
-	CountProjectFactMemories(ctx context.Context, userID string) (int, error)
 	DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error
 	ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error
-	ReplaceProjectFactMemories(ctx context.Context, userID string, items []storage.Memory) error
 	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 	ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error
 	GetConversationModelHistory(ctx context.Context, conversationID string) ([]storage.Message, bool, error)

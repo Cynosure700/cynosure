@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -13,24 +14,44 @@ import (
 
 func TestParseExtractedMemories_ValidAndDropsInvalid(t *testing.T) {
 	raw := "好的：\n```json\n[" +
-		`{"name":"偏好简洁","type":"user_preference","description":"简洁中文","body":"细节"},` +
-		`{"name":"x","type":"bogus","description":"d","body":"b"},` +
-		`{"name":"","type":"project_fact","description":"d","body":"b"},` +
-		`{"name":"构建命令","type":"project_fact","description":"d","body":"go test ./..."}` +
+		`{"name":"偏好简洁","type":"preference","description":"简洁中文","body":"细节"},` +
+		`{"name":"x","type":"episodic_memory","description":"d","body":"b"},` +
+		`{"name":"y","type":"project_fact","description":"d","body":"b"},` +
+		`{"name":"","type":"feedback","description":"d","body":"b"},` +
+		`{"name":"别用全局变量","type":"feedback","description":"d","body":"规则\nWhy: x\nHow to apply: y"}` +
 		"]\n```"
 	got := parseExtractedMemories(raw)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 valid memories, got %d (%v)", len(got), got)
 	}
-	if got[0].Type != MemoryTypeUserPreference || got[1].Type != MemoryTypeProjectFact {
+	if got[0].Type != MemoryTypePreference || got[1].Type != MemoryTypeFeedback {
 		t.Fatalf("unexpected types: %v", got)
+	}
+}
+
+func TestParseExtractedMemories_AcceptsAllFourTypes(t *testing.T) {
+	raw := `[` +
+		`{"name":"a","type":"preference","description":"d","body":"b"},` +
+		`{"name":"b","type":"feedback","description":"d","body":"b"},` +
+		`{"name":"c","type":"project","description":"d","body":"b"},` +
+		`{"name":"d","type":"reference","description":"d","body":"b"}` +
+		`]`
+	got := parseExtractedMemories(raw)
+	if len(got) != 4 {
+		t.Fatalf("expected 4 valid memories, got %d (%v)", len(got), got)
+	}
+	wantTypes := []string{MemoryTypePreference, MemoryTypeFeedback, MemoryTypeProject, MemoryTypeReference}
+	for i, want := range wantTypes {
+		if got[i].Type != want {
+			t.Fatalf("memory[%d] type = %q, want %q", i, got[i].Type, want)
+		}
 	}
 }
 
 func TestParseExtractedMemories_TruncatesLongFields(t *testing.T) {
 	longName := strings.Repeat("名", maxMemoryNameRunes+10)
 	longBody := strings.Repeat("体", maxMemoryBodyRunes+10)
-	raw := `[{"name":"` + longName + `","type":"project_fact","description":"d","body":"` + longBody + `"}]`
+	raw := `[{"name":"` + longName + `","type":"project","description":"d","body":"` + longBody + `"}]`
 	got := parseExtractedMemories(raw)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 memory, got %v", got)
@@ -89,49 +110,75 @@ func TestRenderMemorySection_EmptyWhenNoData(t *testing.T) {
 	}
 }
 
-func TestRenderMemorySection_GroupsByTypeWithNameAndDesc(t *testing.T) {
+func TestRenderMemorySection_SkipsLegacyTypes(t *testing.T) {
 	got := renderMemorySection([]storage.Memory{
-		{Type: MemoryTypeUserPreference, Name: "简洁", Description: "简洁中文", Body: "不应出现的body"},
-		{Type: MemoryTypeEpisodicMemory, Name: "迁移", Description: "迁移资源"},
-		{Type: MemoryTypeProjectFact, Name: "构建命令", Description: "使用 go test", Body: "当前项目使用 go test ./... 验证。"},
+		{Type: "episodic_memory", Name: "旧经历", Description: "应被跳过", Body: "legacy"},
+		{Type: "project_fact", Name: "旧事实", Description: "应被跳过", Body: "legacy"},
 	})
-	for _, want := range []string{"当前项目记忆", "仅适用于当前项目", "(喜好) 简洁：简洁中文", "(经历) 迁移：迁移资源", "当前项目事实", "构建命令：使用 go test", "当前项目使用 go test ./... 验证。"} {
+	if got != "" {
+		t.Fatalf("expected legacy-only section to be empty, got %q", got)
+	}
+}
+
+func TestRenderMemorySection_GroupsByFourTypes(t *testing.T) {
+	got := renderMemorySection([]storage.Memory{
+		{Type: MemoryTypePreference, Name: "简洁", Description: "简洁中文", Body: "偏好正文"},
+		{Type: MemoryTypeFeedback, Name: "别用全局", Description: "纠正", Body: "规则\nWhy: x\nHow to apply: y"},
+		{Type: MemoryTypeProject, Name: "里程碑", Description: "截止 2026-06-24", Body: "事实\nWhy: x\nHow to apply: y"},
+		{Type: MemoryTypeReference, Name: "监控面板", Description: "在 X 平台", Body: "外部引用正文"},
+		{Type: "project_fact", Name: "旧事实", Description: "应被跳过", Body: "legacy"},
+	})
+	for _, want := range []string{
+		"当前项目记忆", "仅适用于当前项目",
+		"用户喜好与约束", "简洁：简洁中文", "偏好正文",
+		"行为指导", "别用全局：纠正",
+		"项目动态", "里程碑：截止 2026-06-24",
+		"外部引用", "监控面板：在 X 平台", "外部引用正文",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected section to contain %q, got %q", want, got)
 		}
 	}
-	if !strings.Contains(got, "不应出现的body") {
-		t.Fatalf("selected memory body should be injected, got %q", got)
+	if strings.Contains(got, "旧事实") || strings.Contains(got, "legacy") {
+		t.Fatalf("legacy memory should not be injected, got %q", got)
 	}
 }
 
-func TestProjectFactPromptsAreProjectScoped(t *testing.T) {
-	if MemoryTypeProjectFact != "project_fact" {
-		t.Fatalf("MemoryTypeProjectFact = %q", MemoryTypeProjectFact)
-	}
+func TestMemoryExtractionPromptDescribesFourTypesAndExclusions(t *testing.T) {
 	service := &Service{}
 	extractionPrompt := service.memoryExtractionSystemPrompt()
-	selectionPrompt := service.memorySelectionSystemPrompt()
-	for _, forbidden := range []string{
-		strings.Join([]string{"seman", "tic"}, ""),
-		strings.Join([]string{"shared", " across", " users"}, ""),
-		strings.Join([]string{"通用", "知识"}, ""),
+	for _, want := range []string{
+		"preference", "feedback", "project", "reference",
+		"current project", "ONLY for the current project",
+		"Why:", "How to apply:",
+		"git log", "CYNOSURE.MD", "absolute date",
 	} {
-		if strings.Contains(extractionPrompt, forbidden) || strings.Contains(selectionPrompt, forbidden) {
-			t.Fatalf("memory prompts should not contain %q", forbidden)
-		}
-	}
-	for _, want := range []string{"project_fact", "current project", "ONLY for the current project"} {
 		if !strings.Contains(extractionPrompt, want) {
 			t.Fatalf("extraction prompt should contain %q", want)
 		}
+	}
+	// 旧类型不应再出现在抽取提示词的允许列表中。
+	if strings.Contains(extractionPrompt, "\"user_preference\"") || strings.Contains(extractionPrompt, "\"episodic_memory\"") {
+		t.Fatalf("extraction prompt should not advertise legacy types")
+	}
+}
+
+func TestMemoryExtractionPromptInjectsCurrentDate(t *testing.T) {
+	service := &Service{}
+	prompt := service.memoryExtractionSystemPrompt()
+	today := time.Now().Format("2006-01-02")
+	if !strings.Contains(prompt, today) {
+		t.Fatalf("expected extraction prompt to contain today's date %q, got %q", today, prompt)
+	}
+	if strings.Contains(prompt, "{{current_date}}") {
+		t.Fatalf("expected current_date placeholder to be replaced, got %q", prompt)
 	}
 }
 
 func TestMemoryConsolidationPromptReplacesTemplateValues(t *testing.T) {
 	service := &Service{}
-	prompt := service.memoryConsolidationSystemPrompt("project_fact", MemoryTypeProjectFact)
-	for _, want := range []string{`"project_fact" memories`, `type "project_fact"`} {
+	prompt := service.memoryConsolidationSystemPrompt("feedback", MemoryTypeFeedback)
+	for _, want := range []string{`"feedback" memories`, `type "feedback"`} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected consolidation prompt to contain %q, got %q", want, prompt)
 		}
@@ -144,7 +191,7 @@ func TestMemoryConsolidationPromptReplacesTemplateValues(t *testing.T) {
 }
 
 func TestSelectRelevantMemories_DisabledReturnsEmpty(t *testing.T) {
-	store := &fakeStore{memories: []storage.Memory{{UserID: "u1", Type: MemoryTypeUserPreference, Name: "n", Description: "d"}}}
+	store := &fakeStore{memories: []storage.Memory{{UserID: "u1", Type: MemoryTypePreference, Name: "n", Description: "d"}}}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: false}
 	if got := service.selectRelevantMemories(context.Background(), storage.User{ID: "u1"}, nil); got != "" {
@@ -169,8 +216,8 @@ func TestSelectRelevantMemories_NoDataReturnsEmpty(t *testing.T) {
 
 func TestSelectRelevantMemories_PicksAndRenders(t *testing.T) {
 	store := &fakeStore{memories: []storage.Memory{
-		{UserID: "u1", Type: MemoryTypeUserPreference, Name: "简洁", Description: "简洁中文"},
-		{UserID: "u1", Type: MemoryTypeUserPreference, Name: "无关", Description: "无关项"},
+		{UserID: "u1", Type: MemoryTypePreference, Name: "简洁", Description: "简洁中文"},
+		{UserID: "u1", Type: MemoryTypePreference, Name: "无关", Description: "无关项"},
 	}}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
@@ -182,32 +229,30 @@ func TestSelectRelevantMemories_PicksAndRenders(t *testing.T) {
 	}
 }
 
-func TestExtractMemories_PrunesSessionSummariesOverThreshold(t *testing.T) {
+func TestExtractMemories_ConsolidatesFeedbackOverThreshold(t *testing.T) {
 	store := &fakeStore{}
-	for i := 0; i < maxSessionSummaries; i++ {
-		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeEpisodicMemory, Name: "s", Body: "b"})
+	for i := 0; i < maxFeedbackMemories; i++ {
+		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeFeedback, Name: "f", Body: "b"})
 	}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新经历","type":"episodic_memory","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新反馈","type":"feedback","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"合并反馈","type":"feedback","description":"d","body":"b"}]`}}}},
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
 	service.extractMemories(context.Background(), storage.User{ID: "u1"}, []storage.Message{{Role: "user", Content: "hi"}})
-	if len(store.deletedOldest) != 1 {
-		t.Fatalf("expected one prune call, got %d", len(store.deletedOldest))
-	}
-	if store.deletedOldest[0][1] != MemoryTypeEpisodicMemory || store.deletedOldest[0][2] != "10" {
-		t.Fatalf("unexpected prune args: %v", store.deletedOldest[0])
+	if len(store.replacedMemories) == 0 {
+		t.Fatalf("expected feedback memories consolidated/replaced")
 	}
 }
 
 func TestExtractMemories_ConsolidatesUserPreferencesOverThreshold(t *testing.T) {
 	store := &fakeStore{}
 	for i := 0; i < maxPreferenceMemories; i++ {
-		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeUserPreference, Name: "p", Body: "b"})
+		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypePreference, Name: "p", Body: "b"})
 	}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新偏好","type":"user_preference","description":"d","body":"b"}]`}}}},
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"合并偏好","type":"user_preference","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新偏好","type":"preference","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"合并偏好","type":"preference","description":"d","body":"b"}]`}}}},
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
 	service.extractMemories(context.Background(), storage.User{ID: "u1"}, []storage.Message{{Role: "user", Content: "hi"}})

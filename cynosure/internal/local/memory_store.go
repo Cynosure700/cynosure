@@ -74,7 +74,7 @@ func (m *MarkdownMemoryStore) InsertMemory(ctx context.Context, mem storage.Memo
 		mem.ID = idgen.New("mem")
 	}
 	if mem.Type == "" {
-		mem.Type = "user_preference"
+		mem.Type = "preference"
 	}
 	if mem.CreatedAt.IsZero() {
 		mem.CreatedAt = time.Now()
@@ -97,17 +97,8 @@ func (m *MarkdownMemoryStore) ListMemoriesByUserAndType(ctx context.Context, use
 	return filterMemories(items, memType), nil
 }
 
-func (m *MarkdownMemoryStore) ListProjectFactMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
-	return m.ListMemoriesByUserAndType(ctx, userID, "project_fact")
-}
-
 func (m *MarkdownMemoryStore) CountMemoriesByUserAndType(ctx context.Context, userID, memType string) (int, error) {
 	items, err := m.ListMemoriesByUserAndType(ctx, userID, memType)
-	return len(items), err
-}
-
-func (m *MarkdownMemoryStore) CountProjectFactMemories(ctx context.Context, userID string) (int, error) {
-	items, err := m.ListProjectFactMemories(ctx, userID)
 	return len(items), err
 }
 
@@ -137,10 +128,6 @@ func (m *MarkdownMemoryStore) DeleteOldestMemories(ctx context.Context, userID, 
 
 func (m *MarkdownMemoryStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
 	return m.replaceMemoriesByType(memType, items)
-}
-
-func (m *MarkdownMemoryStore) ReplaceProjectFactMemories(ctx context.Context, userID string, items []storage.Memory) error {
-	return m.replaceMemoriesByType("project_fact", items)
 }
 
 func (m *MarkdownMemoryStore) ListConversationMemories(ctx context.Context, sessionID string) ([]storage.ConversationMemory, error) {

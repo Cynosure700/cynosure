@@ -282,7 +282,7 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
 	}
 	ctx := context.Background()
-	mem := storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProjectFact, Name: "构建命令", Description: "使用 go test", Body: "当前项目使用 go test ./... 验证。"}
+	mem := storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProject, Name: "构建命令", Description: "使用 go test", Body: "当前项目使用 go test ./... 验证。"}
 	if err := store.InsertMemory(ctx, mem); err != nil {
 		t.Fatalf("InsertMemory returned error: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected one memory, got %#v", items)
 	}
-	if items[0].Type != runtime.MemoryTypeProjectFact || !strings.Contains(items[0].Body, "当前项目使用 go test") {
+	if items[0].Type != runtime.MemoryTypeProject || !strings.Contains(items[0].Body, "当前项目使用 go test") {
 		t.Fatalf("unexpected memory item: %#v", items[0])
 	}
 }
@@ -321,14 +321,14 @@ func TestMarkdownMemoryStoreDoesNotListOtherWorkspaceMemoriesFromHomeLink(t *tes
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory returned error: %v", err)
 	}
-	if err := store.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProjectFact, Name: "当前项目", Description: "current", Body: "只属于当前项目"}); err != nil {
+	if err := store.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProject, Name: "当前项目", Description: "current", Body: "只属于当前项目"}); err != nil {
 		t.Fatalf("InsertMemory current returned error: %v", err)
 	}
 	otherStore, err := NewStoreWithMemory(otherWorkspace)
 	if err != nil {
 		t.Fatalf("NewStoreWithMemory other returned error: %v", err)
 	}
-	if err := otherStore.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProjectFact, Name: "其他项目", Description: "other", Body: "不应被当前项目检索到"}); err != nil {
+	if err := otherStore.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypeProject, Name: "其他项目", Description: "other", Body: "不应被当前项目检索到"}); err != nil {
 		t.Fatalf("InsertMemory other returned error: %v", err)
 	}
 

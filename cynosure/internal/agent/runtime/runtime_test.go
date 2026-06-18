@@ -36,7 +36,6 @@ type fakeStore struct {
 	upsertedModelHistory [][]storage.Message
 	deletedOldest        [][3]string
 	replacedMemories     []storage.Memory
-	replacedProjectFacts []storage.Memory
 	cached               []storage.Message
 	updatedTitle         string
 	updatedID            string
@@ -133,8 +132,7 @@ func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversa
 func (f *fakeStore) ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
 	var result []storage.Memory
 	for _, m := range f.memories {
-		if (m.UserID == userID && (m.Type == MemoryTypeEpisodicMemory || m.Type == MemoryTypeUserPreference)) ||
-			(m.UserID == userID && m.Type == MemoryTypeProjectFact) {
+		if m.UserID == userID {
 			result = append(result, m)
 		}
 	}
@@ -145,16 +143,6 @@ func (f *fakeStore) ListMemoriesByUserAndType(ctx context.Context, userID, memTy
 	var result []storage.Memory
 	for _, m := range f.memories {
 		if m.UserID == userID && m.Type == memType {
-			result = append(result, m)
-		}
-	}
-	return result, nil
-}
-
-func (f *fakeStore) ListProjectFactMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
-	var result []storage.Memory
-	for _, m := range f.memories {
-		if m.UserID == userID && m.Type == MemoryTypeProjectFact {
 			result = append(result, m)
 		}
 	}
@@ -176,16 +164,6 @@ func (f *fakeStore) CountMemoriesByUserAndType(ctx context.Context, userID, memT
 	return count, nil
 }
 
-func (f *fakeStore) CountProjectFactMemories(ctx context.Context, userID string) (int, error) {
-	count := 0
-	for _, m := range f.memories {
-		if m.UserID == userID && m.Type == MemoryTypeProjectFact {
-			count++
-		}
-	}
-	return count, nil
-}
-
 func (f *fakeStore) DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error {
 	f.deletedOldest = append(f.deletedOldest, [3]string{userID, memType, strconv.Itoa(n)})
 	return nil
@@ -193,11 +171,6 @@ func (f *fakeStore) DeleteOldestMemories(ctx context.Context, userID, memType st
 
 func (f *fakeStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
 	f.replacedMemories = append(f.replacedMemories, items...)
-	return nil
-}
-
-func (f *fakeStore) ReplaceProjectFactMemories(ctx context.Context, userID string, items []storage.Memory) error {
-	f.replacedProjectFacts = append(f.replacedProjectFacts, items...)
 	return nil
 }
 
