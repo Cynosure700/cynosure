@@ -70,6 +70,17 @@ func TestHandleBash_UsesWorkspaceRootAsDefaultDir(t *testing.T) {
 	}
 }
 
+func TestHandleBash_DoesNotTruncateLargeOutput(t *testing.T) {
+	root := t.TempDir()
+	result, err := handleBash(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"command": "printf '%*s' 50001 '' | tr ' ' x"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 50001 {
+		t.Fatalf("expected 50001 chars, got %d", len(result))
+	}
+}
+
 func TestHandleBash_UsesConfiguredAppWorkspaceAsDefaultDir(t *testing.T) {
 	appRoot := t.TempDir()
 	workspace := filepath.Join(appRoot, "workspace")

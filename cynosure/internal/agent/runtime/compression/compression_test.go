@@ -72,7 +72,7 @@ func resultOf(t *testing.T, content string) string {
 
 // --- ToolResultCompressionStrategy ---
 
-func TestToolResultCompression_NoopUnderThreshold(t *testing.T) {
+func TestToolResultCompression_NoopUnderDefaultToolLimit(t *testing.T) {
 	store := &fakeStore{}
 	history := []storage.Message{
 		{Role: "user", Content: "hi"},
@@ -88,7 +88,7 @@ func TestToolResultCompression_NoopUnderThreshold(t *testing.T) {
 	}
 }
 
-func TestToolResultCompression_PersistsLargestUntilUnderThreshold(t *testing.T) {
+func TestToolResultCompression_PersistsOnlyResultOverDefaultToolLimit(t *testing.T) {
 	store := &fakeStore{}
 	big := strings.Repeat("b", 250*1024)
 	small := strings.Repeat("s", 1024)
@@ -115,6 +115,101 @@ func TestToolResultCompression_PersistsLargestUntilUnderThreshold(t *testing.T) 
 	}
 	if resultOf(t, history[4].Content) != small {
 		t.Fatalf("expected small tool result to stay inline")
+	}
+}
+
+func TestToolResultCompression_PersistsSingleResultOverToolLimit(t *testing.T) {
+	store := &fakeStore{}
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantToolCallMsg("c1"),
+		toolMsg("c1", "success", "12345678901"),
+	}
+	req := &Request{
+		User:                   storage.User{ID: "u"},
+		Conversation:           storage.Conversation{ID: "c"},
+		RequestHistory:         history,
+		Store:                  store,
+		ToolMaxResultSizeChars: func(toolName string) int { return 10 },
+	}
+	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(store.persistedOutputs) != 1 {
+		t.Fatalf("expected 1 persisted output, got %d", len(store.persistedOutputs))
+	}
+	if !strings.Contains(resultOf(t, history[2].Content), PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected over-limit result replaced with marker, got %q", history[2].Content)
+	}
+}
+
+func TestToolResultCompression_DoesNotCompressByCombinedTotal(t *testing.T) {
+	store := &fakeStore{}
+	first := strings.Repeat("a", 120*1024)
+	second := strings.Repeat("b", 120*1024)
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantToolCallMsg("c1"),
+		toolMsg("c1", "success", first),
+		assistantToolCallMsg("c2"),
+		toolMsg("c2", "success", second),
+	}
+	req := &Request{
+		User:                   storage.User{ID: "u"},
+		Conversation:           storage.Conversation{ID: "c"},
+		RequestHistory:         history,
+		Store:                  store,
+		ToolMaxResultSizeChars: func(toolName string) int { return 200 * 1024 },
+	}
+	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(store.persistedOutputs) != 0 {
+		t.Fatalf("expected no persisted outputs, got %d", len(store.persistedOutputs))
+	}
+	if resultOf(t, history[2].Content) != first || resultOf(t, history[4].Content) != second {
+		t.Fatalf("expected both under-limit results to stay inline")
+	}
+}
+
+func TestToolResultCompression_UsesDefaultLimitWhenToolNameMissing(t *testing.T) {
+	store := &fakeStore{}
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		toolMsg("missing", "success", strings.Repeat("x", 50001)),
+	}
+	req := &Request{User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"}, RequestHistory: history, Store: store}
+	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(store.persistedOutputs) != 1 {
+		t.Fatalf("expected default limit to persist over-limit result, got %d persisted outputs", len(store.persistedOutputs))
+	}
+}
+
+func TestToolResultCompression_CountsRunesForLimit(t *testing.T) {
+	store := &fakeStore{}
+	result := strings.Repeat("界", 10)
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantToolCallMsg("c1"),
+		toolMsg("c1", "success", result),
+	}
+	req := &Request{
+		User:                   storage.User{ID: "u"},
+		Conversation:           storage.Conversation{ID: "c"},
+		RequestHistory:         history,
+		Store:                  store,
+		ToolMaxResultSizeChars: func(toolName string) int { return 10 },
+	}
+	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(store.persistedOutputs) != 0 {
+		t.Fatalf("expected 10-rune result at limit to stay inline, got %d persisted outputs", len(store.persistedOutputs))
+	}
+	if resultOf(t, history[2].Content) != result {
+		t.Fatalf("expected CJK result to stay inline at rune limit")
 	}
 }
 

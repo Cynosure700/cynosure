@@ -64,6 +64,33 @@ func TestCompressContextBeforeLLM_DoesNotMutateDisplayHistory(t *testing.T) {
 	}
 }
 
+func TestCompressContextBeforeLLM_UsesToolRegistryResultLimit(t *testing.T) {
+	store := &fakeStore{}
+	cfg := config.AppConfig{LLM: config.Config{ModelID: "m"}}
+	tools := NewToolRegistry(cfg)
+	tools.maxResultSizeChars["bash"] = 10
+	service := &Service{Store: store, Cfg: cfg, Tools: tools}
+
+	result := "12345678901"
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		compAssistantToolCallMsg("c1"),
+		compToolMsg("c1", "success", result),
+	}
+	state := &LoopState{Conversation: storage.Conversation{ID: "c"}, User: storage.User{ID: "u"}, History: history, ModelHistory: cloneMessages(history), SystemPrompt: "sys"}
+
+	requestHistory, err := service.compressContextBeforeLLM(context.Background(), state)
+	if err != nil {
+		t.Fatalf("compress: %v", err)
+	}
+	if compResultOf(t, state.History[2].Content) != result {
+		t.Fatalf("expected display history tool result untouched")
+	}
+	if !strings.Contains(compResultOf(t, requestHistory[2].Content), compression.PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected request history compacted by tool registry limit")
+	}
+}
+
 // --- loadModelHistory ---
 
 func TestLoadModelHistory_UsesStoredModelHistory(t *testing.T) {

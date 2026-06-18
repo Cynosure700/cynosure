@@ -18,7 +18,7 @@ var readOnlyBashCommands = map[string]struct{}{
 	"date": {}, "env": {}, "printenv": {}, "tree": {}, "du": {}, "df": {},
 	"basename": {}, "dirname": {}, "realpath": {}, "diff": {}, "cmp": {},
 	"sort": {}, "uniq": {}, "cut": {}, "awk": {}, "less": {}, "more": {},
-	"column": {}, "uname": {}, "hostname": {},	"cd":{},"sed":{},
+	"column": {}, "uname": {}, "hostname": {}, "cd": {},
 }
 
 // RequiresApproval 按工具维度判定该调用是否需要审批，并给出放行规则候选。

@@ -25,6 +25,38 @@ func toolDef(name, desc string, params any) openai.Tool {
 	}
 }
 
+const DefaultMaxResultSizeChars = 50000
+
+type ToolSpec struct {
+	Definition         openai.Tool
+	MaxResultSizeChars int
+}
+
+func toolSpec(name, desc string, params any) ToolSpec {
+	return ToolSpec{Definition: toolDef(name, desc, params), MaxResultSizeChars: DefaultMaxResultSizeChars}
+}
+
+func toolDefsFromSpecs(specs []ToolSpec) []openai.Tool {
+	defs := make([]openai.Tool, 0, len(specs))
+	for _, spec := range specs {
+		defs = append(defs, spec.Definition)
+	}
+	return defs
+}
+
+func MaxResultSizeCharsForTool(name string) int {
+	for _, spec := range AllToolSpecs {
+		if spec.Definition.Function == nil || spec.Definition.Function.Name != name {
+			continue
+		}
+		if spec.MaxResultSizeChars > 0 {
+			return spec.MaxResultSizeChars
+		}
+		return DefaultMaxResultSizeChars
+	}
+	return DefaultMaxResultSizeChars
+}
+
 func strParam(desc string) map[string]any {
 	return map[string]any{
 		"type":        "string",
@@ -54,15 +86,15 @@ func stringArrayParam(desc string) map[string]any {
 	}
 }
 
-var baseToolDefs = []openai.Tool{
-	toolDef("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the current working directory. Mutating commands (write, delete, curl, etc.) require user approval before running.", map[string]any{
+var baseToolSpecs = []ToolSpec{
+	toolSpec("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the current working directory. Mutating commands (write, delete, curl, etc.) require user approval before running.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"command": strParam("The shell command to execute"),
 		},
 		"required": []string{"command"},
 	}),
-	toolDef("read_file", "Read a file from the filesystem", map[string]any{
+	toolSpec("read_file", "Read a file from the filesystem", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"path":  strParam("Path to the file to read"),
@@ -70,7 +102,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path"},
 	}),
-	toolDef("write_file", "Write content to a file", map[string]any{
+	toolSpec("write_file", "Write content to a file", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"path":    strParam("Path to the file to write"),
@@ -78,7 +110,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path", "content"},
 	}),
-	toolDef("edit_file", "Replace text in a file by exact match", map[string]any{
+	toolSpec("edit_file", "Replace text in a file by exact match", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"path":     strParam("Path to the file to edit"),
@@ -87,14 +119,14 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
-	toolDef("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill. Skills are loaded from the user's ~/.cynosure/skills and the workspace .cynosure/skills directories, with workspace skills taking precedence.", map[string]any{
+	toolSpec("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill. Skills are loaded from the user's ~/.cynosure/skills and the workspace .cynosure/skills directories, with workspace skills taking precedence.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"name": strParam("Name of the skill to load"),
 		},
 		"required": []string{"name"},
 	}),
-	toolDef("todo_write", "Create or update the current task plan. Use this tool to track progress on multi-step tasks.", map[string]any{
+	toolSpec("todo_write", "Create or update the current task plan. Use this tool to track progress on multi-step tasks.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"todos": map[string]any{
@@ -112,12 +144,12 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"todos"},
 	}),
-	toolDef("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
+	toolSpec("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
 		"type":                 "object",
 		"properties":           map[string]any{},
 		"additionalProperties": false,
 	}),
-	toolDef("grep", "A fast content search tool that works in any size codebase. Searches file contents using a Go regular expression. Always use this tool for search tasks; never invoke grep or rg via bash.", map[string]any{
+	toolSpec("grep", "A fast content search tool that works in any size codebase. Searches file contents using a Go regular expression. Always use this tool for search tasks; never invoke grep or rg via bash.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"pattern":     strParam("The regular expression pattern to search for in file contents (Go regexp syntax)."),
@@ -130,7 +162,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"pattern"},
 	}),
-	toolDef("glob", "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like **/*.js or src/**/*.ts and returns matching file paths sorted by modification time.", map[string]any{
+	toolSpec("glob", "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like **/*.js or src/**/*.ts and returns matching file paths sorted by modification time.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"pattern":    strParam("The glob pattern to match files against."),
@@ -139,7 +171,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"pattern"},
 	}),
-	toolDef("ls", "List files and directories in a given path. The path must be an absolute path. You can optionally provide an array of glob patterns to ignore. Prefer glob and grep when you know which directories to search.", map[string]any{
+	toolSpec("ls", "List files and directories in a given path. The path must be an absolute path. You can optionally provide an array of glob patterns to ignore. Prefer glob and grep when you know which directories to search.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"path":   strParam("The absolute path to the directory to list (must be absolute, not relative)."),
@@ -147,7 +179,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"path"},
 	}),
-	toolDef("multi_edit", "Make multiple edits to a single file in one operation, built on the edit_file tool. Prefer this over edit_file when making several edits to the same file. Edits are applied sequentially and atomically: if any edit fails, none are applied.", map[string]any{
+	toolSpec("multi_edit", "Make multiple edits to a single file in one operation, built on the edit_file tool. Prefer this over edit_file when making several edits to the same file. Edits are applied sequentially and atomically: if any edit fails, none are applied.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"file_path": strParam("The absolute path to the file to modify (must be absolute, not relative)."),
@@ -168,7 +200,7 @@ var baseToolDefs = []openai.Tool{
 		},
 		"required": []string{"file_path", "edits"},
 	}),
-	toolDef("web_fetch", "Fetch content from a URL and process it with an AI model. Fetches the URL, converts HTML to text, and runs the prompt over the content. Use this to retrieve and analyze web content.", map[string]any{
+	toolSpec("web_fetch", "Fetch content from a URL and process it with an AI model. Fetches the URL, converts HTML to text, and runs the prompt over the content. Use this to retrieve and analyze web content.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"url":    strParam("The URL to fetch content from. http URLs are upgraded to https."),
@@ -178,9 +210,11 @@ var baseToolDefs = []openai.Tool{
 	}),
 }
 
-// webSearchToolDef is defined separately because it is not enabled by default;
+var baseToolDefs = toolDefsFromSpecs(baseToolSpecs)
+
+// webSearchToolSpec is defined separately because it is not enabled by default;
 // it is exposed in AllToolDefs so users can opt in via configuration.
-var webSearchToolDef = toolDef("web_search", "Search the web and use the results to inform responses. Provides up-to-date information for current events and recent data.", map[string]any{
+var webSearchToolSpec = toolSpec("web_search", "Search the web and use the results to inform responses. Provides up-to-date information for current events and recent data.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"query":           strParam("The search query to use."),
@@ -189,8 +223,9 @@ var webSearchToolDef = toolDef("web_search", "Search the web and use the results
 	},
 	"required": []string{"query"},
 })
+var webSearchToolDef = webSearchToolSpec.Definition
 
-var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
+var spawnSubagentToolSpec = toolSpec("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
@@ -198,13 +233,14 @@ var spawnSubagentToolDef = toolDef("spawn_subagent", "Spawn a child agent with a
 	},
 	"required": []string{"task"},
 })
+var spawnSubagentToolDef = spawnSubagentToolSpec.Definition
 
 // ReadPersistedOutputToolName is exposed automatically alongside context
 // compression so the model can fetch the full content behind a
 // <persisted-output> marker when the inline preview is insufficient.
 const ReadPersistedOutputToolName = "read_persisted_output"
 
-var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a chunk of a persisted tool output by id when a <persisted-output> marker preview is insufficient. Only outputs from the current conversation are accessible.", map[string]any{
+var ReadPersistedOutputToolSpec = toolSpec(ReadPersistedOutputToolName, "Read a chunk of a persisted tool output by id when a <persisted-output> marker preview is insufficient. Only outputs from the current conversation are accessible.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"id":     strParam("The persisted output id from the <persisted-output> marker, for example po_abc123."),
@@ -213,6 +249,8 @@ var ReadPersistedOutputToolDef = toolDef(ReadPersistedOutputToolName, "Read a ch
 	},
 	"required": []string{"id"},
 })
+var ReadPersistedOutputToolDef = ReadPersistedOutputToolSpec.Definition
 
-var AllToolDefs = append(append([]openai.Tool(nil), baseToolDefs...), spawnSubagentToolDef, webSearchToolDef, ReadPersistedOutputToolDef)
+var AllToolSpecs = append(append([]ToolSpec(nil), baseToolSpecs...), spawnSubagentToolSpec, webSearchToolSpec, ReadPersistedOutputToolSpec)
+var AllToolDefs = toolDefsFromSpecs(AllToolSpecs)
 var ChildToolDefs = baseToolDefs

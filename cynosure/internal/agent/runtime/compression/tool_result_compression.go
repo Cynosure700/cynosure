@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"nano_cc/internal/agent/storage"
@@ -66,11 +65,13 @@ func latestUserTurnToolIndexes(history []storage.Message) []int {
 }
 
 type toolResultCandidate struct {
-	index  int
-	status string
-	result string
-	isJSON bool
-	bytes  int
+	index    int
+	status   string
+	result   string
+	isJSON   bool
+	bytes    int
+	chars    int
+	toolName string
 }
 
 func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request) error {
@@ -80,39 +81,41 @@ func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request)
 		return nil
 	}
 
-	candidates := make([]toolResultCandidate, 0, len(indexes))
-	totalBytes := 0
+	toolNames := toolNamesByCallID(history)
 	for _, idx := range indexes {
 		status, result, isJSON := textutil.ParseToolResult(history[idx].Content)
 		if isCompactedResult(result) {
 			continue
 		}
-		size := len([]byte(result))
-		candidates = append(candidates, toolResultCandidate{index: idx, status: status, result: result, isJSON: isJSON, bytes: size})
-		totalBytes += size
-	}
-	if totalBytes <= toolResultByteThreshold {
-		return nil
-	}
-
-	// Largest first.
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return candidates[i].bytes > candidates[j].bytes
-	})
-
-	remaining := totalBytes
-	for _, candidate := range candidates {
-		if remaining <= toolResultByteThreshold {
-			break
+		toolName := toolNames[history[idx].ToolCallID]
+		chars := len([]rune(result))
+		if chars <= req.maxResultSizeChars(toolName) {
+			continue
 		}
+		candidate := toolResultCandidate{index: idx, status: status, result: result, isJSON: isJSON, bytes: len([]byte(result)), chars: chars, toolName: toolName}
 		marker, err := s.persistAndBuildMarker(ctx, req, history[candidate.index], candidate)
 		if err != nil {
 			return err
 		}
 		history[candidate.index].Content = rebuildToolResult(candidate.status, marker, candidate.isJSON)
-		remaining -= candidate.bytes
 	}
 	return nil
+}
+
+func toolNamesByCallID(history []storage.Message) map[string]string {
+	names := make(map[string]string)
+	for _, msg := range history {
+		if msg.Role != "assistant" {
+			continue
+		}
+		for _, call := range msg.ToolCalls {
+			if call.ID == "" {
+				continue
+			}
+			names[call.ID] = call.Function.Name
+		}
+	}
+	return names
 }
 
 func (s *ToolResultCompressionStrategy) persistAndBuildMarker(ctx context.Context, req *Request, msg storage.Message, candidate toolResultCandidate) (string, error) {

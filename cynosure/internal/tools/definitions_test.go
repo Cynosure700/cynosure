@@ -5,6 +5,50 @@ import (
 	"testing"
 )
 
+func TestAllToolSpecsExposeDefaultMaxResultSizeChars(t *testing.T) {
+	if DefaultMaxResultSizeChars != 50000 {
+		t.Fatalf("DefaultMaxResultSizeChars = %d, want 50000", DefaultMaxResultSizeChars)
+	}
+	if got := MaxResultSizeCharsForTool("bash"); got != 50000 {
+		t.Fatalf("bash max result chars = %d, want 50000", got)
+	}
+	if got := MaxResultSizeCharsForTool("mcp__unknown__tool"); got != 50000 {
+		t.Fatalf("unknown max result chars = %d, want 50000", got)
+	}
+}
+
+func TestAllToolSpecsMatchAllToolDefs(t *testing.T) {
+	specNames := map[string]struct{}{}
+	for _, spec := range AllToolSpecs {
+		if spec.Definition.Function == nil {
+			t.Fatalf("tool spec has nil function: %#v", spec.Definition)
+		}
+		name := spec.Definition.Function.Name
+		if name == "" {
+			t.Fatalf("tool spec has empty name: %#v", spec.Definition)
+		}
+		if spec.MaxResultSizeChars != 50000 {
+			t.Fatalf("%s max result chars = %d, want 50000", name, spec.MaxResultSizeChars)
+		}
+		specNames[name] = struct{}{}
+	}
+	defNames := map[string]struct{}{}
+	for _, def := range AllToolDefs {
+		if def.Function == nil {
+			t.Fatalf("tool def has nil function: %#v", def)
+		}
+		defNames[def.Function.Name] = struct{}{}
+	}
+	if len(specNames) != len(defNames) {
+		t.Fatalf("spec count = %d, def count = %d", len(specNames), len(defNames))
+	}
+	for name := range defNames {
+		if _, ok := specNames[name]; !ok {
+			t.Fatalf("AllToolDefs contains %s but AllToolSpecs does not", name)
+		}
+	}
+}
+
 func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 	for _, tool := range AllToolDefs {
 		if tool.Function == nil || tool.Function.Name != "load_skill" {

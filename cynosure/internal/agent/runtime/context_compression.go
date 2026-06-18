@@ -48,6 +48,9 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		Estimator:      compression.DefaultTokenEstimator{},
 		Summarizer:     s.summarizeHistoryForContext,
 	}
+	if s.Tools != nil {
+		req.ToolMaxResultSizeChars = s.Tools.MaxResultSizeChars
+	}
 	if err := compressor.Compress(ctx, req); err != nil {
 		return nil, err
 	}
@@ -74,6 +77,9 @@ func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 		Store:          store,
 		Estimator:      compression.DefaultTokenEstimator{},
 		Summarizer:     s.summarizeHistoryForContext,
+	}
+	if s.Tools != nil {
+		req.ToolMaxResultSizeChars = s.Tools.MaxResultSizeChars
 	}
 	if err := (&compression.ReactiveCompactStrategy{}).Apply(ctx, req); err != nil {
 		return err

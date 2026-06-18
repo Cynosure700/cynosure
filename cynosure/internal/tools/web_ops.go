@@ -83,9 +83,6 @@ func fetchAndCleanText(ctx context.Context, rawURL string) (string, error) {
 	}
 
 	text := htmlToText(string(body))
-	if len(text) > maxOutputLen {
-		text = text[:maxOutputLen]
-	}
 	return text, nil
 }
 

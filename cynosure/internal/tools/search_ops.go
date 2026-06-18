@@ -134,11 +134,7 @@ done:
 	if len(lines) == 0 {
 		return "No matches found"
 	}
-	out := strings.Join(lines, "\n")
-	if len(out) > maxOutputLen {
-		out = out[:maxOutputLen]
-	}
-	return out
+	return strings.Join(lines, "\n")
 }
 
 func grepCount(re *regexp.Regexp, root string, files []string, headLimit int) string {

@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-const maxOutputLen = 50000
 const terminalToolTimeout = 120 * time.Second
 
 func RunBash(command string) (string, error) {
@@ -42,10 +41,6 @@ func RunBashInDir(command, dir string) (string, error) {
 	result := strings.TrimSpace(string(output))
 	if result == "" {
 		return "(no output)", nil
-	}
-
-	if len(result) > maxOutputLen {
-		result = result[:maxOutputLen]
 	}
 
 	return result, err

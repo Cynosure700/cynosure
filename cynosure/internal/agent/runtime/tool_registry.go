@@ -33,8 +33,9 @@ type ToolExecutionResult struct {
 }
 
 type ToolRegistry struct {
-	definitions []openai.Tool
-	baseEnv     agenttools.RuntimeEnv
+	definitions        []openai.Tool
+	maxResultSizeChars map[string]int
+	baseEnv            agenttools.RuntimeEnv
 }
 
 const defaultAllowedTool = "load_skill"
@@ -43,8 +44,9 @@ func NewToolRegistry(cfg config.AppConfig) *ToolRegistry {
 	allowed := loadAllowedToolNames(cfg)
 	definitions := appendPersistedOutputTool(buildToolDefinitions(allowed))
 	return &ToolRegistry{
-		definitions: definitions,
-		baseEnv:     runtimeEnvFromConfig(cfg),
+		definitions:        definitions,
+		maxResultSizeChars: buildMaxResultSizeMap(definitions),
+		baseEnv:            runtimeEnvFromConfig(cfg),
 	}
 }
 
@@ -64,11 +66,21 @@ func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
 	allowed := withoutTool(loadAllowedToolNames(cfg), "spawn_subagent")
 	env := runtimeEnvFromConfig(cfg)
 	env.CurrentWorkingDir = strings.TrimSpace(cwd)
-	return &ToolRegistry{definitions: buildToolDefinitions(allowed), baseEnv: env}
+	definitions := buildToolDefinitions(allowed)
+	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env}
 }
 
 func (r *ToolRegistry) Definitions() []openai.Tool {
 	return append([]openai.Tool(nil), r.definitions...)
+}
+
+func (r *ToolRegistry) MaxResultSizeChars(name string) int {
+	if r != nil && r.maxResultSizeChars != nil {
+		if limit := r.maxResultSizeChars[name]; limit > 0 {
+			return limit
+		}
+	}
+	return agenttools.MaxResultSizeCharsForTool(name)
 }
 
 // toolDefinitionsForUser 返回内置工具定义，并在 MCP 启用时合并该用户已连接 MCP 服务器的工具。
@@ -191,6 +203,17 @@ func buildToolDefinitions(allowed []string) []openai.Tool {
 		toolDefs = append(toolDefs, def)
 	}
 	return toolDefs
+}
+
+func buildMaxResultSizeMap(definitions []openai.Tool) map[string]int {
+	limits := make(map[string]int, len(definitions))
+	for _, def := range definitions {
+		if def.Function == nil {
+			continue
+		}
+		limits[def.Function.Name] = agenttools.MaxResultSizeCharsForTool(def.Function.Name)
+	}
+	return limits
 }
 
 func lookupRegisteredTool(name string) (openai.Tool, bool) {

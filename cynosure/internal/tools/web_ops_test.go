@@ -43,6 +43,26 @@ func TestRunWebFetchWithoutProcessor(t *testing.T) {
 	}
 }
 
+func TestRunWebFetchWithoutProcessorDoesNotTruncateLargeText(t *testing.T) {
+	longText := strings.Repeat("x", 50001)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("<html><body><p>" + longText + "</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	old := http.DefaultClient
+	http.DefaultClient = srv.Client()
+	defer func() { http.DefaultClient = old }()
+
+	out, err := RunWebFetch(context.Background(), srv.URL, "summarize")
+	if err != nil {
+		t.Fatalf("web_fetch: %v", err)
+	}
+	if out != longText {
+		t.Fatalf("expected full cleaned text length %d, got %d", len(longText), len(out))
+	}
+}
+
 func TestRunWebFetchWithProcessor(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("<html><body>secret content</body></html>"))

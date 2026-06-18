@@ -51,6 +51,20 @@ func TestRunGrepFromRoot(t *testing.T) {
 	}
 }
 
+func TestRunGrepContentDoesNotTruncateLargeOutput(t *testing.T) {
+	root := t.TempDir()
+	longLine := strings.Repeat("x", 50001)
+	writeFile(t, filepath.Join(root, "large.txt"), "match "+longLine+"\n")
+
+	out, err := RunGrepFromRoot(root, root, "match", "", "content", false, false, 10)
+	if err != nil {
+		t.Fatalf("grep content: %v", err)
+	}
+	if !strings.Contains(out, longLine) {
+		t.Fatalf("expected full long line in output, got length %d", len(out))
+	}
+}
+
 func TestRunGlobFromRoot(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "src", "main.go"), "x")

@@ -6,12 +6,10 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 
 	"nano_cc/internal/agent/storage"
+	agenttools "nano_cc/internal/tools"
 )
 
 const (
-	// toolResultByteThreshold is the inline tool_result budget for the latest
-	// user turn before large outputs get persisted (200KB).
-	toolResultByteThreshold = 200 * 1024
 	// toolResultPreviewRunes is how many leading runes of an oversized
 	// tool_result remain inline as a preview.
 	toolResultPreviewRunes = 2000
@@ -40,6 +38,18 @@ type Request struct {
 	Store          Store
 	Estimator      TokenEstimator
 	Summarizer     HistorySummarizer
+	// ToolMaxResultSizeChars resolves the per-tool inline result limit. A nil
+	// resolver or non-positive result falls back to the default tool limit.
+	ToolMaxResultSizeChars func(toolName string) int
+}
+
+func (r *Request) maxResultSizeChars(toolName string) int {
+	if r != nil && r.ToolMaxResultSizeChars != nil {
+		if limit := r.ToolMaxResultSizeChars(toolName); limit > 0 {
+			return limit
+		}
+	}
+	return agenttools.DefaultMaxResultSizeChars
 }
 
 // Store is the minimal storage surface required by strategies.
