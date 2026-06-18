@@ -175,6 +175,40 @@ func TestTypedInputKeepsNormalDisplay(t *testing.T) {
 	}
 }
 
+func TestEscInterruptsRunningGenerationSilently(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.running = true
+	app.generation = 7
+	canceled := false
+	app.cancel = func() { canceled = true }
+	app.messages = []Message{
+		{Role: "user", Content: "写一个长回答"},
+		{Role: "assistant", Content: "已经输出一半"},
+	}
+
+	updated, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model := updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("expected no command after esc interrupt, got %#v", cmd)
+	}
+	if !canceled {
+		t.Fatal("expected esc to cancel the running response context")
+	}
+	if model.running {
+		t.Fatal("expected running to be cleared after esc")
+	}
+	if model.generation != 8 {
+		t.Fatalf("expected generation to advance and ignore stale events, got %d", model.generation)
+	}
+	if len(model.messages) != 2 {
+		t.Fatalf("expected esc interrupt to avoid adding a system message, got %#v", model.messages)
+	}
+	if model.messages[1].Content != "已经输出一半" {
+		t.Fatalf("expected current partial assistant output to remain visible, got %#v", model.messages[1])
+	}
+}
+
 func TestSubmittedUserMessageRendersAsGreySelectedLine(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 56

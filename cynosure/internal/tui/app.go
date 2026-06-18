@@ -183,6 +183,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		case "esc":
+			if m.running && !m.approving && m.cancel != nil {
+				m.cancel()
+				m.generation++
+				m.running = false
+				return m, nil
+			}
 		}
 		if m.approving {
 			if m.handleApprovalKey(msg.String()) {

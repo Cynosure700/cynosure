@@ -141,6 +141,9 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		if err != nil {
 			return storage.Message{}, err
 		}
+		if err := ctx.Err(); err != nil {
+			return storage.Message{}, err
+		}
 		cumulativeReasoning.WriteString(msg.ReasoningContent)
 		requestMsg := msg
 		state.Messages = append(state.Messages, requestMsg)

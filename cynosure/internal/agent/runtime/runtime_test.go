@@ -42,6 +42,7 @@ type fakeStore struct {
 	updatedID            string
 	touchedID            string
 	toolResultLogs       []storage.ToolResultLogEntry
+	lockReleased         int
 }
 
 func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
@@ -241,6 +242,7 @@ func (f *fakeStore) RenewConversationLock(ctx context.Context, conversationID, t
 }
 
 func (f *fakeStore) ReleaseConversationLock(ctx context.Context, conversationID, token string) error {
+	f.lockReleased++
 	return nil
 }
 
@@ -583,6 +585,43 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 	}
 	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
+	}
+}
+
+func TestRespondToConversation_ContextCancelSkipsStopHooksAndReleasesLock(t *testing.T) {
+	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "部"}}}},
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "分"}, FinishReason: openai.FinishReasonStop}}},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.ConversationLockTTL = time.Minute
+	cfg.ConversationLockWaitTimeout = time.Millisecond
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg), EnableMemory: true}
+	writer := &captureEventWriter{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := service.RespondToConversation(ctx, storage.Conversation{ID: "conv_cancel", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice", MemoryEnabled: true}, "写长回答", writer)
+	if err == nil {
+		t.Fatal("expected canceled context error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if len(store.historyUpdates) != 0 {
+		t.Fatalf("expected no stop hook history persistence after cancel, got %#v", store.historyUpdates)
+	}
+	if len(store.upsertedModelHistory) != 0 || len(store.replacedConvMemories) != 0 {
+		t.Fatalf("expected no memory/model-history handoff after cancel, got model=%#v memories=%#v", store.upsertedModelHistory, store.replacedConvMemories)
+	}
+	if store.lockReleased != 1 {
+		t.Fatalf("expected conversation lock to be released once, got %d", store.lockReleased)
+	}
+	for _, event := range writer.nonMetaEvents() {
+		if event.name == "assistant" {
+			t.Fatalf("expected no final assistant event after cancel, got %#v", writer.events)
+		}
 	}
 }
 
