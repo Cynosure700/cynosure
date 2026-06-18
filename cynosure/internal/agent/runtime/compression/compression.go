@@ -18,8 +18,12 @@ const (
 	messageWindowLimit = 50
 	messageWindowHead  = 3
 	messageWindowTail  = 46
-	// recentToolResultRetention keeps the most recent N full tool results.
-	recentToolResultRetention = 3
+	// recentToolResultRetentionThreshold triggers micro compaction only when
+	// full inline tool results exceed this count.
+	recentToolResultRetentionThreshold = 20
+	// recentToolResultRetention keeps the most recent N full inline tool
+	// results once micro compaction is triggered.
+	recentToolResultRetention = 5
 
 	earlierToolResultPlaceholder = "[Earlier result compacted. Re-run if needed]"
 	// PersistedOutputMarkerPrefix marks a tool_result whose full content was

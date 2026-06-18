@@ -8,8 +8,9 @@ import (
 
 const recentToolResultRetentionStrategyName = "recent_tool_result_retention"
 
-// RecentToolResultRetentionStrategy keeps only the most recent N tool results
-// fully inline; earlier tool results are replaced with a one-line placeholder.
+// RecentToolResultRetentionStrategy keeps only the most recent N full inline
+// tool results once their count exceeds the micro compaction threshold; earlier
+// full inline tool results are replaced with a one-line placeholder.
 type RecentToolResultRetentionStrategy struct{}
 
 func (s *RecentToolResultRetentionStrategy) Name() string {
@@ -19,25 +20,30 @@ func (s *RecentToolResultRetentionStrategy) Name() string {
 func (s *RecentToolResultRetentionStrategy) Apply(ctx context.Context, req *Request) error {
 	history := req.RequestHistory
 
-	// Collect tool message indexes in order.
-	var toolIndexes []int
-	for i := range history {
-		if history[i].Role == "tool" {
-			toolIndexes = append(toolIndexes, i)
-		}
-	}
-	if len(toolIndexes) <= recentToolResultRetention {
-		return nil
+	type inlineToolResult struct {
+		index  int
+		status string
+		isJSON bool
 	}
 
-	// The last N tool messages (by position) keep their full result.
-	cutoff := len(toolIndexes) - recentToolResultRetention
-	for _, idx := range toolIndexes[:cutoff] {
-		status, result, isJSON := textutil.ParseToolResult(history[idx].Content)
+	var candidates []inlineToolResult
+	for i := range history {
+		if history[i].Role != "tool" {
+			continue
+		}
+		status, result, isJSON := textutil.ParseToolResult(history[i].Content)
 		if isCompactedResult(result) {
 			continue
 		}
-		history[idx].Content = rebuildToolResult(status, earlierToolResultPlaceholder, isJSON)
+		candidates = append(candidates, inlineToolResult{index: i, status: status, isJSON: isJSON})
+	}
+	if len(candidates) <= recentToolResultRetentionThreshold {
+		return nil
+	}
+
+	cutoff := len(candidates) - recentToolResultRetention
+	for _, candidate := range candidates[:cutoff] {
+		history[candidate.index].Content = rebuildToolResult(candidate.status, earlierToolResultPlaceholder, candidate.isJSON)
 	}
 	return nil
 }

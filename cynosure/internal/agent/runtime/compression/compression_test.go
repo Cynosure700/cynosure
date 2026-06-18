@@ -411,59 +411,102 @@ func TestMessageWindow_FallsBackToFirstThreeWhenNoUser(t *testing.T) {
 
 // --- RecentToolResultRetentionStrategy ---
 
-func TestRecentToolRetention_NoopAtOrBelowThree(t *testing.T) {
-	history := []storage.Message{
-		toolMsg("a", "success", "ra"),
-		toolMsg("b", "success", "rb"),
-		toolMsg("c", "success", "rc"),
-	}
+func TestRecentToolRetention_NoopAtExactlyTwentyFullInlineResults(t *testing.T) {
+	history := makeToolResultMessages(20)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if resultOf(t, history[0].Content) != "ra" {
-		t.Fatalf("expected no compaction at threshold")
+	for i := range history {
+		want := "result_" + string(rune('a'+i))
+		if got := resultOf(t, history[i].Content); got != want {
+			t.Fatalf("expected tool %d to stay inline as %q, got %q", i, want, got)
+		}
 	}
 }
 
-func TestRecentToolRetention_CompactsOlderKeepsRecentThree(t *testing.T) {
-	history := []storage.Message{
-		toolMsg("a", "success", "ra"),
-		toolMsg("b", "success", "rb"),
-		toolMsg("c", "success", "rc"),
-		toolMsg("d", "success", "rd"),
-		toolMsg("e", "success", "re"),
-	}
+func TestRecentToolRetention_CompactsAtTwentyOneFullInlineResultsAndKeepsRecentFive(t *testing.T) {
+	history := makeToolResultMessages(21)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if resultOf(t, history[0].Content) != earlierToolResultPlaceholder {
-		t.Fatalf("expected oldest tool compacted, got %q", history[0].Content)
-	}
-	if resultOf(t, history[1].Content) != earlierToolResultPlaceholder {
-		t.Fatalf("expected second oldest tool compacted")
-	}
-	// last three kept full
-	for _, idx := range []int{2, 3, 4} {
-		if isCompactedResult(resultOf(t, history[idx].Content)) {
-			t.Fatalf("expected recent tool %d to keep full result", idx)
+	for i := 0; i < 16; i++ {
+		if got := resultOf(t, history[i].Content); got != earlierToolResultPlaceholder {
+			t.Fatalf("expected older tool %d compacted, got %q", i, got)
 		}
 	}
-	// JSON status preserved
+	for i := 16; i < 21; i++ {
+		want := "result_" + string(rune('a'+i))
+		if got := resultOf(t, history[i].Content); got != want {
+			t.Fatalf("expected recent tool %d to stay inline as %q, got %q", i, want, got)
+		}
+	}
 	status, _, isJSON := textutil.ParseToolResult(history[0].Content)
 	if !isJSON || status != "success" {
 		t.Fatalf("expected JSON wrapper preserved when placeholdering")
 	}
 }
 
-func TestRecentToolRetention_NonJSONReplacedWithPlainPlaceholder(t *testing.T) {
-	history := []storage.Message{
-		{Role: "tool", ToolCallID: "a", Content: "raw not json"},
-		toolMsg("b", "success", "rb"),
-		toolMsg("c", "success", "rc"),
-		toolMsg("d", "success", "rd"),
+func TestRecentToolRetention_CountsOnlyFullInlineToolResults(t *testing.T) {
+	history := makeToolResultMessages(15)
+	persisted := toolMsg("persisted", "success", buildPersistedOutputMarker("po_existing", 1234, "preview"))
+	placeholder := toolMsg("placeholder", "success", earlierToolResultPlaceholder)
+	for i := 0; i < 5; i++ {
+		history = append(history, persisted, placeholder)
 	}
+	req := &Request{RequestHistory: history}
+	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for i := 0; i < 15; i++ {
+		want := "result_" + string(rune('a'+i))
+		if got := resultOf(t, history[i].Content); got != want {
+			t.Fatalf("expected full inline tool %d to stay inline as %q, got %q", i, want, got)
+		}
+	}
+	if got := resultOf(t, history[15].Content); !strings.Contains(got, PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected persisted marker to stay unchanged, got %q", got)
+	}
+	if got := resultOf(t, history[16].Content); got != earlierToolResultPlaceholder {
+		t.Fatalf("expected existing placeholder to stay unchanged, got %q", got)
+	}
+}
+
+func TestRecentToolRetention_SkipsPersistedAndPlaceholderWhenKeepingRecentFive(t *testing.T) {
+	history := makeToolResultMessages(18)
+	history = append(history,
+		toolMsg("persisted", "success", buildPersistedOutputMarker("po_existing", 1234, "preview")),
+		toolMsg("placeholder", "success", earlierToolResultPlaceholder),
+	)
+	history = append(history, makeToolResultMessagesFrom(18, 5)...)
+
+	req := &Request{RequestHistory: history}
+	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for i := 0; i < 18; i++ {
+		if got := resultOf(t, history[i].Content); got != earlierToolResultPlaceholder {
+			t.Fatalf("expected older full inline tool %d compacted, got %q", i, got)
+		}
+	}
+	if got := resultOf(t, history[18].Content); !strings.Contains(got, PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected persisted marker to stay unchanged, got %q", got)
+	}
+	if got := resultOf(t, history[19].Content); got != earlierToolResultPlaceholder {
+		t.Fatalf("expected existing placeholder to stay unchanged, got %q", got)
+	}
+	for i := 20; i < 25; i++ {
+		want := "result_" + string(rune('a'+i-2))
+		if got := resultOf(t, history[i].Content); got != want {
+			t.Fatalf("expected recent full inline tool %d to stay inline as %q, got %q", i, want, got)
+		}
+	}
+}
+
+func TestRecentToolRetention_NonJSONReplacedWithPlainPlaceholder(t *testing.T) {
+	history := []storage.Message{{Role: "tool", ToolCallID: "raw", Content: "raw not json"}}
+	history = append(history, makeToolResultMessages(21)...)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -471,6 +514,20 @@ func TestRecentToolRetention_NonJSONReplacedWithPlainPlaceholder(t *testing.T) {
 	if history[0].Content != earlierToolResultPlaceholder {
 		t.Fatalf("expected non-JSON tool content replaced with plain placeholder, got %q", history[0].Content)
 	}
+}
+
+func makeToolResultMessages(n int) []storage.Message {
+	return makeToolResultMessagesFrom(0, n)
+}
+
+func makeToolResultMessagesFrom(start, n int) []storage.Message {
+	history := make([]storage.Message, 0, n)
+	for i := 0; i < n; i++ {
+		ordinal := start + i
+		suffix := string(rune('a' + ordinal))
+		history = append(history, toolMsg("tool_"+suffix, "success", "result_"+suffix))
+	}
+	return history
 }
 
 // --- FullHistorySummarizationStrategy ---
