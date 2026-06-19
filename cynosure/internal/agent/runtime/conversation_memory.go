@@ -153,6 +153,7 @@ func (s *Service) scheduleMemoryWork(conv storage.Conversation, user storage.Use
 		if memoryOn {
 			s.extractMemories(ctx, user, history)
 			s.updateConversationMemory(ctx, conv, user, history)
+			s.maybeRunConsolidation(ctx, user)
 		}
 	}()
 	return true

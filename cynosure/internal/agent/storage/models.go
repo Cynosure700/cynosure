@@ -169,3 +169,25 @@ type ConversationMemory struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
+
+// ScannedMemory 是确定性扫描得到的候选记忆的轻量描述（只读 frontmatter）。
+type ScannedMemory struct {
+	Path        string
+	Name        string
+	Description string
+	Type        string
+	ModTime     time.Time
+}
+
+// MemoryUpdate 描述对单条记忆文件的部分更新；空字段表示保持原值。
+type MemoryUpdate struct {
+	Name        *string
+	Description *string
+	Body        *string
+}
+
+// ConsolidationState 记录上次定时去重的时间与累计会话计数，跨进程持久。
+type ConsolidationState struct {
+	LastRunAt    time.Time `json:"last_run_at"`
+	SessionCount int       `json:"session_count"`
+}

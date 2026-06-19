@@ -3,6 +3,7 @@ package local
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/config"
@@ -18,6 +20,19 @@ import (
 )
 
 const memoryIndexHeader = "# Memory Index\n"
+
+const (
+	// FrontmatterMaxLines 限制扫描候选记忆时读取的 frontmatter 行数。
+	FrontmatterMaxLines = 30
+	// MaxMemoryFiles 限制确定性扫描保留的候选记忆文件数量。
+	MaxMemoryFiles = 200
+	// memoryIndexMaxLines 限制 memory.md 注入系统提示词时保留的行数。
+	memoryIndexMaxLines = 200
+	// memoryIndexMaxEntryBytes 限制 memory.md 单行（单条索引）注入的字节数。
+	memoryIndexMaxEntryBytes = 25 * 1024
+)
+
+const consolidationStateFile = ".consolidation_state.json"
 
 type MarkdownMemoryStore struct {
 	mu          sync.Mutex
@@ -128,6 +143,153 @@ func (m *MarkdownMemoryStore) DeleteOldestMemories(ctx context.Context, userID, 
 
 func (m *MarkdownMemoryStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
 	return m.replaceMemoriesByType(memType, items)
+}
+
+// LoadMemoryIndexForPrompt 读取 memory.md 用于注入系统提示词，受行数与单行字节
+// 上限约束。返回截断后的文本、是否发生截断、以及 memory.md 的真实总行数。
+func (m *MarkdownMemoryStore) LoadMemoryIndexForPrompt() (string, bool, int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, err := os.ReadFile(m.indexPath)
+	if err != nil {
+		return "", false, 0
+	}
+	rawLines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	totalLines := len(rawLines)
+	truncated := false
+	if totalLines > memoryIndexMaxLines {
+		rawLines = rawLines[:memoryIndexMaxLines]
+		truncated = true
+	}
+	kept := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		if len(line) > memoryIndexMaxEntryBytes {
+			line = truncateBytesAtRune(line, memoryIndexMaxEntryBytes)
+			truncated = true
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n"), truncated, totalLines
+}
+
+// ScanRecentMemories 扫描记忆目录下所有 .md（排除 memory.md），每个文件只读前
+// FrontmatterMaxLines 行 frontmatter，按 mtime 降序保留最新 MaxMemoryFiles 个。
+func (m *MarkdownMemoryStore) ScanRecentMemories() ([]storage.ScannedMemory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	files, err := filepath.Glob(filepath.Join(m.rootDir, "*.md"))
+	if err != nil {
+		return nil, err
+	}
+	result := make([]storage.ScannedMemory, 0, len(files))
+	for _, file := range files {
+		if filepath.Clean(file) == filepath.Clean(m.indexPath) {
+			continue
+		}
+		rel, err := filepath.Rel(m.rootDir, file)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if !safeRelativeMemoryPath(rel) {
+			continue
+		}
+		info, err := os.Stat(file)
+		if err != nil {
+			continue
+		}
+		meta := readFrontmatterHead(file, FrontmatterMaxLines)
+		result = append(result, storage.ScannedMemory{
+			Path:        rel,
+			Name:        meta["name"],
+			Description: meta["description"],
+			Type:        meta["metadata.type"],
+			ModTime:     info.ModTime(),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ModTime.After(result[j].ModTime)
+	})
+	if len(result) > MaxMemoryFiles {
+		result = result[:MaxMemoryFiles]
+	}
+	return result, nil
+}
+
+// ReadMemoryFile 读取单条记忆文件的完整内容（name/description/type/body）。
+func (m *MarkdownMemoryStore) ReadMemoryFile(path string) (storage.Memory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.readMemoryFileLocked(path)
+}
+
+// UpdateMemoryFile 部分更新指定记忆文件，并同步刷新 memory.md。
+func (m *MarkdownMemoryStore) UpdateMemoryFile(path string, update storage.MemoryUpdate) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !safeRelativeMemoryPath(path) {
+		return fmt.Errorf("unsafe memory path: %s", path)
+	}
+	mem, err := m.readMemoryFileLocked(path)
+	if err != nil {
+		return err
+	}
+	if update.Name != nil {
+		mem.Name = strings.TrimSpace(*update.Name)
+	}
+	if update.Description != nil {
+		mem.Description = strings.TrimSpace(*update.Description)
+	}
+	if update.Body != nil {
+		mem.Body = strings.TrimSpace(*update.Body)
+	}
+	if err := m.writeMemoryFileLocked(path, mem); err != nil {
+		return err
+	}
+	return m.rewriteIndexLocked()
+}
+
+// DeleteMemoryFile 删除指定记忆文件，并从 memory.md 移除其条目。
+func (m *MarkdownMemoryStore) DeleteMemoryFile(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !safeRelativeMemoryPath(path) {
+		return fmt.Errorf("unsafe memory path: %s", path)
+	}
+	full := filepath.Join(m.rootDir, path)
+	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return m.rewriteIndexLocked()
+}
+
+// LoadConsolidationState 读取定时去重的状态元数据；文件缺失时返回零值。
+func (m *MarkdownMemoryStore) LoadConsolidationState() (storage.ConsolidationState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, err := os.ReadFile(filepath.Join(m.rootDir, consolidationStateFile))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return storage.ConsolidationState{}, nil
+		}
+		return storage.ConsolidationState{}, err
+	}
+	var state storage.ConsolidationState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return storage.ConsolidationState{}, nil
+	}
+	return state, nil
+}
+
+// SaveConsolidationState 持久化定时去重的状态元数据。
+func (m *MarkdownMemoryStore) SaveConsolidationState(state storage.ConsolidationState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(filepath.Join(m.rootDir, consolidationStateFile), data, 0o644)
 }
 
 func (m *MarkdownMemoryStore) ListConversationMemories(ctx context.Context, sessionID string) ([]storage.ConversationMemory, error) {
@@ -383,6 +545,67 @@ func parseConversationMemoryBody(sessionID, body string) []storage.ConversationM
 		result = append(result, storage.ConversationMemory{ConversationID: sessionID, Name: name, Body: content})
 	}
 	return result
+}
+
+func readFrontmatterHead(file string, maxLines int) map[string]string {
+	meta := make(map[string]string)
+	f, err := os.Open(file)
+	if err != nil {
+		return meta
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	var lines []string
+	count := 0
+	started := false
+	for scanner.Scan() {
+		if count >= maxLines {
+			break
+		}
+		count++
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if !started {
+			if trimmed == "---" {
+				started = true
+			}
+			continue
+		}
+		if trimmed == "---" {
+			break
+		}
+		lines = append(lines, line)
+	}
+	var prefix string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasSuffix(trimmed, ":") {
+			prefix = strings.TrimSuffix(trimmed, ":") + "."
+			continue
+		}
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if strings.HasPrefix(line, "  ") {
+			key = prefix + key
+		}
+		meta[key] = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+	}
+	return meta
+}
+
+// truncateBytesAtRune 把字符串截断到不超过 max 字节，且不切断多字节字符。
+func truncateBytesAtRune(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func splitFrontMatter(raw string) (map[string]string, string) {

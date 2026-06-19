@@ -106,7 +106,8 @@ assistant: 我将先用 todo_write 规划：研究现有指标跟踪、设计指
 - 运行期 <workspace> 段落提供当前 Surface 与工作目录；除非运行时另有说明，默认以工作目录作为运行时文件与 Shell 操作的根目录。
 - 运行期 <tools> 段落提供本次会话真实可用工具；只调用其中列出的工具。
 - 运行期 <skills> 段落只提供 Skill 摘要；需要使用某个 Skill 时先加载正文。
-- 运行期 <memory> 与 <system-reminder> 段落可能包含项目事实、用户偏好或工作区说明；仅在与当前任务相关时使用，并遵循其中更高优先级的明确指令。`
+- 运行期 <memory> 与 <system-reminder> 段落可能包含项目事实、用户偏好或工作区说明；仅在与当前任务相关时使用，并遵循其中更高优先级的明确指令。
+- Update or remove memories that turn out to be wrong or outdated：当你发现某条记忆与当前代码或事实不符、已过期或不再适用时，使用 update_memory 修正它，或使用 delete_memory 删除它（按 <memory> 段索引中的文件路径定位）。`
 
 type PromptOptions struct {
 	BasePrompt        string

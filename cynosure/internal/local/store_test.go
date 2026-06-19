@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"nano_cc/internal/agent/runtime"
 	"nano_cc/internal/agent/storage"
@@ -307,6 +308,107 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 	}
 	if items[0].Type != runtime.MemoryTypeProject || !strings.Contains(items[0].Body, "当前项目使用 go test") {
 		t.Fatalf("unexpected memory item: %#v", items[0])
+	}
+}
+
+func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	ctx := context.Background()
+	if err := store.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypePreference, Name: "偏好", Description: "简洁中文", Body: "正文"}); err != nil {
+		t.Fatalf("InsertMemory returned error: %v", err)
+	}
+
+	scanned, err := store.ScanRecentMemories(ctx)
+	if err != nil {
+		t.Fatalf("ScanRecentMemories returned error: %v", err)
+	}
+	if len(scanned) != 1 || scanned[0].Name != "偏好" || scanned[0].Type != runtime.MemoryTypePreference {
+		t.Fatalf("unexpected scanned memories: %#v", scanned)
+	}
+	if scanned[0].Path == "memory.md" {
+		t.Fatalf("scan should exclude memory.md")
+	}
+
+	newBody := "更新后的正文"
+	if err := store.UpdateMemoryFile(ctx, scanned[0].Path, storage.MemoryUpdate{Body: &newBody}); err != nil {
+		t.Fatalf("UpdateMemoryFile returned error: %v", err)
+	}
+	mem, err := store.ReadMemoryFile(ctx, scanned[0].Path)
+	if err != nil {
+		t.Fatalf("ReadMemoryFile returned error: %v", err)
+	}
+	if mem.Body != newBody {
+		t.Fatalf("expected updated body %q, got %q", newBody, mem.Body)
+	}
+
+	if err := store.DeleteMemoryFile(ctx, scanned[0].Path); err != nil {
+		t.Fatalf("DeleteMemoryFile returned error: %v", err)
+	}
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	if _, err := os.Stat(filepath.Join(memoryRoot, scanned[0].Path)); !os.IsNotExist(err) {
+		t.Fatalf("expected memory file to be deleted, stat err = %v", err)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(memoryRoot, "memory.md"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	if strings.Contains(string(indexBytes), "偏好") {
+		t.Fatalf("expected index entry removed after delete, got %q", string(indexBytes))
+	}
+
+	var b strings.Builder
+	b.WriteString(memoryIndexHeader)
+	for i := 0; i < memoryIndexMaxLines+50; i++ {
+		b.WriteString("- entry line\n")
+	}
+	if err := atomicWriteFile(filepath.Join(memoryRoot, "memory.md"), []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("write big index: %v", err)
+	}
+	text, truncated, total := store.LoadMemoryIndexForPrompt(ctx)
+	if !truncated {
+		t.Fatalf("expected truncation, got truncated=false total=%d", total)
+	}
+	if total < memoryIndexMaxLines+50 {
+		t.Fatalf("expected total to reflect real line count, got %d", total)
+	}
+	if lines := strings.Count(text, "\n") + 1; lines > memoryIndexMaxLines {
+		t.Fatalf("expected at most %d lines, got %d", memoryIndexMaxLines, lines)
+	}
+}
+
+func TestMarkdownMemoryStoreConsolidationState(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	ctx := context.Background()
+	state, err := store.LoadConsolidationState(ctx)
+	if err != nil {
+		t.Fatalf("LoadConsolidationState returned error: %v", err)
+	}
+	if state.SessionCount != 0 || !state.LastRunAt.IsZero() {
+		t.Fatalf("expected zero state, got %#v", state)
+	}
+	state.SessionCount = 3
+	state.LastRunAt = time.Now()
+	if err := store.SaveConsolidationState(ctx, state); err != nil {
+		t.Fatalf("SaveConsolidationState returned error: %v", err)
+	}
+	reloaded, err := store.LoadConsolidationState(ctx)
+	if err != nil {
+		t.Fatalf("reload consolidation state: %v", err)
+	}
+	if reloaded.SessionCount != 3 || reloaded.LastRunAt.IsZero() {
+		t.Fatalf("expected persisted state, got %#v", reloaded)
 	}
 }
 

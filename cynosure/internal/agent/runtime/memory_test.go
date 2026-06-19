@@ -89,13 +89,13 @@ func TestParseSelectedIDs(t *testing.T) {
 	}
 }
 
-func TestPickMemoriesByIndex_DedupBoundsAndCap(t *testing.T) {
-	all := make([]storage.Memory, 15)
+func TestPickScannedByIndex_DedupBoundsAndCap(t *testing.T) {
+	all := make([]storage.ScannedMemory, 15)
 	for i := range all {
-		all[i] = storage.Memory{Name: string(rune('a' + i))}
+		all[i] = storage.ScannedMemory{Name: string(rune('a' + i)), Path: string(rune('a'+i)) + ".md"}
 	}
 	indices := []int{0, 0, 99, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
-	got := pickMemoriesByIndex(all, indices, maxInjectedMemories)
+	got := pickScannedByIndex(all, indices, maxInjectedMemories)
 	if len(got) != maxInjectedMemories {
 		t.Fatalf("expected cap at %d, got %d", maxInjectedMemories, len(got))
 	}
@@ -104,43 +104,24 @@ func TestPickMemoriesByIndex_DedupBoundsAndCap(t *testing.T) {
 	}
 }
 
-func TestRenderMemorySection_EmptyWhenNoData(t *testing.T) {
-	if got := renderMemorySection(nil); got != "" {
-		t.Fatalf("expected empty section, got %q", got)
+func TestHumanizeRelativeTime(t *testing.T) {
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		offset time.Duration
+		want   string
+	}{
+		{30 * time.Second, "just now"},
+		{5 * time.Minute, "5 minutes ago"},
+		{3 * time.Hour, "3 hours ago"},
+		{47 * 24 * time.Hour, "47 days ago"},
 	}
-}
-
-func TestRenderMemorySection_SkipsLegacyTypes(t *testing.T) {
-	got := renderMemorySection([]storage.Memory{
-		{Type: "episodic_memory", Name: "旧经历", Description: "应被跳过", Body: "legacy"},
-		{Type: "project_fact", Name: "旧事实", Description: "应被跳过", Body: "legacy"},
-	})
-	if got != "" {
-		t.Fatalf("expected legacy-only section to be empty, got %q", got)
-	}
-}
-
-func TestRenderMemorySection_GroupsByFourTypes(t *testing.T) {
-	got := renderMemorySection([]storage.Memory{
-		{Type: MemoryTypePreference, Name: "简洁", Description: "简洁中文", Body: "偏好正文"},
-		{Type: MemoryTypeFeedback, Name: "别用全局", Description: "纠正", Body: "规则\nWhy: x\nHow to apply: y"},
-		{Type: MemoryTypeProject, Name: "里程碑", Description: "截止 2026-06-24", Body: "事实\nWhy: x\nHow to apply: y"},
-		{Type: MemoryTypeReference, Name: "监控面板", Description: "在 X 平台", Body: "外部引用正文"},
-		{Type: "project_fact", Name: "旧事实", Description: "应被跳过", Body: "legacy"},
-	})
-	for _, want := range []string{
-		"当前项目记忆", "仅适用于当前项目",
-		"用户喜好与约束", "简洁：简洁中文", "偏好正文",
-		"行为指导", "别用全局：纠正",
-		"项目动态", "里程碑：截止 2026-06-24",
-		"外部引用", "监控面板：在 X 平台", "外部引用正文",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("expected section to contain %q, got %q", want, got)
+	for _, c := range cases {
+		if got := humanizeRelativeTime(now.Add(-c.offset), now); got != c.want {
+			t.Fatalf("offset %v: got %q, want %q", c.offset, got, c.want)
 		}
 	}
-	if strings.Contains(got, "旧事实") || strings.Contains(got, "legacy") {
-		t.Fatalf("legacy memory should not be injected, got %q", got)
+	if got := humanizeRelativeTime(time.Time{}, now); got != "" {
+		t.Fatalf("zero time should render empty, got %q", got)
 	}
 }
 
@@ -157,7 +138,6 @@ func TestMemoryExtractionPromptDescribesFourTypesAndExclusions(t *testing.T) {
 			t.Fatalf("extraction prompt should contain %q", want)
 		}
 	}
-	// 旧类型不应再出现在抽取提示词的允许列表中。
 	if strings.Contains(extractionPrompt, "\"user_preference\"") || strings.Contains(extractionPrompt, "\"episodic_memory\"") {
 		t.Fatalf("extraction prompt should not advertise legacy types")
 	}
@@ -172,6 +152,21 @@ func TestMemoryExtractionPromptInjectsCurrentDate(t *testing.T) {
 	}
 	if strings.Contains(prompt, "{{current_date}}") {
 		t.Fatalf("expected current_date placeholder to be replaced, got %q", prompt)
+	}
+}
+
+func TestBuildExtractionUserPromptIncludesExistingFiles(t *testing.T) {
+	files := []storage.ScannedMemory{{Path: "foo.md", Description: "项目偏好"}}
+	prompt := buildExtractionUserPrompt(nil, files, "对话内容")
+	for _, want := range []string{
+		"## Existing memory files",
+		"- foo.md: 项目偏好",
+		"update an existing file rather than creating a duplicate",
+		"对话内容",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected extraction user prompt to contain %q, got %q", want, prompt)
+		}
 	}
 }
 
@@ -190,11 +185,11 @@ func TestMemoryConsolidationPromptReplacesTemplateValues(t *testing.T) {
 	}
 }
 
-func TestSelectRelevantMemories_DisabledReturnsEmpty(t *testing.T) {
-	store := &fakeStore{memories: []storage.Memory{{UserID: "u1", Type: MemoryTypePreference, Name: "n", Description: "d"}}}
+func TestBuildMemorySection_DisabledReturnsEmpty(t *testing.T) {
+	store := &fakeStore{scannedMemories: []storage.ScannedMemory{{Path: "n.md", Name: "n"}}}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: false}
-	if got := service.selectRelevantMemories(context.Background(), storage.User{ID: "u1"}, nil); got != "" {
+	if got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil); got != "" {
 		t.Fatalf("expected empty when disabled, got %q", got)
 	}
 	if len(llm.reqs) != 0 {
@@ -202,61 +197,148 @@ func TestSelectRelevantMemories_DisabledReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestSelectRelevantMemories_NoDataReturnsEmpty(t *testing.T) {
+func TestBuildMemorySection_NoCandidatesReturnsEmpty(t *testing.T) {
 	store := &fakeStore{}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: true}
-	if got := service.selectRelevantMemories(context.Background(), storage.User{ID: "u1"}, nil); got != "" {
-		t.Fatalf("expected empty when no memories, got %q", got)
+	if got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil); got != "" {
+		t.Fatalf("expected empty when no candidates, got %q", got)
 	}
 	if len(llm.reqs) != 0 {
-		t.Fatalf("expected no LLM calls when no memories, got %d", len(llm.reqs))
+		t.Fatalf("expected no LLM calls when no candidates, got %d", len(llm.reqs))
 	}
 }
 
-func TestSelectRelevantMemories_PicksAndRenders(t *testing.T) {
-	store := &fakeStore{memories: []storage.Memory{
-		{UserID: "u1", Type: MemoryTypePreference, Name: "简洁", Description: "简洁中文"},
-		{UserID: "u1", Type: MemoryTypePreference, Name: "无关", Description: "无关项"},
-	}}
+func TestBuildMemorySection_InjectsIndexAndSelectedFullContentWithStaleNote(t *testing.T) {
+	old := time.Now().Add(-47 * 24 * time.Hour)
+	store := &fakeStore{
+		memoryIndex: "# Memory Index\n\n- [简洁](pref.md) — 简洁中文",
+		scannedMemories: []storage.ScannedMemory{
+			{Path: "pref.md", Name: "简洁", Description: "简洁中文", Type: MemoryTypePreference, ModTime: old},
+			{Path: "other.md", Name: "无关", Description: "无关项", Type: MemoryTypePreference, ModTime: old},
+		},
+		memoryFiles: map[string]storage.Memory{
+			"pref.md": {Type: MemoryTypePreference, Name: "简洁", Description: "简洁中文", Body: "完整正文内容"},
+		},
+	}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
-	got := service.selectRelevantMemories(context.Background(), storage.User{ID: "u1"}, nil)
-	if !strings.Contains(got, "简洁") || strings.Contains(got, "无关") {
-		t.Fatalf("expected only selected memory rendered, got %q", got)
+	got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	for _, want := range []string{
+		"Memory index (MEMORY.md)",
+		"- [简洁](pref.md) — 简洁中文",
+		"当前项目记忆",
+		"简洁：简洁中文",
+		"完整正文内容",
+		"47 days ago",
+		"point-in-time observations",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected memory section to contain %q, got %q", want, got)
+		}
+	}
+	if strings.Contains(got, "无关") {
+		t.Fatalf("expected only selected memory injected, got %q", got)
 	}
 }
 
-func TestExtractMemories_ConsolidatesFeedbackOverThreshold(t *testing.T) {
-	store := &fakeStore{}
-	for i := 0; i < maxFeedbackMemories; i++ {
-		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypeFeedback, Name: "f", Body: "b"})
+func TestBuildMemorySection_DedupesWithinConversationAndRereadsOnChange(t *testing.T) {
+	t0 := time.Now().Add(-time.Hour)
+	store := &fakeStore{
+		scannedMemories: []storage.ScannedMemory{{Path: "pref.md", Name: "简洁", Description: "d", Type: MemoryTypePreference, ModTime: t0}},
+		memoryFiles:     map[string]storage.Memory{"pref.md": {Type: MemoryTypePreference, Name: "简洁", Description: "d", Body: "正文v1"}},
 	}
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新反馈","type":"feedback","description":"d","body":"b"}]`}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
+		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
+	}}
+	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
+
+	first := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if !strings.Contains(first, "正文v1") {
+		t.Fatalf("expected first injection to include body, got %q", first)
+	}
+	// Same mtime: should be deduped (no memory block).
+	second := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if strings.Contains(second, "当前项目记忆") {
+		t.Fatalf("expected dedup to skip already-injected memory, got %q", second)
+	}
+	// File changed: new mtime + new content should re-inject.
+	store.scannedMemories[0].ModTime = t0.Add(time.Minute)
+	store.memoryFiles["pref.md"] = storage.Memory{Type: MemoryTypePreference, Name: "简洁", Description: "d", Body: "正文v2"}
+	third := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if !strings.Contains(third, "正文v2") {
+		t.Fatalf("expected re-read updated body on mtime change, got %q", third)
+	}
+}
+
+func TestExecuteMemoryTool_UpdateAndDeleteSyncStore(t *testing.T) {
+	store := &fakeStore{memoryFiles: map[string]storage.Memory{"foo.md": {Name: "old", Body: "old body"}}}
+	service := &Service{Store: store, Cfg: config.AppConfig{}, EnableMemory: true}
+
+	out, err := service.executeMemoryTool(context.Background(), "update_memory", `{"path":"foo.md","body":"new body"}`)
+	if err != nil {
+		t.Fatalf("update_memory error: %v", err)
+	}
+	if !strings.Contains(out, "foo.md") || len(store.updatedMemoryFiles) != 1 || store.updatedMemoryFiles[0] != "foo.md" {
+		t.Fatalf("expected update recorded, got out=%q updated=%v", out, store.updatedMemoryFiles)
+	}
+	if store.memoryFiles["foo.md"].Body != "new body" {
+		t.Fatalf("expected body updated, got %#v", store.memoryFiles["foo.md"])
+	}
+
+	if _, err := service.executeMemoryTool(context.Background(), "update_memory", `{"path":"foo.md"}`); err == nil {
+		t.Fatalf("expected error when no fields provided")
+	}
+
+	if _, err := service.executeMemoryTool(context.Background(), "delete_memory", `{"path":"foo.md"}`); err != nil {
+		t.Fatalf("delete_memory error: %v", err)
+	}
+	if len(store.deletedMemoryFiles) != 1 || store.deletedMemoryFiles[0] != "foo.md" {
+		t.Fatalf("expected delete recorded, got %v", store.deletedMemoryFiles)
+	}
+}
+
+func TestMaybeRunConsolidation_TriggersAfterIntervalAndSessions(t *testing.T) {
+	store := &fakeStore{
+		memories: []storage.Memory{
+			{UserID: "u1", Type: MemoryTypeFeedback, Name: "f", Body: "b"},
+		},
+		consolidationState: storage.ConsolidationState{SessionCount: 4, LastRunAt: time.Now().Add(-48 * time.Hour)},
+	}
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"合并反馈","type":"feedback","description":"d","body":"b"}]`}}}},
 	}}
-	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
-	service.extractMemories(context.Background(), storage.User{ID: "u1"}, []storage.Message{{Role: "user", Content: "hi"}})
+	service := &Service{Store: store, Cfg: config.AppConfig{MemoryConsolidationInterval: 24 * time.Hour, MemoryConsolidationMinSessions: 5}, LLM: llm, EnableMemory: true}
+	service.maybeRunConsolidation(context.Background(), storage.User{ID: "u1"})
 	if len(store.replacedMemories) == 0 {
-		t.Fatalf("expected feedback memories consolidated/replaced")
+		t.Fatalf("expected consolidation to replace memories")
+	}
+	last := store.savedConsolidationStates[len(store.savedConsolidationStates)-1]
+	if last.SessionCount != 0 || last.LastRunAt.IsZero() {
+		t.Fatalf("expected state reset after run, got %#v", last)
 	}
 }
 
-func TestExtractMemories_ConsolidatesUserPreferencesOverThreshold(t *testing.T) {
-	store := &fakeStore{}
-	for i := 0; i < maxPreferenceMemories; i++ {
-		store.memories = append(store.memories, storage.Memory{UserID: "u1", Type: MemoryTypePreference, Name: "p", Body: "b"})
+func TestMaybeRunConsolidation_SkipsBeforeThreshold(t *testing.T) {
+	store := &fakeStore{
+		memories:           []storage.Memory{{UserID: "u1", Type: MemoryTypeFeedback, Name: "f", Body: "b"}},
+		consolidationState: storage.ConsolidationState{SessionCount: 1, LastRunAt: time.Now().Add(-48 * time.Hour)},
 	}
-	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"新偏好","type":"preference","description":"d","body":"b"}]`}}}},
-		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: `[{"name":"合并偏好","type":"preference","description":"d","body":"b"}]`}}}},
-	}}
-	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
-	service.extractMemories(context.Background(), storage.User{ID: "u1"}, []storage.Message{{Role: "user", Content: "hi"}})
-	if len(store.replacedMemories) == 0 {
-		t.Fatalf("expected user preferences consolidated/replaced")
+	llm := &fakeLLMClient{}
+	service := &Service{Store: store, Cfg: config.AppConfig{MemoryConsolidationInterval: 24 * time.Hour, MemoryConsolidationMinSessions: 5}, LLM: llm, EnableMemory: true}
+	service.maybeRunConsolidation(context.Background(), storage.User{ID: "u1"})
+	if len(store.replacedMemories) != 0 {
+		t.Fatalf("expected no consolidation before threshold, got %#v", store.replacedMemories)
+	}
+	if len(llm.reqs) != 0 {
+		t.Fatalf("expected no LLM call before threshold, got %d", len(llm.reqs))
+	}
+	last := store.savedConsolidationStates[len(store.savedConsolidationStates)-1]
+	if last.SessionCount != 2 {
+		t.Fatalf("expected session count incremented to 2, got %#v", last)
 	}
 }

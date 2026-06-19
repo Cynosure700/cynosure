@@ -319,6 +319,55 @@ func (s *Store) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memTyp
 	return nil
 }
 
+func (s *Store) LoadMemoryIndexForPrompt(ctx context.Context) (string, bool, int) {
+	if s.memory != nil {
+		return s.memory.LoadMemoryIndexForPrompt()
+	}
+	return "", false, 0
+}
+
+func (s *Store) ScanRecentMemories(ctx context.Context) ([]storage.ScannedMemory, error) {
+	if s.memory != nil {
+		return s.memory.ScanRecentMemories()
+	}
+	return nil, nil
+}
+
+func (s *Store) ReadMemoryFile(ctx context.Context, path string) (storage.Memory, error) {
+	if s.memory != nil {
+		return s.memory.ReadMemoryFile(path)
+	}
+	return storage.Memory{}, sql.ErrNoRows
+}
+
+func (s *Store) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error {
+	if s.memory != nil {
+		return s.memory.UpdateMemoryFile(path, update)
+	}
+	return fmt.Errorf("memory store is not initialized")
+}
+
+func (s *Store) DeleteMemoryFile(ctx context.Context, path string) error {
+	if s.memory != nil {
+		return s.memory.DeleteMemoryFile(path)
+	}
+	return fmt.Errorf("memory store is not initialized")
+}
+
+func (s *Store) LoadConsolidationState(ctx context.Context) (storage.ConsolidationState, error) {
+	if s.memory != nil {
+		return s.memory.LoadConsolidationState()
+	}
+	return storage.ConsolidationState{}, nil
+}
+
+func (s *Store) SaveConsolidationState(ctx context.Context, state storage.ConsolidationState) error {
+	if s.memory != nil {
+		return s.memory.SaveConsolidationState(state)
+	}
+	return nil
+}
+
 func (s *Store) ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error) {
 	if s.memory != nil {
 		sessionID := s.sessionIDForConversation(conversationID)

@@ -251,6 +251,34 @@ var ReadPersistedOutputToolSpec = toolSpec(ReadPersistedOutputToolName, "Read a 
 })
 var ReadPersistedOutputToolDef = ReadPersistedOutputToolSpec.Definition
 
-var AllToolSpecs = append(append([]ToolSpec(nil), baseToolSpecs...), spawnSubagentToolSpec, webSearchToolSpec, ReadPersistedOutputToolSpec)
+// UpdateMemoryToolName / DeleteMemoryToolName let the model maintain long-term
+// project memories that turn out to be wrong or outdated. They are executed in
+// the runtime layer (not the stateless Dispatch) because memory files live
+// outside the workspace and must be kept in sync with MEMORY.md.
+const (
+	UpdateMemoryToolName = "update_memory"
+	DeleteMemoryToolName = "delete_memory"
+)
+
+var updateMemoryToolSpec = toolSpec(UpdateMemoryToolName, "Update a long-term project memory that is wrong or outdated. Identify the memory by its file path as shown in the MEMORY.md index (for example foo.md). Provide at least one of name, description, or body; the file and the MEMORY.md index are updated together.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"path":        strParam("The memory file path relative to the memory directory, as shown in the MEMORY.md index, e.g. foo.md."),
+		"name":        strParam("Optional new short title for the memory."),
+		"description": strParam("Optional new one-sentence description for the memory."),
+		"body":        strParam("Optional new full body content for the memory."),
+	},
+	"required": []string{"path"},
+})
+
+var deleteMemoryToolSpec = toolSpec(DeleteMemoryToolName, "Delete a long-term project memory that is wrong or no longer applicable. Identify the memory by its file path as shown in the MEMORY.md index (for example foo.md). The file and its MEMORY.md index entry are removed together.", map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"path": strParam("The memory file path relative to the memory directory, as shown in the MEMORY.md index, e.g. foo.md."),
+	},
+	"required": []string{"path"},
+})
+
+var AllToolSpecs = append(append([]ToolSpec(nil), baseToolSpecs...), spawnSubagentToolSpec, webSearchToolSpec, ReadPersistedOutputToolSpec, updateMemoryToolSpec, deleteMemoryToolSpec)
 var AllToolDefs = toolDefsFromSpecs(AllToolSpecs)
 var ChildToolDefs = baseToolDefs

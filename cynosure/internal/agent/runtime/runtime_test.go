@@ -42,6 +42,13 @@ type fakeStore struct {
 	touchedID            string
 	toolResultLogs       []storage.ToolResultLogEntry
 	lockReleased         int
+	memoryIndex              string
+	scannedMemories          []storage.ScannedMemory
+	memoryFiles              map[string]storage.Memory
+	updatedMemoryFiles       []string
+	deletedMemoryFiles       []string
+	consolidationState       storage.ConsolidationState
+	savedConsolidationStates []storage.ConsolidationState
 }
 
 func (f *fakeStore) SetConversationHistory(ctx context.Context, conversationID string, messages []storage.Message) error {
@@ -171,6 +178,56 @@ func (f *fakeStore) DeleteOldestMemories(ctx context.Context, userID, memType st
 
 func (f *fakeStore) ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error {
 	f.replacedMemories = append(f.replacedMemories, items...)
+	return nil
+}
+
+func (f *fakeStore) LoadMemoryIndexForPrompt(ctx context.Context) (string, bool, int) {
+	return f.memoryIndex, false, 0
+}
+
+func (f *fakeStore) ScanRecentMemories(ctx context.Context) ([]storage.ScannedMemory, error) {
+	return append([]storage.ScannedMemory(nil), f.scannedMemories...), nil
+}
+
+func (f *fakeStore) ReadMemoryFile(ctx context.Context, path string) (storage.Memory, error) {
+	if m, ok := f.memoryFiles[path]; ok {
+		return m, nil
+	}
+	return storage.Memory{}, errors.New("memory file not found")
+}
+
+func (f *fakeStore) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error {
+	f.updatedMemoryFiles = append(f.updatedMemoryFiles, path)
+	if f.memoryFiles == nil {
+		f.memoryFiles = make(map[string]storage.Memory)
+	}
+	m := f.memoryFiles[path]
+	if update.Name != nil {
+		m.Name = *update.Name
+	}
+	if update.Description != nil {
+		m.Description = *update.Description
+	}
+	if update.Body != nil {
+		m.Body = *update.Body
+	}
+	f.memoryFiles[path] = m
+	return nil
+}
+
+func (f *fakeStore) DeleteMemoryFile(ctx context.Context, path string) error {
+	f.deletedMemoryFiles = append(f.deletedMemoryFiles, path)
+	delete(f.memoryFiles, path)
+	return nil
+}
+
+func (f *fakeStore) LoadConsolidationState(ctx context.Context) (storage.ConsolidationState, error) {
+	return f.consolidationState, nil
+}
+
+func (f *fakeStore) SaveConsolidationState(ctx context.Context, state storage.ConsolidationState) error {
+	f.consolidationState = state
+	f.savedConsolidationStates = append(f.savedConsolidationStates, state)
 	return nil
 }
 

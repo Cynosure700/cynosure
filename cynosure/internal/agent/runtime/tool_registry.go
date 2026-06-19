@@ -265,6 +265,25 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
 	}
+	if name == agenttools.UpdateMemoryToolName || name == agenttools.DeleteMemoryToolName {
+		if s.Tools == nil || !s.Tools.isAllowed(name) {
+			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: tool %s is not registered for local runtime", name), Audit: audit}
+		}
+		if def, ok := s.Tools.lookupDefinition(name); ok && def.Function != nil {
+			var rawMap map[string]any
+			if err := json.Unmarshal([]byte(rawArgs), &rawMap); err != nil {
+				return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: invalid %s arguments: %v", name, err), Audit: audit}
+			}
+			if err := agenttools.ValidateToolArgs(name, agenttools.RawSchemaFromParameters(def.Function.Parameters), rawMap); err != nil {
+				return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+			}
+		}
+		output, err := s.executeMemoryTool(ctx, name, rawArgs)
+		if err != nil {
+			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+		}
+		return toolExecutionOutcome{Status: "success", Result: output, Audit: audit}
+	}
 	execResult, err := s.Tools.Execute(s.withWebProcessor(ctx), toolCtx, name, rawArgs)
 	if err != nil {
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const defaultLocalAllowedTools = "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent"
+const defaultLocalAllowedTools = "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent,update_memory,delete_memory"
 
 type linkSettings struct {
 	Env linkSettingsEnv `json:"env"`
@@ -63,6 +63,8 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 		ConversationLockTTL:         time.Duration(intOrDefault(fileCfg.ConversationLockTTLSeconds, 30)) * time.Second,
 		MemoryWorkTimeout:           time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
 		ConversationLockWaitTimeout: time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
+		MemoryConsolidationInterval: time.Duration(intOrDefault(fileCfg.MemoryConsolidationIntervalHours, 24)) * time.Hour,
+		MemoryConsolidationMinSessions: intOrDefault(fileCfg.MemoryConsolidationMinSessions, 5),
 	}, nil
 }
 

@@ -16,7 +16,7 @@ import (
 func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message, memoryOn bool) string {
 	memorySection := ""
 	if memoryOn {
-		memorySection = s.selectRelevantMemories(ctx, user, history)
+		memorySection = s.buildMemorySection(ctx, conversation.ID, user, history)
 	}
 	return s.buildSystemPromptWithMemory(user, snapshot, memorySection)
 }

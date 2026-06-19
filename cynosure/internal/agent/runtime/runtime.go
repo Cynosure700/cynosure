@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"nano_cc/internal/agent/mcp"
@@ -36,6 +37,13 @@ type conversationStore interface {
 	CountMemoriesByUserAndType(ctx context.Context, userID, memType string) (int, error)
 	DeleteOldestMemories(ctx context.Context, userID, memType string, n int) error
 	ReplaceMemoriesByUserAndType(ctx context.Context, userID, memType string, items []storage.Memory) error
+	LoadMemoryIndexForPrompt(ctx context.Context) (string, bool, int)
+	ScanRecentMemories(ctx context.Context) ([]storage.ScannedMemory, error)
+	ReadMemoryFile(ctx context.Context, path string) (storage.Memory, error)
+	UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error
+	DeleteMemoryFile(ctx context.Context, path string) error
+	LoadConsolidationState(ctx context.Context) (storage.ConsolidationState, error)
+	SaveConsolidationState(ctx context.Context, state storage.ConsolidationState) error
 	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 	ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error
 	GetConversationModelHistory(ctx context.Context, conversationID string) ([]storage.Message, bool, error)
@@ -59,6 +67,15 @@ type Service struct {
 	EnableMemory      bool
 	MCP               *mcp.Manager
 	Approver          ApprovalDecider
+
+	injectedMu       sync.Mutex
+	injectedMemories map[string]map[string]injectedMemoryMeta
+}
+
+// injectedMemoryMeta 记录某条记忆在某会话中已注入时的文件修改时间，用于会话内去重
+// 与"文件更新后重读替换"判断。
+type injectedMemoryMeta struct {
+	ModTime time.Time
 }
 
 func (s *Service) SetApprover(approver ApprovalDecider) {

@@ -24,6 +24,8 @@ type fileConfig struct {
 	ConversationLockTTLSeconds         int    `json:"conversation_lock_ttl_seconds"`
 	MemoryWorkTimeoutSeconds           int    `json:"memory_work_timeout_seconds"`
 	ConversationLockWaitTimeoutSeconds int    `json:"conversation_lock_wait_timeout_seconds"`
+	MemoryConsolidationIntervalHours   int    `json:"memory_consolidation_interval_hours"`
+	MemoryConsolidationMinSessions     int    `json:"memory_consolidation_min_sessions"`
 }
 
 type AppConfig struct {
@@ -36,6 +38,8 @@ type AppConfig struct {
 	ConversationLockTTL         time.Duration
 	MemoryWorkTimeout           time.Duration
 	ConversationLockWaitTimeout time.Duration
+	MemoryConsolidationInterval time.Duration
+	MemoryConsolidationMinSessions int
 }
 
 func defaultFileConfig() fileConfig {

@@ -26,23 +26,22 @@ const (
 )
 
 const (
-	maxPreferenceMemories  = 20
-	maxFeedbackMemories    = 30
-	maxProjectMemories     = 30
-	maxReferenceMemories   = 30
-	maxInjectedMemories    = 10
+	maxInjectedMemories    = 5
 	maxMemoryDialogueChars = 4000
 	maxMemoryNameRunes     = 80
 	maxMemoryDescRunes     = 300
 	maxMemoryBodyRunes     = 2000
+	// memoryIndexMaxLines mirrors the store-side limit, used only for the
+	// truncation warning text injected into the system prompt.
+	memoryIndexMaxLines = 200
 )
 
-// consolidationThresholds 给出每类长期记忆触发 LLM 合并的条目数阈值。
-var consolidationThresholds = map[string]int{
-	MemoryTypePreference: maxPreferenceMemories,
-	MemoryTypeFeedback:   maxFeedbackMemories,
-	MemoryTypeProject:    maxProjectMemories,
-	MemoryTypeReference:  maxReferenceMemories,
+// consolidationTypes 列出参与定时全量去重的四类长期记忆。
+var consolidationTypes = []string{
+	MemoryTypePreference,
+	MemoryTypeFeedback,
+	MemoryTypeProject,
+	MemoryTypeReference,
 }
 
 func validMemoryType(t string) bool {
@@ -92,11 +91,15 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 	if err != nil {
 		logger.Warn(fmt.Sprintf("memory: load existing memories failed: %v", err))
 	}
+	existingFiles, err := s.Store.ScanRecentMemories(ctx)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("memory: scan existing memory files failed: %v", err))
+	}
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "system", Content: s.memoryExtractionSystemPrompt()},
-			{Role: "user", Content: buildExtractionUserPrompt(existing, dialogue)},
+			{Role: "user", Content: buildExtractionUserPrompt(existing, existingFiles, dialogue)},
 		},
 	})
 	if err != nil {
@@ -111,7 +114,6 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 		return
 	}
 
-	touched := make(map[string]bool)
 	for _, it := range items {
 		uid := user.ID
 		if err := s.Store.InsertMemory(ctx, storage.Memory{
@@ -125,29 +127,54 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 			logger.Warn(fmt.Sprintf("memory: insert failed: %v", err))
 			continue
 		}
-		touched[it.Type] = true
-	}
-	for memType := range touched {
-		if max, ok := consolidationThresholds[memType]; ok {
-			s.maybeConsolidateType(ctx, user.ID, memType, max)
-		}
 	}
 }
 
-// maybeConsolidateType collapses one memory type into a clean, minimal set via
-// the LLM once it grows past max entries. Best-effort: leaves data untouched on
-// any failure.
-func (s *Service) maybeConsolidateType(ctx context.Context, userID, memType string, max int) {
-	items, err := s.Store.ListMemoriesByUserAndType(ctx, userID, memType)
-	if err != nil || len(items) < max {
+// maybeRunConsolidation 定期对四类长期记忆做全量去重/淘汰：默认累计 5+ 次会话且
+// 距上次运行 >=24h 时触发，触发后整类喂给 LLM 合并并替换，同时刷新 memory.md，
+// 最后落盘状态。best-effort：任何失败仅记录告警，不影响用户响应。
+func (s *Service) maybeRunConsolidation(ctx context.Context, user storage.User) {
+	if s.LLM == nil {
 		return
 	}
-	refined := s.consolidateViaLLM(ctx, memType, memType, items)
-	if refined == nil {
+	state, err := s.Store.LoadConsolidationState(ctx)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("memory: load consolidation state failed: %v", err))
 		return
 	}
-	if err := s.Store.ReplaceMemoriesByUserAndType(ctx, userID, memType, refined); err != nil {
-		logger.Warn(fmt.Sprintf("memory: replace %s memories failed: %v", memType, err))
+	state.SessionCount++
+	minSessions := s.Cfg.MemoryConsolidationMinSessions
+	if minSessions <= 0 {
+		minSessions = 5
+	}
+	interval := s.Cfg.MemoryConsolidationInterval
+	if interval <= 0 {
+		interval = 24 * time.Hour
+	}
+	due := state.SessionCount >= minSessions && (state.LastRunAt.IsZero() || time.Since(state.LastRunAt) >= interval)
+	if !due {
+		if err := s.Store.SaveConsolidationState(ctx, state); err != nil {
+			logger.Warn(fmt.Sprintf("memory: save consolidation state failed: %v", err))
+		}
+		return
+	}
+	for _, memType := range consolidationTypes {
+		items, err := s.Store.ListMemoriesByUserAndType(ctx, user.ID, memType)
+		if err != nil || len(items) == 0 {
+			continue
+		}
+		refined := s.consolidateViaLLM(ctx, memType, memType, items)
+		if refined == nil {
+			continue
+		}
+		if err := s.Store.ReplaceMemoriesByUserAndType(ctx, user.ID, memType, refined); err != nil {
+			logger.Warn(fmt.Sprintf("memory: replace %s memories failed: %v", memType, err))
+		}
+	}
+	state.LastRunAt = time.Now()
+	state.SessionCount = 0
+	if err := s.Store.SaveConsolidationState(ctx, state); err != nil {
+		logger.Warn(fmt.Sprintf("memory: save consolidation state failed: %v", err))
 	}
 }
 
@@ -189,38 +216,224 @@ func (s *Service) consolidateViaLLM(ctx context.Context, typeLabel, typeValue st
 	return refined
 }
 
-// selectRelevantMemories runs once before the conversation loop: it asks the
-// LLM to pick the memories most relevant to the current context and renders
-// them into the MemorySection. Best-effort: returns "" on failure or no data.
-func (s *Service) selectRelevantMemories(ctx context.Context, user storage.User, history []storage.Message) string {
-	if !s.EnableMemory || s.LLM == nil {
+// executeMemoryTool 处理 update_memory / delete_memory 工具：直接操作记忆文件并
+// 同步刷新 memory.md（不进入无状态 Dispatch）。
+func (s *Service) executeMemoryTool(ctx context.Context, name, rawArgs string) (string, error) {
+	var args struct {
+		Path        string  `json:"path"`
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+		Body        *string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
+		return "", fmt.Errorf("invalid %s arguments: %w", name, err)
+	}
+	path := strings.TrimSpace(args.Path)
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	switch name {
+	case "delete_memory":
+		if err := s.Store.DeleteMemoryFile(ctx, path); err != nil {
+			return "", err
+		}
+		s.forgetInjectedMemory(path)
+		return fmt.Sprintf("Deleted memory %s", path), nil
+	case "update_memory":
+		if args.Name == nil && args.Description == nil && args.Body == nil {
+			return "", fmt.Errorf("provide at least one of name, description, or body")
+		}
+		update := storage.MemoryUpdate{Name: args.Name, Description: args.Description, Body: args.Body}
+		if err := s.Store.UpdateMemoryFile(ctx, path, update); err != nil {
+			return "", err
+		}
+		s.forgetInjectedMemory(path)
+		return fmt.Sprintf("Updated memory %s", path), nil
+	default:
+		return "", fmt.Errorf("unknown memory tool %s", name)
+	}
+}
+
+// forgetInjectedMemory 在记忆被更新/删除后，清除其在所有会话中的注入记录，确保下一
+// 轮按最新文件内容重新注入（或不再注入已删除的条目）。
+func (s *Service) forgetInjectedMemory(path string) {
+	s.injectedMu.Lock()
+	defer s.injectedMu.Unlock()
+	for _, conv := range s.injectedMemories {
+		delete(conv, path)
+	}
+}
+
+// buildMemorySection 构造系统提示词 <memory> 段：① memory.md 索引块（受行数/字节
+// 上限约束，超限附警告）；② LLM 从确定性扫描候选中精选出的记忆完整内容块（带相对
+// 时间与过期说明，并按会话去重/重读替换）。Best-effort：失败返回已得到的部分。
+func (s *Service) buildMemorySection(ctx context.Context, conversationID string, user storage.User, history []storage.Message) string {
+	if !s.EnableMemory {
 		return ""
 	}
-	all, err := s.Store.ListRelevantMemories(ctx, user.ID)
-	if err != nil {
-		logger.Warn(fmt.Sprintf("memory: load relevant memories failed: %v", err))
+	blocks := make([]string, 0, 2)
+	if indexBlock := s.renderMemoryIndexBlock(ctx); indexBlock != "" {
+		blocks = append(blocks, indexBlock)
+	}
+	if selectedBlock := s.renderSelectedMemoriesBlock(ctx, conversationID, user, history); selectedBlock != "" {
+		blocks = append(blocks, selectedBlock)
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+// renderMemoryIndexBlock 渲染 memory.md 索引块（需求1）。
+func (s *Service) renderMemoryIndexBlock(ctx context.Context) string {
+	text, truncated, totalLines := s.Store.LoadMemoryIndexForPrompt(ctx)
+	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	if len(all) == 0 {
-		return ""
+	var b strings.Builder
+	b.WriteString("### Memory index (MEMORY.md)\n")
+	if truncated {
+		b.WriteString(fmt.Sprintf("WARNING: MEMORY.md is %d lines (limit: %d). Only part of it was loaded.\n", totalLines, memoryIndexMaxLines))
+		b.WriteString("Keep index entries to one line under ~200 chars; move detail into topic files.\n\n")
+	}
+	b.WriteString(text)
+	return b.String()
+}
+
+// selectRelevantMemories 从确定性扫描得到的候选集中，请 LLM 精选最多
+// maxInjectedMemories 条确定有帮助的记忆，返回选中的候选（保序）。无候选或失败时
+// 返回 nil。
+func (s *Service) selectRelevantMemories(ctx context.Context, candidates []storage.ScannedMemory, history []storage.Message) []storage.ScannedMemory {
+	if s.LLM == nil || len(candidates) == 0 {
+		return nil
 	}
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "system", Content: s.memorySelectionSystemPrompt()},
-			{Role: "user", Content: buildSelectionUserPrompt(all, renderDialogueForMemory(history))},
+			{Role: "user", Content: buildSelectionUserPrompt(candidates, renderDialogueForMemory(history))},
 		},
 	})
 	if err != nil {
 		logger.Warn(fmt.Sprintf("memory: selection failed: %v", err))
-		return ""
+		return nil
 	}
 	if len(resp.Choices) == 0 {
-		return ""
+		return nil
 	}
 	indices := parseSelectedIDs(resp.Choices[0].Message.Content)
-	selected := pickMemoriesByIndex(all, indices, maxInjectedMemories)
-	return renderMemorySection(selected)
+	return pickScannedByIndex(candidates, indices, maxInjectedMemories)
+}
+
+// renderSelectedMemoriesBlock 扫描候选、LLM 精选、读取完整内容并渲染（需求4/5）。
+func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationID string, user storage.User, history []storage.Message) string {
+	candidates, err := s.Store.ScanRecentMemories(ctx)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("memory: scan recent memories failed: %v", err))
+		return ""
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	selected := s.selectRelevantMemories(ctx, candidates, history)
+	if len(selected) == 0 {
+		return ""
+	}
+
+	now := time.Now()
+	type renderedMemory struct {
+		mem     storage.Memory
+		modTime time.Time
+	}
+	rendered := make([]renderedMemory, 0, len(selected))
+	hasStale := false
+	for _, cand := range selected {
+		if !s.shouldInjectMemory(conversationID, cand.Path, cand.ModTime) {
+			continue
+		}
+		mem, err := s.Store.ReadMemoryFile(ctx, cand.Path)
+		if err != nil {
+			continue
+		}
+		rendered = append(rendered, renderedMemory{mem: mem, modTime: cand.ModTime})
+		if now.Sub(cand.ModTime) > 24*time.Hour {
+			hasStale = true
+		}
+	}
+	if len(rendered) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("### 当前项目记忆\n以下记忆仅适用于当前项目；不要迁移到其他项目会话。")
+	if hasStale {
+		b.WriteString("\n")
+		b.WriteString("Memories are point-in-time observations, not live state — claims about code behavior or file:line citations may be outdated. Verify against current code before asserting as fact.")
+	}
+	for _, item := range rendered {
+		b.WriteString("\n\n")
+		b.WriteString(renderSelectedMemory(item.mem, humanizeRelativeTime(item.modTime, now)))
+	}
+	return b.String()
+}
+
+// shouldInjectMemory 实现会话内去重：未注入过则注入并记录 mtime；已注入且 mtime 未
+// 变则跳过；mtime 变化则更新记录并重新注入（重读替换）。
+func (s *Service) shouldInjectMemory(conversationID, path string, modTime time.Time) bool {
+	s.injectedMu.Lock()
+	defer s.injectedMu.Unlock()
+	if s.injectedMemories == nil {
+		s.injectedMemories = make(map[string]map[string]injectedMemoryMeta)
+	}
+	conv := s.injectedMemories[conversationID]
+	if conv == nil {
+		conv = make(map[string]injectedMemoryMeta)
+		s.injectedMemories[conversationID] = conv
+	}
+	prev, ok := conv[path]
+	if ok && prev.ModTime.Equal(modTime) {
+		return false
+	}
+	conv[path] = injectedMemoryMeta{ModTime: modTime}
+	return true
+}
+
+// renderSelectedMemory 渲染单条被选中记忆的完整内容，带类型与相对时间。
+func renderSelectedMemory(m storage.Memory, relativeTime string) string {
+	header := "#### " + memoryLine(m)
+	meta := make([]string, 0, 2)
+	if strings.TrimSpace(m.Type) != "" {
+		meta = append(meta, m.Type)
+	}
+	if strings.TrimSpace(relativeTime) != "" {
+		meta = append(meta, relativeTime)
+	}
+	if len(meta) > 0 {
+		header += " （" + strings.Join(meta, "，") + "）"
+	}
+	body := strings.TrimSpace(m.Body)
+	if body == "" {
+		return header
+	}
+	return header + "\n" + body
+}
+
+// humanizeRelativeTime 把时间渲染为相对当前的人类可读描述，如 "47 days ago"。
+func humanizeRelativeTime(t, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := now.Sub(t)
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d minutes ago", int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d hours ago", int(d/time.Hour))
+	default:
+		return fmt.Sprintf("%d days ago", int(d/(24*time.Hour)))
+	}
 }
 
 // parseExtractedMemories extracts a JSON array of memory objects from model
@@ -265,11 +478,11 @@ func parseSelectedIDs(raw string) []int {
 	return parsed
 }
 
-// pickMemoriesByIndex resolves indices into memories, dropping out-of-range and
-// duplicate indices, capped at max.
-func pickMemoriesByIndex(all []storage.Memory, indices []int, max int) []storage.Memory {
+// pickScannedByIndex resolves indices into scanned candidates, dropping
+// out-of-range and duplicate indices, capped at max.
+func pickScannedByIndex(all []storage.ScannedMemory, indices []int, max int) []storage.ScannedMemory {
 	seen := make(map[int]struct{})
-	result := make([]storage.Memory, 0, len(indices))
+	result := make([]storage.ScannedMemory, 0, len(indices))
 	for _, idx := range indices {
 		if idx < 0 || idx >= len(all) {
 			continue
@@ -286,55 +499,6 @@ func pickMemoriesByIndex(all []storage.Memory, indices []int, max int) []storage
 	return result
 }
 
-// renderMemorySection groups selected project-scoped memories by type and
-// renders a Markdown block. Returns "" when empty. Unknown or legacy types are
-// skipped silently.
-func renderMemorySection(memories []storage.Memory) string {
-	if len(memories) == 0 {
-		return ""
-	}
-	var preferenceLines, feedbackLines, projectLines, referenceLines []string
-	for _, m := range memories {
-		switch m.Type {
-		case MemoryTypePreference:
-			preferenceLines = append(preferenceLines, memoryBlock("", m))
-		case MemoryTypeFeedback:
-			feedbackLines = append(feedbackLines, memoryBlock("", m))
-		case MemoryTypeProject:
-			projectLines = append(projectLines, memoryBlock("", m))
-		case MemoryTypeReference:
-			referenceLines = append(referenceLines, memoryBlock("", m))
-		}
-	}
-	sections := make([]string, 0, 5)
-	sections = append(sections, "### 当前项目记忆\n以下记忆仅适用于当前项目；不要迁移到其他项目会话。")
-	if len(preferenceLines) > 0 {
-		sections = append(sections, "#### 用户喜好与约束\n"+strings.Join(preferenceLines, "\n"))
-	}
-	if len(feedbackLines) > 0 {
-		sections = append(sections, "#### 行为指导\n"+strings.Join(feedbackLines, "\n"))
-	}
-	if len(projectLines) > 0 {
-		sections = append(sections, "#### 项目动态\n"+strings.Join(projectLines, "\n"))
-	}
-	if len(referenceLines) > 0 {
-		sections = append(sections, "#### 外部引用\n"+strings.Join(referenceLines, "\n"))
-	}
-	if len(sections) == 1 {
-		return ""
-	}
-	return strings.Join(sections, "\n\n")
-}
-
-func memoryBlock(prefix string, m storage.Memory) string {
-	line := "- " + prefix + memoryLine(m)
-	body := strings.TrimSpace(m.Body)
-	if body == "" {
-		return line
-	}
-	return line + "\n  " + strings.ReplaceAll(body, "\n", "\n  ")
-}
-
 func memoryLine(m storage.Memory) string {
 	if strings.TrimSpace(m.Description) == "" {
 		return m.Name
@@ -342,8 +506,31 @@ func memoryLine(m storage.Memory) string {
 	return m.Name + "：" + m.Description
 }
 
-func buildExtractionUserPrompt(existing []storage.Memory, dialogue string) string {
-	return "Existing memories:\n" + renderMemoryListForPrompt(existing) + "\n\nDialogue:\n" + dialogue
+func buildExtractionUserPrompt(existing []storage.Memory, existingFiles []storage.ScannedMemory, dialogue string) string {
+	var b strings.Builder
+	b.WriteString("Existing memories:\n")
+	b.WriteString(renderMemoryListForPrompt(existing))
+	b.WriteString("\n\n## Existing memory files\n\n")
+	b.WriteString(renderMemoryFilesForPrompt(existingFiles))
+	b.WriteString("\n\nCheck this list before writing — update an existing file rather than creating a duplicate.")
+	b.WriteString("\n\nDialogue:\n")
+	b.WriteString(dialogue)
+	return b.String()
+}
+
+func renderMemoryFilesForPrompt(files []storage.ScannedMemory) string {
+	if len(files) == 0 {
+		return "(none)"
+	}
+	lines := make([]string, 0, len(files))
+	for _, f := range files {
+		desc := strings.TrimSpace(f.Description)
+		if desc == "" {
+			desc = strings.TrimSpace(f.Name)
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", f.Path, desc))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func buildConsolidationUserPrompt(items []storage.Memory) string {
@@ -357,7 +544,7 @@ func buildConsolidationUserPrompt(items []storage.Memory) string {
 	return b.String()
 }
 
-func buildSelectionUserPrompt(all []storage.Memory, dialogue string) string {
+func buildSelectionUserPrompt(all []storage.ScannedMemory, dialogue string) string {
 	var b strings.Builder
 	b.WriteString("Recent conversation:\n")
 	b.WriteString(dialogue)
