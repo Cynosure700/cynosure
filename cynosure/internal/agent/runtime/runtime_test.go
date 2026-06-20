@@ -177,13 +177,17 @@ func (f *fakeStore) ReadMemoryFile(ctx context.Context, path string) (storage.Me
 	return storage.Memory{}, errors.New("memory file not found")
 }
 
-func (f *fakeStore) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error {
+func (f *fakeStore) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error) {
 	f.updatedMemoryFiles = append(f.updatedMemoryFiles, path)
 	if f.memoryFiles == nil {
 		f.memoryFiles = make(map[string]storage.Memory)
 	}
 	m := f.memoryFiles[path]
+	newPath := path
 	if update.Name != nil {
+		if strings.TrimSpace(*update.Name) != m.Name {
+			newPath = strings.TrimSpace(*update.Name) + ".md"
+		}
 		m.Name = *update.Name
 	}
 	if update.Description != nil {
@@ -192,8 +196,11 @@ func (f *fakeStore) UpdateMemoryFile(ctx context.Context, path string, update st
 	if update.Body != nil {
 		m.Body = *update.Body
 	}
-	f.memoryFiles[path] = m
-	return nil
+	if newPath != path {
+		delete(f.memoryFiles, path)
+	}
+	f.memoryFiles[newPath] = m
+	return newPath, nil
 }
 
 func (f *fakeStore) DeleteMemoryFile(ctx context.Context, path string) error {

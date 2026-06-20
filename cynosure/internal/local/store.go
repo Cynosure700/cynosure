@@ -319,11 +319,11 @@ func (s *Store) ReadMemoryFile(ctx context.Context, path string) (storage.Memory
 	return storage.Memory{}, sql.ErrNoRows
 }
 
-func (s *Store) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error {
+func (s *Store) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error) {
 	if s.memory != nil {
 		return s.memory.UpdateMemoryFile(path, update)
 	}
-	return fmt.Errorf("memory store is not initialized")
+	return "", fmt.Errorf("memory store is not initialized")
 }
 
 func (s *Store) DeleteMemoryFile(ctx context.Context, path string) error {

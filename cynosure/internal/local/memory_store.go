@@ -223,19 +223,24 @@ func (m *MarkdownMemoryStore) ReadMemoryFile(path string) (storage.Memory, error
 	return m.readMemoryFileLocked(path)
 }
 
-// UpdateMemoryFile 部分更新指定记忆文件，并同步刷新 memory.md。
-func (m *MarkdownMemoryStore) UpdateMemoryFile(path string, update storage.MemoryUpdate) error {
+// UpdateMemoryFile 部分更新指定记忆文件，并同步刷新 memory.md。当记忆标题（name）
+// 发生变化时，文件名（即记忆的标题标识）会一并重命名，避免文件名与内容标题不一致
+// 带来歧义。返回更新后真实的相对路径（重命名时与传入 path 不同）。
+func (m *MarkdownMemoryStore) UpdateMemoryFile(path string, update storage.MemoryUpdate) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !safeRelativeMemoryPath(path) {
-		return fmt.Errorf("unsafe memory path: %s", path)
+		return "", fmt.Errorf("unsafe memory path: %s", path)
 	}
 	mem, err := m.readMemoryFileLocked(path)
 	if err != nil {
-		return err
+		return "", err
 	}
+	nameChanged := false
 	if update.Name != nil {
-		mem.Name = strings.TrimSpace(*update.Name)
+		newName := strings.TrimSpace(*update.Name)
+		nameChanged = newName != mem.Name
+		mem.Name = newName
 	}
 	if update.Description != nil {
 		mem.Description = strings.TrimSpace(*update.Description)
@@ -243,10 +248,27 @@ func (m *MarkdownMemoryStore) UpdateMemoryFile(path string, update storage.Memor
 	if update.Body != nil {
 		mem.Body = strings.TrimSpace(*update.Body)
 	}
-	if err := m.writeMemoryFileLocked(path, mem); err != nil {
-		return err
+	newPath := path
+	if nameChanged {
+		// 仅当标题对应的目标文件名与当前文件名不同才重命名，避免无意义改名。
+		if desired := sanitizedMemoryFilename(mem.Name); desired != path {
+			newPath = m.uniqueMemoryFilenameLocked(mem.Name)
+			// 文件名是记忆的标题标识，重命名后令 ID 与新文件名保持一致。
+			mem.ID = strings.TrimSuffix(newPath, filepath.Ext(newPath))
+		}
 	}
-	return m.rewriteIndexLocked()
+	if err := m.writeMemoryFileLocked(newPath, mem); err != nil {
+		return "", err
+	}
+	if newPath != path {
+		if err := os.Remove(filepath.Join(m.rootDir, path)); err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	if err := m.rewriteIndexLocked(); err != nil {
+		return "", err
+	}
+	return newPath, nil
 }
 
 // DeleteMemoryFile 删除指定记忆文件，并从 memory.md 移除其条目。
@@ -470,15 +492,21 @@ func (m *MarkdownMemoryStore) writeIndexEntriesLocked(entries []memoryIndexEntry
 	return atomicWriteFile(m.indexPath, []byte(b.String()), 0o644)
 }
 
-func (m *MarkdownMemoryStore) uniqueMemoryFilenameLocked(name string) string {
+// sanitizedMemoryFilename 把记忆标题转换为规范的相对文件名（不保证唯一）。
+func sanitizedMemoryFilename(name string) string {
 	base := sanitizeName(name)
 	if base == "" {
 		base = "memory"
 	}
-	path := base + ".md"
+	return base + ".md"
+}
+
+func (m *MarkdownMemoryStore) uniqueMemoryFilenameLocked(name string) string {
+	path := sanitizedMemoryFilename(name)
 	if _, err := os.Stat(filepath.Join(m.rootDir, path)); os.IsNotExist(err) {
 		return path
 	}
+	base := strings.TrimSuffix(path, filepath.Ext(path))
 	return base + "-" + idgen.Hex()[:8] + ".md"
 }
 

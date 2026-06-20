@@ -37,7 +37,7 @@ type conversationStore interface {
 	LoadMemoryIndexForPrompt(ctx context.Context) (string, bool, int)
 	ScanRecentMemories(ctx context.Context) ([]storage.ScannedMemory, error)
 	ReadMemoryFile(ctx context.Context, path string) (storage.Memory, error)
-	UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) error
+	UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error)
 	DeleteMemoryFile(ctx context.Context, path string) error
 	LoadConsolidationState(ctx context.Context) (storage.ConsolidationState, error)
 	SaveConsolidationState(ctx context.Context, state storage.ConsolidationState) error

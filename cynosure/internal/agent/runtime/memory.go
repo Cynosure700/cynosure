@@ -243,10 +243,16 @@ func (s *Service) executeMemoryTool(ctx context.Context, name, rawArgs string) (
 			return "", fmt.Errorf("provide at least one of name, description, or body")
 		}
 		update := storage.MemoryUpdate{Name: args.Name, Description: args.Description, Body: args.Body}
-		if err := s.Store.UpdateMemoryFile(ctx, path, update); err != nil {
+		newPath, err := s.Store.UpdateMemoryFile(ctx, path, update)
+		if err != nil {
 			return "", err
 		}
+		// 更新标题会重命名文件，需清除旧路径与新路径的注入记录，下一轮按最新文件重读。
 		s.forgetInjectedMemory(path)
+		if newPath != "" && newPath != path {
+			s.forgetInjectedMemory(newPath)
+			return fmt.Sprintf("Updated memory %s (renamed to %s)", path, newPath), nil
+		}
 		return fmt.Sprintf("Updated memory %s", path), nil
 	default:
 		return "", fmt.Errorf("unknown memory tool %s", name)

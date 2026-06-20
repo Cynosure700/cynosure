@@ -336,7 +336,7 @@ func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
 	}
 
 	newBody := "更新后的正文"
-	if err := store.UpdateMemoryFile(ctx, scanned[0].Path, storage.MemoryUpdate{Body: &newBody}); err != nil {
+	if _, err := store.UpdateMemoryFile(ctx, scanned[0].Path, storage.MemoryUpdate{Body: &newBody}); err != nil {
 		t.Fatalf("UpdateMemoryFile returned error: %v", err)
 	}
 	mem, err := store.ReadMemoryFile(ctx, scanned[0].Path)
@@ -379,6 +379,56 @@ func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
 	}
 	if lines := strings.Count(text, "\n") + 1; lines > memoryIndexMaxLines {
 		t.Fatalf("expected at most %d lines, got %d", memoryIndexMaxLines, lines)
+	}
+}
+
+func TestMarkdownMemoryStoreUpdateRenamesFileWhenNameChanges(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	ctx := context.Background()
+	if err := store.InsertMemory(ctx, storage.Memory{UserID: LocalUserID, Type: runtime.MemoryTypePreference, Name: "用户喜欢 Go 语言", Description: "d", Body: "正文"}); err != nil {
+		t.Fatalf("InsertMemory returned error: %v", err)
+	}
+	scanned, err := store.ScanRecentMemories(ctx)
+	if err != nil || len(scanned) != 1 {
+		t.Fatalf("ScanRecentMemories returned err=%v scanned=%#v", err, scanned)
+	}
+	oldPath := scanned[0].Path
+
+	newName := "用户喜欢 Python 语言"
+	gotPath, err := store.UpdateMemoryFile(ctx, oldPath, storage.MemoryUpdate{Name: &newName})
+	if err != nil {
+		t.Fatalf("UpdateMemoryFile returned error: %v", err)
+	}
+	if gotPath == oldPath {
+		t.Fatalf("expected renamed path, got same path %q", gotPath)
+	}
+
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	if _, err := os.Stat(filepath.Join(memoryRoot, oldPath)); !os.IsNotExist(err) {
+		t.Fatalf("expected old file removed, stat err = %v", err)
+	}
+	mem, err := store.ReadMemoryFile(ctx, gotPath)
+	if err != nil {
+		t.Fatalf("ReadMemoryFile returned error: %v", err)
+	}
+	if mem.Name != newName {
+		t.Fatalf("expected name %q, got %q", newName, mem.Name)
+	}
+	indexBytes, err := os.ReadFile(filepath.Join(memoryRoot, "memory.md"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	if strings.Contains(string(indexBytes), oldPath) {
+		t.Fatalf("expected old path removed from index, got %q", string(indexBytes))
+	}
+	if !strings.Contains(string(indexBytes), gotPath) {
+		t.Fatalf("expected new path in index, got %q", string(indexBytes))
 	}
 }
 
