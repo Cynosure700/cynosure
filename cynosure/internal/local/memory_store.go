@@ -295,22 +295,33 @@ func (m *MarkdownMemoryStore) SaveConsolidationState(state storage.Consolidation
 func (m *MarkdownMemoryStore) ListConversationMemories(ctx context.Context, sessionID string) ([]storage.ConversationMemory, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	path := m.sessionPath(sessionID)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	_, body := splitFrontMatter(string(data))
-	return parseConversationMemoryBody(sessionID, body), nil
+	items, _ := m.readSessionMemoryLocked(sessionID)
+	return items, nil
 }
 
 func (m *MarkdownMemoryStore) ReplaceConversationMemories(ctx context.Context, sessionID, userID string, items []storage.ConversationMemory) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.writeSessionMemoryLocked(sessionID, items)
+	// 保留已有断点，避免重写会话记忆时丢失。
+	_, breakpoint := m.readSessionMemoryLocked(sessionID)
+	return m.writeSessionMemoryLocked(sessionID, items, breakpoint)
+}
+
+// LoadConversationMemoryBreakpoint 读取会话记忆文件 frontmatter 中持久化的断点 ID。
+func (m *MarkdownMemoryStore) LoadConversationMemoryBreakpoint(ctx context.Context, sessionID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, breakpoint := m.readSessionMemoryLocked(sessionID)
+	return breakpoint, nil
+}
+
+// SaveConversationMemoryBreakpoint 持久化断点 ID 到会话记忆文件 frontmatter，保留已有
+// 会话记忆条目。
+func (m *MarkdownMemoryStore) SaveConversationMemoryBreakpoint(ctx context.Context, sessionID, breakpointID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	items, _ := m.readSessionMemoryLocked(sessionID)
+	return m.writeSessionMemoryLocked(sessionID, items, breakpointID)
 }
 
 func (m *MarkdownMemoryStore) ProjectLockKey(sessionID string) string {
@@ -506,7 +517,18 @@ func (m *MarkdownMemoryStore) sessionPath(sessionID string) string {
 	return filepath.Join(m.sessionsDir, sanitizeName(sessionID)+".md")
 }
 
-func (m *MarkdownMemoryStore) writeSessionMemoryLocked(sessionID string, items []storage.ConversationMemory) error {
+// readSessionMemoryLocked 读取会话记忆文件，返回条目列表与持久化断点 ID。文件缺失时
+// 返回空值。调用方须持有 m.mu。
+func (m *MarkdownMemoryStore) readSessionMemoryLocked(sessionID string) ([]storage.ConversationMemory, string) {
+	data, err := os.ReadFile(m.sessionPath(sessionID))
+	if err != nil {
+		return nil, ""
+	}
+	meta, body := splitFrontMatter(string(data))
+	return parseConversationMemoryBody(sessionID, body), meta["metadata.breakpoint_id"]
+}
+
+func (m *MarkdownMemoryStore) writeSessionMemoryLocked(sessionID string, items []storage.ConversationMemory, breakpointID string) error {
 	sessionID = sanitizeName(sessionID)
 	var b strings.Builder
 	b.WriteString("---\n")
@@ -517,6 +539,7 @@ func (m *MarkdownMemoryStore) writeSessionMemoryLocked(sessionID string, items [
 	b.WriteString("  project: " + yamlScalar(m.projectName) + "\n")
 	b.WriteString("  session_id: " + yamlScalar(sessionID) + "\n")
 	b.WriteString("  originSessionId: " + yamlScalar(sessionID) + "\n")
+	b.WriteString("  breakpoint_id: " + yamlScalar(breakpointID) + "\n")
 	b.WriteString("---\n\n")
 	for _, item := range items {
 		b.WriteString("## " + strings.TrimSpace(item.Name) + "\n\n")

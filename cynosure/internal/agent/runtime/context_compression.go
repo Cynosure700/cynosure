@@ -47,6 +47,9 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		Store:          store,
 		Estimator:      compression.DefaultTokenEstimator{},
 		Summarizer:     s.summarizeHistoryForContext,
+
+		DisplayHistory:               cloneMessages(state.History),
+		ConversationMemoryBreakpoint: s.loadConversationMemoryBreakpoint(ctx, state.Conversation.ID),
 	}
 	if s.Tools != nil {
 		req.ToolMaxResultSizeChars = s.Tools.MaxResultSizeChars

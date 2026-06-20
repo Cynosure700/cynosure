@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
 )
 
 const reactiveCompactStrategyName = "reactive_compact"
@@ -40,37 +39,19 @@ func (s *ReactiveCompactStrategy) Apply(ctx context.Context, req *Request) error
 		return nil
 	}
 
-	before := req.Estimator.EstimateRequestTokens(req.SystemPrompt, req.RequestHistory, req.Tools)
 	lastMessage := req.RequestHistory[len(req.RequestHistory)-1]
 	summarizable := req.RequestHistory[:len(req.RequestHistory)-1]
-	sourceHash := historyHash(summarizable)
 
-	summary := ""
-	if cached, err := req.Store.GetContextSummaryByHistoryHash(ctx, req.Conversation.ID, req.User.ID, sourceHash); err == nil && cached.Summary != "" {
-		summary = cached.Summary
-	} else {
-		result, err := req.Summarizer(ctx, SummaryRequest{
-			Conversation: req.Conversation,
-			User:         req.User,
-			History:      summarizable,
-			TargetTokens: reactiveSummaryTargetTokens,
-		})
-		if err != nil {
-			return fmt.Errorf("reactive compact summarize history: %w", err)
-		}
-		summary = result.Summary
-		after := req.Estimator.EstimateRequestTokens(req.SystemPrompt, buildSummaryHistory(summary, nil), req.Tools)
-		_ = req.Store.CreateContextSummary(ctx, storage.ContextSummary{
-			ID:                    "cs_" + idgen.Hex(),
-			ConversationID:        req.Conversation.ID,
-			UserID:                req.User.ID,
-			SourceHistorySHA256:   sourceHash,
-			Strategy:              reactiveCompactStrategyName,
-			EstimatedTokensBefore: before,
-			EstimatedTokensAfter:  after,
-			Summary:               summary,
-		})
+	result, err := req.Summarizer(ctx, SummaryRequest{
+		Conversation: req.Conversation,
+		User:         req.User,
+		History:      summarizable,
+		TargetTokens: reactiveSummaryTargetTokens,
+	})
+	if err != nil {
+		return fmt.Errorf("reactive compact summarize history: %w", err)
 	}
+	summary := result.Summary
 
 	tail := selectReactiveTail(req, summarizable, summary)
 	kept := repairToolCallBoundaries(append(append([]storage.Message{}, tail...), lastMessage))

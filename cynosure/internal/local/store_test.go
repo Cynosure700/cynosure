@@ -494,6 +494,52 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 	}
 }
 
+func TestMarkdownConversationMemoryBreakpointPersistsAcrossWrites(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	ctx := context.Background()
+	conv := storage.Conversation{ID: "conv_bp", SessionID: "bbbbbbbb-c3e7-46c8-afe7-7cdcc671e80e", UserID: LocalUserID}
+	if err := store.CreateConversation(ctx, conv); err != nil {
+		t.Fatalf("CreateConversation returned error: %v", err)
+	}
+	// Save memories, then a breakpoint; both must coexist.
+	if err := store.ReplaceConversationMemories(ctx, conv.ID, LocalUserID, []storage.ConversationMemory{{Name: "目标", Body: "实现"}}); err != nil {
+		t.Fatalf("ReplaceConversationMemories: %v", err)
+	}
+	if err := store.SaveConversationMemoryBreakpoint(ctx, conv.ID, "msg_bp_1"); err != nil {
+		t.Fatalf("SaveConversationMemoryBreakpoint: %v", err)
+	}
+	got, err := store.LoadConversationMemoryBreakpoint(ctx, conv.ID)
+	if err != nil || got != "msg_bp_1" {
+		t.Fatalf("expected breakpoint msg_bp_1, got %q err=%v", got, err)
+	}
+	// Rewriting memories must preserve the breakpoint.
+	if err := store.ReplaceConversationMemories(ctx, conv.ID, LocalUserID, []storage.ConversationMemory{{Name: "目标", Body: "更新"}}); err != nil {
+		t.Fatalf("ReplaceConversationMemories second: %v", err)
+	}
+	got, err = store.LoadConversationMemoryBreakpoint(ctx, conv.ID)
+	if err != nil || got != "msg_bp_1" {
+		t.Fatalf("expected breakpoint preserved after memory rewrite, got %q err=%v", got, err)
+	}
+	// Updating the breakpoint must preserve memories.
+	if err := store.SaveConversationMemoryBreakpoint(ctx, conv.ID, "msg_bp_2"); err != nil {
+		t.Fatalf("SaveConversationMemoryBreakpoint second: %v", err)
+	}
+	items, err := store.ListConversationMemories(ctx, conv.ID)
+	if err != nil || len(items) != 1 || items[0].Name != "目标" {
+		t.Fatalf("expected memories preserved after breakpoint update, got %#v err=%v", items, err)
+	}
+	got, _ = store.LoadConversationMemoryBreakpoint(ctx, conv.ID)
+	if got != "msg_bp_2" {
+		t.Fatalf("expected breakpoint msg_bp_2, got %q", got)
+	}
+}
+
 func TestStorePersistsConversationAndModelHistoryUnderSessionDirectory(t *testing.T) {
 	home := t.TempDir()
 	workspace := filepath.Join(t.TempDir(), "project")

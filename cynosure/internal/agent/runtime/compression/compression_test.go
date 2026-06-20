@@ -13,7 +13,6 @@ import (
 
 type fakeStore struct {
 	persistedOutputs     []storage.PersistedOutput
-	contextSummaries     []storage.ContextSummary
 	conversationMemories []storage.ConversationMemory
 }
 
@@ -29,20 +28,6 @@ func (f *fakeStore) GetPersistedOutputByMessageHash(ctx context.Context, convers
 		}
 	}
 	return storage.PersistedOutput{}, errors.New("persisted output not found")
-}
-
-func (f *fakeStore) CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error {
-	f.contextSummaries = append(f.contextSummaries, summary)
-	return nil
-}
-
-func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error) {
-	for _, c := range f.contextSummaries {
-		if c.ConversationID == conversationID && c.UserID == userID && c.SourceHistorySHA256 == sourceHistorySHA256 {
-			return c, nil
-		}
-	}
-	return storage.ContextSummary{}, errors.New("context summary not found")
 }
 
 func (f *fakeStore) ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error) {
@@ -553,7 +538,7 @@ func TestFullHistorySummarization_NoopUnderBudget(t *testing.T) {
 	}
 }
 
-func TestFullHistorySummarization_SummarizesOverBudgetAndCaches(t *testing.T) {
+func TestFullHistorySummarization_SummarizesOverBudget(t *testing.T) {
 	store := &fakeStore{}
 	calls := 0
 	var lastInput []storage.Message
@@ -592,16 +577,14 @@ func TestFullHistorySummarization_SummarizesOverBudgetAndCaches(t *testing.T) {
 	if final.Content != last.Content {
 		t.Fatalf("expected last message preserved verbatim, got %#v", final)
 	}
-	if len(store.contextSummaries) != 1 {
-		t.Fatalf("expected summary cached once")
-	}
-	// Second run with same source hash should hit cache (no extra summarizer call).
+	// Summaries are not persisted/cached anymore, so a second run with the same
+	// source history must summarize again.
 	req2 := mkReq()
 	if err := (&FullHistorySummarizationStrategy{}).Apply(context.Background(), req2); err != nil {
 		t.Fatalf("apply2: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("expected cache hit to avoid second summarizer call, got %d", calls)
+	if calls != 2 {
+		t.Fatalf("expected summarizer called again without cache, got %d", calls)
 	}
 }
 

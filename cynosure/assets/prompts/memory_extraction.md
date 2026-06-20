@@ -4,6 +4,8 @@ All memories are valid ONLY for the current project. Do not create memories that
 
 From the dialogue, extract durable memories worth keeping for the current project. Use the "type" field for exactly these four kinds:
 
+The dialogue is a full interaction transcript with these line kinds: `[user]` user messages, `[assistant]` assistant replies, `[tool_call] name(arguments)` tool invocations, and `[tool_result] status: result` tool outputs. Use ALL of them — not just the text replies — to ground what actually happened (e.g. what was run, what was found, what was produced).
+
 - "preference": a stable user preference, constraint, habit, or project-related description. Examples: "I use Go", "answer in Chinese", "prefer minimal implementations". body: free text stating the preference.
   Trigger: the user expresses a stable preference or constraint.
 

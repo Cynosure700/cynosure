@@ -52,12 +52,36 @@ func (s *ConversationMemoryStrategy) Apply(ctx context.Context, req *Request) er
 		return nil
 	}
 
-	lastMessage := req.RequestHistory[len(req.RequestHistory)-1]
-	summarizable := req.RequestHistory[:len(req.RequestHistory)-1]
-	tail := selectRecentTail(req, summarizable, memoryText, budget)
-	kept := repairToolCallBoundaries(append(append([]storage.Message{}, tail...), lastMessage))
-	req.RequestHistory = buildConversationMemoryHistory(memoryText, kept)
+	// 需求3：尾部恰为"未被 session memory 记忆到"的未压缩消息——从断点（含端点）到末尾，
+	// 且取自【逐字 display history】（而非可能已带压缩产物的模型线 RequestHistory）。
+	// 断点未知/未命中（未持久化、被消息窗口裁剪等）→ no-op，交全量摘要兜底，无数据丢失。
+	tail, ok := selectUnfoldedTail(req.DisplayHistory, req.ConversationMemoryBreakpoint)
+	if !ok {
+		return nil
+	}
+	kept := repairToolCallBoundaries(tail)
+	candidate := buildConversationMemoryHistory(memoryText, kept)
+	// 保持"本策略一旦动手，结果须落在预算内"的不变式：未折叠尾部过大则不动手，交全量摘要兜底，
+	// 避免记忆块被随后的全量摘要二次压缩。
+	if req.Estimator.EstimateRequestTokens(req.SystemPrompt, candidate, req.Tools) > budget {
+		return nil
+	}
+	req.RequestHistory = candidate
 	return nil
+}
+
+// selectUnfoldedTail 返回断点消息（含端点）之后的尾部消息。命中返回 (tail, true)；
+// 断点为空或在历史中未找到返回 (nil, false)。
+func selectUnfoldedTail(history []storage.Message, breakpointID string) ([]storage.Message, bool) {
+	if breakpointID == "" {
+		return nil, false
+	}
+	for i := range history {
+		if history[i].ID == breakpointID {
+			return history[i:], true
+		}
+	}
+	return nil, false
 }
 
 func renderConversationMemory(items []storage.ConversationMemory) string {

@@ -29,8 +29,6 @@ type conversationStore interface {
 	CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error
 	GetPersistedOutputForConversation(ctx context.Context, id, userID, conversationID string) (storage.PersistedOutput, error)
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
-	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
-	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
 	ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error)
 	ListMemoriesByUserAndType(ctx context.Context, userID, memType string) ([]storage.Memory, error)
 	InsertMemory(ctx context.Context, m storage.Memory) error
@@ -46,6 +44,8 @@ type conversationStore interface {
 	SaveConsolidationState(ctx context.Context, state storage.ConsolidationState) error
 	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 	ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error
+	LoadConversationMemoryBreakpoint(ctx context.Context, conversationID string) (string, error)
+	SaveConversationMemoryBreakpoint(ctx context.Context, conversationID, breakpointID string) error
 	GetConversationModelHistory(ctx context.Context, conversationID string) ([]storage.Message, bool, error)
 	UpsertConversationModelHistory(ctx context.Context, conversationID, userID string, messages []storage.Message) error
 	AcquireConversationLock(ctx context.Context, conversationID, token string, ttl, waitTimeout time.Duration) (bool, error)
@@ -70,12 +70,25 @@ type Service struct {
 
 	injectedMu       sync.Mutex
 	injectedMemories map[string]map[string]injectedMemoryMeta
+
+	sessionMemoryMu       sync.Mutex
+	sessionMemoryProgress map[string]*sessionMemoryProgress // key=conversationID
 }
 
 // injectedMemoryMeta 记录某条记忆在某会话中已注入时的文件修改时间，用于会话内去重
 // 与"文件更新后重读替换"判断。
 type injectedMemoryMeta struct {
 	ModTime time.Time
+}
+
+// sessionMemoryProgress 跟踪某会话的会话记忆触发进度：记录上次更新时的上下文基线与
+// 自上次以来的工具调用数。进程内态，重启后按"已有会话记忆是否存在"重建。
+// 断点不在此保存——它持久化在会话记忆文件，压缩时从文件读取。
+type sessionMemoryProgress struct {
+	extracted          bool // 是否已完成初次提取（决定走 10K 门槛还是增量条件）
+	baselineTokens     int  // 上次更新时的上下文 token（增长基线）
+	toolCallsSinceBase int  // 自上次更新以来累计工具调用次数
+	updating           bool // 是否有一次会话记忆更新正在进行（单航班守卫）
 }
 
 func (s *Service) SetApprover(approver ApprovalDecider) {

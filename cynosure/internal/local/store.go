@@ -21,10 +21,10 @@ type Store struct {
 	toolCalls       []storage.ToolCall
 	persisted       map[string]storage.PersistedOutput
 	persistedByHash map[string]string
-	summaries       map[string]storage.ContextSummary
 	modelHistory    map[string][]storage.Message
 	memories        []storage.Memory
 	convMemories    map[string][]storage.ConversationMemory
+	convBreakpoints map[string]string
 	memory          *MarkdownMemoryStore
 	sessionHistory  *SessionHistoryStore
 	workspaceRoot   string
@@ -38,9 +38,9 @@ func NewStore() *Store {
 		cache:           make(map[string][]storage.Message),
 		persisted:       make(map[string]storage.PersistedOutput),
 		persistedByHash: make(map[string]string),
-		summaries:       make(map[string]storage.ContextSummary),
 		modelHistory:    make(map[string][]storage.Message),
 		convMemories:    make(map[string][]storage.ConversationMemory),
+		convBreakpoints: make(map[string]string),
 		locks:           make(map[string]string),
 	}
 }
@@ -249,23 +249,6 @@ func (s *Store) GetPersistedOutputByMessageHash(ctx context.Context, conversatio
 	return output, nil
 }
 
-func (s *Store) CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.summaries[summary.ConversationID+"\x00"+summary.UserID+"\x00"+summary.SourceHistorySHA256] = summary
-	return nil
-}
-
-func (s *Store) GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	summary, ok := s.summaries[conversationID+"\x00"+userID+"\x00"+sourceHistorySHA256]
-	if !ok {
-		return storage.ContextSummary{}, sql.ErrNoRows
-	}
-	return summary, nil
-}
-
 func (s *Store) ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
 	if s.memory != nil {
 		return s.memory.ListRelevantMemories(ctx, userID)
@@ -388,6 +371,27 @@ func (s *Store) ReplaceConversationMemories(ctx context.Context, conversationID,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.convMemories[conversationID] = append([]storage.ConversationMemory(nil), items...)
+	return nil
+}
+
+func (s *Store) LoadConversationMemoryBreakpoint(ctx context.Context, conversationID string) (string, error) {
+	if s.memory != nil {
+		sessionID := s.sessionIDForConversation(conversationID)
+		return s.memory.LoadConversationMemoryBreakpoint(ctx, sessionID)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.convBreakpoints[conversationID], nil
+}
+
+func (s *Store) SaveConversationMemoryBreakpoint(ctx context.Context, conversationID, breakpointID string) error {
+	if s.memory != nil {
+		sessionID := s.sessionIDForConversation(conversationID)
+		return s.memory.SaveConversationMemoryBreakpoint(ctx, sessionID, breakpointID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.convBreakpoints[conversationID] = breakpointID
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/idgen"
 	"nano_cc/internal/logger"
+	"nano_cc/internal/textutil"
 )
 
 const (
@@ -26,11 +27,11 @@ const (
 )
 
 const (
-	maxInjectedMemories    = 5
-	maxMemoryDialogueChars = 4000
-	maxMemoryNameRunes     = 80
-	maxMemoryDescRunes     = 300
-	maxMemoryBodyRunes     = 2000
+	maxInjectedMemories      = 5
+	maxMemoryTranscriptChars = 24000
+	maxMemoryNameRunes       = 80
+	maxMemoryDescRunes       = 300
+	maxMemoryBodyRunes       = 2000
 	// memoryIndexMaxLines mirrors the store-side limit, used only for the
 	// truncation warning text injected into the system prompt.
 	memoryIndexMaxLines = 200
@@ -83,7 +84,7 @@ func (s *Service) extractMemories(ctx context.Context, user storage.User, histor
 	if s.LLM == nil {
 		return
 	}
-	dialogue := renderDialogueForMemory(history)
+	dialogue := renderModelHistoryForMemory(history)
 	if strings.TrimSpace(dialogue) == "" {
 		return
 	}
@@ -308,7 +309,7 @@ func (s *Service) selectRelevantMemories(ctx context.Context, candidates []stora
 		Model: s.Cfg.LLM.ModelID,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: "system", Content: s.memorySelectionSystemPrompt()},
-			{Role: "user", Content: buildSelectionUserPrompt(candidates, renderDialogueForMemory(history))},
+			{Role: "user", Content: buildSelectionUserPrompt(candidates, renderModelHistoryForMemory(history))},
 		},
 	})
 	if err != nil {
@@ -566,31 +567,58 @@ func renderMemoryListForPrompt(items []storage.Memory) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderDialogueForMemory builds a plain-text transcript of user and assistant
-// messages only, dropping tool noise to keep the LLM calls cheap.
-func renderDialogueForMemory(history []storage.Message) string {
+// renderModelHistoryForMemory builds a transcript of the model history for
+// memory extraction. Unlike a text-only dialogue, it includes the full
+// interaction: user/assistant text, the assistant's tool calls (name +
+// arguments), and tool results (status + result), so memories are grounded in
+// what actually happened. It is capped by maxMemoryTranscriptChars.
+func renderModelHistoryForMemory(history []storage.Message) string {
 	var b strings.Builder
 	for _, msg := range history {
-		var content string
 		switch msg.Role {
 		case "user":
-			content = strings.TrimSpace(msg.Content)
-			if content == "" {
-				continue
+			content := strings.TrimSpace(msg.Content)
+			if content != "" {
+				b.WriteString("[user] ")
+				b.WriteString(content)
+				b.WriteString("\n\n")
 			}
-			b.WriteString("[user] ")
 		case "assistant":
-			content = strings.TrimSpace(msg.Content)
-			if content == "" {
+			content := strings.TrimSpace(msg.Content)
+			if content != "" {
+				b.WriteString("[assistant] ")
+				b.WriteString(content)
+				b.WriteString("\n\n")
+			}
+			for _, call := range msg.ToolCalls {
+				name := strings.TrimSpace(call.Function.Name)
+				if name == "" {
+					continue
+				}
+				args := singleLine(call.Function.Arguments)
+				b.WriteString("[tool_call] ")
+				b.WriteString(name)
+				b.WriteString("(")
+				b.WriteString(args)
+				b.WriteString(")\n\n")
+			}
+		case "tool":
+			status, result, _ := textutil.ParseToolResult(msg.Content)
+			result = strings.TrimSpace(result)
+			if result == "" {
 				continue
 			}
-			b.WriteString("[assistant] ")
+			b.WriteString("[tool_result] ")
+			if status != "" {
+				b.WriteString(status)
+				b.WriteString(": ")
+			}
+			b.WriteString(result)
+			b.WriteString("\n\n")
 		default:
 			continue
 		}
-		b.WriteString(content)
-		b.WriteString("\n\n")
-		if b.Len() > maxMemoryDialogueChars {
+		if b.Len() > maxMemoryTranscriptChars {
 			break
 		}
 	}

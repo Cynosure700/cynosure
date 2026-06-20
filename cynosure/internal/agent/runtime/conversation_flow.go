@@ -166,9 +166,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 				return storage.Message{}, err
 			}
 			if s.EnableMemory {
-				finalHistory := append(state.History, stopCtx.AssistantMessage)
+				// 提取/会话记忆与落库共用本轮压缩后的请求线（lastRequestHistory + 本轮最终 assistant）。
 				finalModelHistory := append(cloneMessages(lastRequestHistory), stopCtx.AssistantMessage)
-				handedOff = s.scheduleMemoryWork(conversation, user, finalHistory, finalModelHistory, lockToken, stopRenew, memoryOn)
+				// 需求2 条件(2)/初次提取：轮次自然结束时评估是否更新会话记忆。
+				updateSession := false
+				if memoryOn {
+					updateSession = s.shouldUpdateSessionMemoryAtTurnEnd(conversation, state.LastContextTokens)
+				}
+				handedOff = s.scheduleMemoryWork(conversation, user, finalModelHistory, finalModelHistory, lockToken, stopRenew, memoryOn, updateSession, state.LastContextTokens)
 			}
 			return stopCtx.AssistantMessage, nil
 		}
@@ -199,6 +204,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			emitToolCallDone(state, toolCtx)
 			state.ToolCallCount++
 			emitMeta(state)
+		}
+		// 需求2 条件(1)/初次提取：每个 tool_calls round 结束后评估并按需异步刷新会话记忆。
+		// 提取数据源用【真实模型线】state.ModelHistory（lockstep 追加，含工具调用与结果）。
+		if memoryOn {
+			s.maybeUpdateSessionMemoryMidLoop(conversation, user, state.ModelHistory, state.LastContextTokens, len(msg.ToolCalls))
 		}
 	}
 }

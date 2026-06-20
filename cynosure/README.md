@@ -108,6 +108,7 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
 - 长期记忆分为四类：`preference`（用户长期偏好、习惯与项目相关描述）、`feedback`（对 Agent 行为的纠正与肯定，body 含 `Why:` 与 `How to apply:`）、`project`（项目进展、决策、截止日期等不可从代码推导的动态，相对日期转为绝对日期）、`reference`（外部系统中信息的定位信息）。抽取时不会记录可从代码、Git 历史、调试上下文或 `CYNOSURE.MD` 直接获得的内容。
 - 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.cynosure/memory/<workspace-key>/sessions/<session_id>.md`，不会按轮次生成多个文件。
+- 记忆提取（长期记忆与会话记忆）基于**模型线**而非纯文本对话：渲染时包含完整交互——用户与助手文本、助手发起的工具调用（名称与参数）、工具结果（状态与内容），使记忆扎根于真实发生的交互。轮末提取与模型历史落库共用本轮压缩后的请求线（`lastRequestHistory` + 本轮最终 assistant）；循环中途提取则取 `state.ModelHistory`（会话循环内逐字 lockstep 追加的 user / assistant / tool 消息）。
 - 会话收尾更新只对当前项目当前会话加锁，锁 key 为 `项目名 + session_id`。
 
 ## 历史会话
@@ -392,4 +393,10 @@ docs/终端命令权限审批机制设计文档.md
 
 ```text
 docs/上下文压缩优化设计文档.md
+```
+
+会话记忆提取与更新机制（含提取数据源切换为模型线）设计文档位于：
+
+```text
+docs/会话记忆提取与更新机制调整设计文档.md
 ```

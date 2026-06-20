@@ -119,18 +119,6 @@ type ToolResultLogEntry struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-type ContextSummary struct {
-	ID                    string    `json:"id"`
-	ConversationID        string    `json:"conversation_id"`
-	UserID                string    `json:"user_id"`
-	SourceHistorySHA256   string    `json:"source_history_sha256"`
-	Strategy              string    `json:"strategy"`
-	EstimatedTokensBefore int       `json:"estimated_tokens_before"`
-	EstimatedTokensAfter  int       `json:"estimated_tokens_after"`
-	Summary               string    `json:"summary"`
-	CreatedAt             time.Time `json:"created_at"`
-}
-
 type SubagentMessage struct {
 	ID               string            `json:"id"`
 	RunID            string            `json:"run_id"`

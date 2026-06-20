@@ -45,6 +45,18 @@ type Request struct {
 	// ToolMaxResultSizeChars resolves the per-tool inline result limit. A nil
 	// resolver or non-positive result falls back to the default tool limit.
 	ToolMaxResultSizeChars func(toolName string) int
+	// ConversationMemoryBreakpoint is the message ID of the last message already
+	// folded into session memory (kept inclusively as an anchor). The
+	// ConversationMemoryStrategy keeps the tail from this message onward as the
+	// "uncompressed" messages. Empty means unknown — the strategy then defers to
+	// the full-history summarization fallback. It is loaded from the session
+	// memory file, not from in-memory state.
+	ConversationMemoryBreakpoint string
+	// DisplayHistory is a clone of the verbatim display history (state.History).
+	// ConversationMemoryStrategy and FullHistorySummarizationStrategy keep their
+	// retained tail from THIS list (not RequestHistory / the model line), so the
+	// preserved recent messages are the original, uncompressed ones.
+	DisplayHistory []storage.Message
 }
 
 func (r *Request) maxResultSizeChars(toolName string) int {
@@ -60,8 +72,6 @@ func (r *Request) maxResultSizeChars(toolName string) int {
 type Store interface {
 	CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
-	CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error
-	GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error)
 	ListConversationMemories(ctx context.Context, conversationID string) ([]storage.ConversationMemory, error)
 }
 

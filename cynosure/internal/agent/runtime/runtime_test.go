@@ -26,10 +26,11 @@ type fakeStore struct {
 	toolCalls            []storage.ToolCall
 	subagentMessages     []storage.SubagentMessage
 	persistedOutputs     []storage.PersistedOutput
-	contextSummaries     []storage.ContextSummary
 	memories             []storage.Memory
 	conversationMemories []storage.ConversationMemory
 	replacedConvMemories []storage.ConversationMemory
+	convBreakpoint       string
+	savedBreakpoints     []string
 	modelHistory         []storage.Message
 	modelHistoryExists   bool
 	modelHistoryErr      error
@@ -120,20 +121,6 @@ func (f *fakeStore) GetPersistedOutputByMessageHash(ctx context.Context, convers
 		}
 	}
 	return storage.PersistedOutput{}, errors.New("persisted output not found")
-}
-
-func (f *fakeStore) CreateContextSummary(ctx context.Context, summary storage.ContextSummary) error {
-	f.contextSummaries = append(f.contextSummaries, summary)
-	return nil
-}
-
-func (f *fakeStore) GetContextSummaryByHistoryHash(ctx context.Context, conversationID, userID, sourceHistorySHA256 string) (storage.ContextSummary, error) {
-	for _, c := range f.contextSummaries {
-		if c.ConversationID == conversationID && c.UserID == userID && c.SourceHistorySHA256 == sourceHistorySHA256 {
-			return c, nil
-		}
-	}
-	return storage.ContextSummary{}, errors.New("context summary not found")
 }
 
 func (f *fakeStore) ListRelevantMemories(ctx context.Context, userID string) ([]storage.Memory, error) {
@@ -243,6 +230,16 @@ func (f *fakeStore) ListConversationMemories(ctx context.Context, conversationID
 
 func (f *fakeStore) ReplaceConversationMemories(ctx context.Context, conversationID, userID string, items []storage.ConversationMemory) error {
 	f.replacedConvMemories = append(f.replacedConvMemories, items...)
+	return nil
+}
+
+func (f *fakeStore) LoadConversationMemoryBreakpoint(ctx context.Context, conversationID string) (string, error) {
+	return f.convBreakpoint, nil
+}
+
+func (f *fakeStore) SaveConversationMemoryBreakpoint(ctx context.Context, conversationID, breakpointID string) error {
+	f.convBreakpoint = breakpointID
+	f.savedBreakpoints = append(f.savedBreakpoints, breakpointID)
 	return nil
 }
 
