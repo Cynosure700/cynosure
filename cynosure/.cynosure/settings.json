@@ -8,7 +8,8 @@
       "ls *",
       "edit_file *",
       "multi_edit *",
-      "mkdir *"
+      "mkdir *",
+      "find *"
     ]
   }
 }

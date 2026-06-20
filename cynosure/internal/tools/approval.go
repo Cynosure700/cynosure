@@ -10,7 +10,7 @@ var approvalRequiredTools = map[string]struct{}{
 }
 
 // readOnlyBashCommands 是确定无副作用的查询/搜索类命令名集合，命中即免审批。
-// 不含 git（含 commit/push 写子命令）与 sed（含 -i 原地写），它们一律走审批。
+// 不含 git（含 commit/push 写子命令）
 var readOnlyBashCommands = map[string]struct{}{
 	"ls": {}, "pwd": {}, "echo": {}, "cat": {}, "head": {}, "tail": {},
 	"grep": {}, "rg": {}, "fgrep": {}, "egrep": {}, "find": {}, "wc": {},
@@ -18,8 +18,8 @@ var readOnlyBashCommands = map[string]struct{}{
 	"date": {}, "env": {}, "printenv": {}, "tree": {}, "du": {}, "df": {},
 	"basename": {}, "dirname": {}, "realpath": {}, "diff": {}, "cmp": {},
 	"sort": {}, "uniq": {}, "cut": {}, "awk": {}, "less": {}, "more": {},
-	"column": {}, "uname": {}, "hostname": {}, "cd": {},
-}
+	"column": {}, "uname": {}, "hostname": {}, "cd": {},"sed":{},
+	}
 
 // RequiresApproval 按工具维度判定该调用是否需要审批，并给出放行规则候选。
 //
