@@ -209,13 +209,13 @@ func renderCynosureMarkdownContext(ctx CynosureMarkdownContext) string {
 	}
 	if userContent != "" {
 		parts = append(parts, strings.Join([]string{
-			strings.TrimSpace(ctx.UserPath) + " 的内容（用户为所有项目配置的私人全局说明）：",
+			"用户全局说明：",
 			userContent,
 		}, "\n\n"))
 	}
 	if workspaceContent != "" {
 		parts = append(parts, strings.Join([]string{
-			strings.TrimSpace(ctx.WorkspacePath) + " 的内容（项目说明，已提交到代码库或工作区）：",
+			"项目说明：",
 			workspaceContent,
 		}, "\n\n"))
 	}

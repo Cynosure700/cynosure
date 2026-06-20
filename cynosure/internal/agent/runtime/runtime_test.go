@@ -1299,9 +1299,9 @@ func TestBuildSystemPromptIncludesCynosureMarkdownContext(t *testing.T) {
 	for _, want := range []string{
 		"<system-reminder>",
 		"# cynosureMd",
-		"/home/alice/.cynosure/CYNOSURE.MD 的内容（用户为所有项目配置的私人全局说明）：",
+		"用户全局说明：",
 		"# User Rule\n全局说明",
-		filepath.Join(cfg.WorkspaceRoot, ".cynosure", "CYNOSURE.MD") + " 的内容（项目说明，已提交到代码库或工作区）：",
+		"项目说明：",
 		"# Project Rule\n项目说明",
 	} {
 		if !contains(prompt, want) {
