@@ -26,7 +26,13 @@ func (s *Service) loadModelHistory(ctx context.Context, conversationID string, d
 }
 
 // compressContextBeforeLLM deep-copies the model history and runs the
-// compression pipeline, returning the request-only history for this round.
+// compression pipeline, returning the compressed real-message history for this
+// round. The caller assigns the result back into state.ModelHistory, so the
+// single real-message history always reflects the latest compression output
+// (in-memory == sent == persisted). The verbatim display history state.History
+// is never mutated (it is only cloned into req.DisplayHistory so summary /
+// conversation-memory strategies keep their retained tail from the original
+// messages).
 func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState) ([]storage.Message, error) {
 	requestHistory := cloneMessages(state.ModelHistory)
 	store, ok := s.Store.(compression.Store)

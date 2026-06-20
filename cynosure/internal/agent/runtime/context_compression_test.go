@@ -91,6 +91,56 @@ func TestCompressContextBeforeLLM_UsesToolRegistryResultLimit(t *testing.T) {
 	}
 }
 
+// --- ModelHistory carries compression output forward across rounds ---
+
+// TestModelHistory_CompressionWriteBackIsStableAcrossRounds verifies the
+// unified-history invariant: once a round's compression output is written back
+// into state.ModelHistory, re-running compression on that same line (the next
+// round's seed) keeps the persisted-output marker in place (idempotent) and
+// never resurrects the original oversized result, while the verbatim display
+// history stays untouched.
+func TestModelHistory_CompressionWriteBackIsStableAcrossRounds(t *testing.T) {
+	store := &fakeStore{}
+	cfg := config.AppConfig{LLM: config.Config{ModelID: "m"}}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	big := strings.Repeat("b", 300*1024)
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		compAssistantToolCallMsg("c1"),
+		compToolMsg("c1", "success", big),
+	}
+	state := &LoopState{Conversation: storage.Conversation{ID: "c"}, User: storage.User{ID: "u"}, History: history, ModelHistory: cloneMessages(history), SystemPrompt: "sys"}
+
+	// Round 1: compress and write back into ModelHistory (the main loop's job).
+	round1, err := service.compressContextBeforeLLM(context.Background(), state)
+	if err != nil {
+		t.Fatalf("compress round 1: %v", err)
+	}
+	state.ModelHistory = round1
+	if !strings.Contains(compResultOf(t, state.ModelHistory[2].Content), compression.PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected round 1 to compact tool result into a marker")
+	}
+
+	// Round 2: the next round seeds from the (already compressed) ModelHistory.
+	round2, err := service.compressContextBeforeLLM(context.Background(), state)
+	if err != nil {
+		t.Fatalf("compress round 2: %v", err)
+	}
+	state.ModelHistory = round2
+	got := compResultOf(t, state.ModelHistory[2].Content)
+	if !strings.Contains(got, compression.PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected round 2 to preserve the marker, got %q", got)
+	}
+	if strings.Contains(got, big) {
+		t.Fatalf("expected round 2 not to resurrect the original oversized result")
+	}
+	// Display history stays verbatim across rounds.
+	if compResultOf(t, state.History[2].Content) != big {
+		t.Fatalf("expected display history to remain untouched")
+	}
+}
+
 // --- loadModelHistory ---
 
 func TestLoadModelHistory_UsesStoredModelHistory(t *testing.T) {

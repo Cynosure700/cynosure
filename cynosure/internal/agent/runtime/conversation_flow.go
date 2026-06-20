@@ -107,7 +107,6 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	roundsSinceTodoWrite := 0
 	turnStart := time.Now()
 	var cumulativeReasoning strings.Builder
-	var lastRequestHistory []storage.Message
 
 	for {
 		round++
@@ -117,15 +116,16 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		if time.Since(turnStart) > mainAgentTurnTimeout {
 			return storage.Message{}, fmt.Errorf("main agent turn timed out after %v", mainAgentTurnTimeout)
 		}
-		requestHistory, err := s.compressContextBeforeLLM(ctx, state)
+		// 压缩结果写回唯一的真实消息历史 ModelHistory：内存态 = 发送态 = 落库态。
+		modelHistory, err := s.compressContextBeforeLLM(ctx, state)
 		if err != nil {
 			return storage.Message{}, err
 		}
-		lastRequestHistory = requestHistory
-		state.Messages = buildOpenAIMessages(state.SystemPrompt, requestHistory)
+		state.ModelHistory = modelHistory
+		state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 		estimator := compression.DefaultTokenEstimator{}
-		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, requestHistory, toolDefs)
+		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, state.ModelHistory, toolDefs)
 		state.LastContextBudget = estimator.ContextTokenBudget()
 		emitMeta(state)
 		req := openai.ChatCompletionRequest{
@@ -154,10 +154,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			// 会话结束：把本轮模型最终回复纳入上下文后重算，得到会话结束时的最终 token 用量，
-			// 覆盖请求前的估算值，确保存储与下发的都是最终用量。
+			// 会话结束：把本轮模型最终回复纳入真实消息历史后重算，得到会话结束时的最终
+			// token 用量，覆盖请求前的估算值，确保存储与下发的都是最终用量。
 			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
-			finalHistoryForEstimate := append(cloneMessages(lastRequestHistory), finalAssistant)
+			finalHistoryForEstimate := append(cloneMessages(state.ModelHistory), finalAssistant)
 			finalEstimator := compression.DefaultTokenEstimator{}
 			state.LastContextTokens = finalEstimator.EstimateRequestTokens(state.SystemPrompt, finalHistoryForEstimate, toolDefs)
 			state.LastContextBudget = finalEstimator.ContextTokenBudget()
@@ -165,15 +165,17 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {
 				return storage.Message{}, err
 			}
+			// 最终 assistant 追加进唯一的真实消息历史 ModelHistory（与 Stop 钩子把它追加进
+			// 展示历史 History 对称）；用带 ID/Meta 的 stopCtx.AssistantMessage，使断点 ID
+			// 与展示历史一致。落库与记忆提取统一以 ModelHistory（压缩后真实消息线）为源。
+			state.ModelHistory = append(state.ModelHistory, stopCtx.AssistantMessage)
 			if s.EnableMemory {
-				// 提取/会话记忆与落库共用本轮压缩后的请求线（lastRequestHistory + 本轮最终 assistant）。
-				finalModelHistory := append(cloneMessages(lastRequestHistory), stopCtx.AssistantMessage)
 				// 需求2 条件(2)/初次提取：轮次自然结束时评估是否更新会话记忆。
 				updateSession := false
 				if memoryOn {
 					updateSession = s.shouldUpdateSessionMemoryAtTurnEnd(conversation, state.LastContextTokens)
 				}
-				handedOff = s.scheduleMemoryWork(conversation, user, finalModelHistory, finalModelHistory, lockToken, stopRenew, memoryOn, updateSession, state.LastContextTokens)
+				handedOff = s.scheduleMemoryWork(conversation, user, state.ModelHistory, lockToken, stopRenew, memoryOn, updateSession, state.LastContextTokens)
 			}
 			return stopCtx.AssistantMessage, nil
 		}
