@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-// PersistedOutput is the runtime-agnostic view of a persisted tool output that
-// the read_persisted_output handler returns to the model.
+// PersistedOutput 是已持久化工具输出的与运行时无关的视图，
+// read_persisted_output 处理函数会将其返回给模型。
 type PersistedOutput struct {
 	ID            string
 	Kind          string
@@ -17,8 +17,8 @@ type PersistedOutput struct {
 	Content       string
 }
 
-// PersistedOutputReader retrieves a persisted output for the current
-// conversation. Implementations must enforce conversation/user scoping.
+// PersistedOutputReader 为当前会话检索已持久化的输出。
+// 实现必须强制执行会话/用户级别的作用域隔离。
 type PersistedOutputReader interface {
 	ReadPersistedOutput(ctx context.Context, id string) (PersistedOutput, error)
 }

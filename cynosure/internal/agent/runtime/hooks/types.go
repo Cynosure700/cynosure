@@ -48,14 +48,11 @@ type LoopState struct {
 	History     []storage.Message
 	UserMessage storage.Message
 
-	// ModelHistory is the single "real message history" actually sent to the
-	// model. It starts from the previous turn's persisted compressed history,
-	// is appended in lockstep with History during the loop, and is overwritten
-	// each round by the compression pipeline's output (so in-memory == sent ==
-	// persisted). It is the unified source for both compression and memory
-	// extraction. History stays full and verbatim for display/persistence;
-	// ModelHistory may carry compression artifacts (summary preamble,
-	// placeholders, persisted-output markers, trimmed messages).
+	// ModelHistory 是实际发送给模型的那条唯一“真实消息历史”。它从上一回合
+	// 持久化下来的压缩历史开始，在循环中与 History 同步追加，并在每一轮被压缩
+	// 流水线的输出覆盖（因此内存态 == 发送态 == 落库态）。它是压缩与记忆提取
+	// 的统一数据源。History 为了展示/持久化而保持完整且逐字；ModelHistory 可能
+	// 携带压缩产物（摘要前言、占位符、persisted-output 标记、被裁剪的消息）。
 	ModelHistory []storage.Message
 
 	SkillSnapshot *agenttools.SkillSnapshot

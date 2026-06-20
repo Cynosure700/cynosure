@@ -93,16 +93,16 @@ func RunEditFromRoot(root, path, oldText, newText string) (string, error) {
 	return fmt.Sprintf("Edited %s", path), nil
 }
 
-// Edit is a single find-and-replace operation for RunMultiEditFromRoot.
+// Edit 是供 RunMultiEditFromRoot 使用的单次查找替换操作。
 type Edit struct {
 	OldString  string
 	NewString  string
 	ReplaceAll bool
 }
 
-// RunMultiEditFromRoot applies multiple edits to a single file atomically: all
-// edits are applied to an in-memory copy in order, and the file is written
-// back only if every edit succeeds. Any failure aborts without touching disk.
+// RunMultiEditFromRoot 以原子方式对单个文件应用多处编辑：所有编辑按顺序
+// 应用到内存中的副本上，只有当每一处编辑都成功时才将文件写回。
+// 任何一处失败都会中止操作，且不触碰磁盘。
 func RunMultiEditFromRoot(root, path string, edits []Edit) (string, error) {
 	if len(edits) == 0 {
 		return "", fmt.Errorf("edits is required")
@@ -133,8 +133,8 @@ func RunMultiEditFromRoot(root, path string, edits []Edit) (string, error) {
 	return fmt.Sprintf("Applied %d edits to %s", len(edits), path), nil
 }
 
-// applyEdit performs a single in-memory find-and-replace, returning an error
-// when oldText is empty, equals newText, or is not present in content.
+// applyEdit 在内存中执行单次查找替换；当 oldText 为空、等于 newText、
+// 或在 content 中不存在时返回错误。
 func applyEdit(content, oldText, newText string, replaceAll bool) (string, error) {
 	if oldText == "" {
 		return "", fmt.Errorf("old_string is required")

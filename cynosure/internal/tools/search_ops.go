@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// ignoredDirNames are directories skipped by grep/glob to avoid noise and
-// performance problems when traversing large trees.
+// ignoredDirNames 是 grep/glob 遍历时跳过的目录，用于在遍历大型目录树时
+// 避免噪声和性能问题。
 var ignoredDirNames = map[string]struct{}{
 	".git":         {},
 	"node_modules": {},
@@ -21,9 +21,8 @@ var ignoredDirNames = map[string]struct{}{
 
 const defaultSearchHeadLimit = 100
 
-// RunGrepFromRoot searches file contents under a workspace-constrained path
-// using a Go regexp. It supports three output modes: files_with_matches
-// (default), content and count.
+// RunGrepFromRoot 使用 Go 正则在受工作区约束的路径下搜索文件内容。
+// 它支持三种输出模式：files_with_matches（默认）、content 和 count。
 func RunGrepFromRoot(root, searchPath, pattern, globPattern, outputMode string, ignoreCase, showLineNumbers bool, headLimit int) (string, error) {
 	if strings.TrimSpace(pattern) == "" {
 		return "", fmt.Errorf("pattern is required")
@@ -159,8 +158,8 @@ func grepCount(re *regexp.Regexp, root string, files []string, headLimit int) st
 	return strings.Join(lines, "\n")
 }
 
-// RunGlobFromRoot returns files matching a glob pattern under searchPath,
-// sorted by modification time (newest first).
+// RunGlobFromRoot 返回 searchPath 下匹配 glob 模式的文件，
+// 按修改时间排序（最新的在前）。
 func RunGlobFromRoot(searchPath, pattern string, headLimit int) (string, error) {
 	if strings.TrimSpace(pattern) == "" {
 		return "", fmt.Errorf("pattern is required")
@@ -222,8 +221,7 @@ func RunGlobFromRoot(searchPath, pattern string, headLimit int) (string, error) 
 	return out, nil
 }
 
-// RunLsFromRoot lists immediate entries of a directory, skipping any entry
-// whose basename matches an ignore glob.
+// RunLsFromRoot 列出某个目录的直接子项，跳过其基名匹配任一 ignore glob 的条目。
 func RunLsFromRoot(dirPath string, ignore []string) (string, error) {
 	info, err := os.Stat(dirPath)
 	if err != nil {
@@ -266,8 +264,8 @@ func matchesAnyGlob(patterns []string, name string) bool {
 	return false
 }
 
-// readTextFile reads a file and reports whether it looks like text (no NUL
-// byte). Binary files and unreadable files are skipped (ok=false).
+// readTextFile 读取文件并判断它是否看起来像文本（不含 NUL 字节）。
+// 二进制文件和无法读取的文件会被跳过（ok=false）。
 func readTextFile(path string) ([]byte, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -289,14 +287,14 @@ func relDisplayPath(root, path string) string {
 	return path
 }
 
-// matchGlob matches a relative slash-separated path against a glob pattern
-// supporting **, *, ? and [...] segments. ** matches across directory
-// separators; * and ? match within a single segment.
+// matchGlob 将一个以斜杠分隔的相对路径与 glob 模式进行匹配，
+// 支持 **、*、? 和 [...] 片段。** 可跨目录分隔符匹配；
+// * 和 ? 仅在单个片段内匹配。
 func matchGlob(pattern, name string) bool {
 	pattern = filepath.ToSlash(pattern)
 	name = filepath.ToSlash(name)
-	// A pattern without a slash matches against the basename when the
-	// candidate carries directory components (e.g. "*.go" vs "a/b/c.go").
+	// 当候选路径带有目录部分时，不含斜杠的模式将与其基名进行匹配
+	//（例如 "*.go" 对 "a/b/c.go"）。
 	if !strings.Contains(pattern, "/") && strings.Contains(name, "/") {
 		name = name[strings.LastIndex(name, "/")+1:]
 	}
@@ -305,14 +303,14 @@ func matchGlob(pattern, name string) bool {
 	return matchSegments(pSegs, nSegs)
 }
 
-// matchSegments recursively matches pattern segments against name segments.
-// A "**" pattern segment matches zero or more name segments.
+// matchSegments 递归地将模式片段与名称片段进行匹配。
+// "**" 模式片段可匹配零个或多个名称片段。
 func matchSegments(pat, name []string) bool {
 	if len(pat) == 0 {
 		return len(name) == 0
 	}
 	if pat[0] == "**" {
-		// Match zero name segments, or consume one and retry.
+		// 匹配零个名称片段，或消费一个名称片段后再重试。
 		for i := 0; i <= len(name); i++ {
 			if matchSegments(pat[1:], name[i:]) {
 				return true

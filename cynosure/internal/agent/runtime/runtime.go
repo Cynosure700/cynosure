@@ -25,7 +25,6 @@ type conversationStore interface {
 	GetConversationCache(ctx context.Context, conversationID string) ([]storage.Message, bool, error)
 	ListMessagesByConversation(ctx context.Context, conversationID string, limit int) ([]storage.Message, error)
 	CreateToolCall(ctx context.Context, tc storage.ToolCall) error
-	CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error
 	CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error
 	GetPersistedOutputForConversation(ctx context.Context, id, userID, conversationID string) (storage.PersistedOutput, error)
 	GetPersistedOutputByMessageHash(ctx context.Context, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error)
@@ -72,7 +71,7 @@ type Service struct {
 	injectedMemories map[string]map[string]injectedMemoryMeta
 
 	sessionMemoryMu       sync.Mutex
-	sessionMemoryProgress map[string]*sessionMemoryProgress // key=conversationID
+	sessionMemoryProgress map[string]*sessionMemoryProgress // key=会话 ID
 }
 
 // injectedMemoryMeta 记录某条记忆在某会话中已注入时的文件修改时间，用于会话内去重

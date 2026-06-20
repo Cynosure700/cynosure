@@ -10,21 +10,21 @@ import (
 )
 
 const (
-	// statusOverloaded is the non-standard "server overloaded" status used by
-	// some LLM gateways (no net/http constant exists for 529).
+	// statusOverloaded 是部分 LLM 网关使用的非标准"服务器过载"状态码
+	// （net/http 中没有对应 529 的常量）。
 	statusOverloaded = 529
 
-	// retryBaseDelay is the wait before the first transient retry.
+	// retryBaseDelay 是首次瞬时重试前的等待时间。
 	retryBaseDelay = 500 * time.Millisecond
-	// retryMaxDelay caps the exponential backoff.
+	// retryMaxDelay 限制指数退避的最大上限。
 	retryMaxDelay = 30 * time.Second
-	// maxTransientRetries is the maximum number of retries for 429/529.
+	// maxTransientRetries 是针对 429/529 的最大重试次数。
 	maxTransientRetries = 10
 )
 
-// APIError is a typed error carrying the HTTP status code returned by the LLM
-// API, so callers can distinguish 413 (context overflow) and 429/529
-// (transient) from other failures.
+// APIError 是携带 LLM API 返回的 HTTP 状态码的类型化错误，
+// 便于调用方区分 413（上下文溢出）、429/529（瞬时错误）
+// 与其他失败情况。
 type APIError struct {
 	StatusCode int
 	Body       string
@@ -34,9 +34,9 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("API error (status %d): %s", e.StatusCode, e.Body)
 }
 
-// IsContextOverflow reports whether err is a 413 context-overflow error. The
-// HTTP 413 status code is the primary signal; a "prompt_too_long" body is used
-// as a fallback in case a gateway rewrites the status code.
+// IsContextOverflow 报告 err 是否为 413 上下文溢出错误。
+// HTTP 413 状态码是主要判断信号；当网关重写状态码时，
+// 会以响应体中是否包含 "prompt_too_long" 作为兜底判断。
 func IsContextOverflow(err error) bool {
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
@@ -48,14 +48,14 @@ func IsContextOverflow(err error) bool {
 	return strings.Contains(apiErr.Body, "prompt_too_long")
 }
 
-// isRetryableStatus reports whether a status code is a transient failure that
-// should be retried with backoff (429 rate limit, 529 overloaded).
+// isRetryableStatus 报告某状态码是否为应当以退避方式重试的瞬时失败
+// （429 限流、529 过载）。
 func isRetryableStatus(code int) bool {
 	return code == http.StatusTooManyRequests || code == statusOverloaded
 }
 
-// backoffDelay returns the wait before retry attempt n (n starts at 0):
-// retryBaseDelay * 2^n with up to 50% jitter, capped at retryMaxDelay.
+// backoffDelay 返回第 n 次重试前的等待时间（n 从 0 开始）：
+// retryBaseDelay * 2^n，并附加最多 50% 的抖动，上限为 retryMaxDelay。
 func backoffDelay(attempt int) time.Duration {
 	delay := retryBaseDelay << attempt
 	if delay <= 0 || delay > retryMaxDelay {

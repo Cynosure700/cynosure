@@ -17,13 +17,13 @@ const (
 	defaultSafetyMargin = 8 * 1024
 )
 
-// TokenEstimator estimates the token footprint of an outgoing request.
+// TokenEstimator 估算一个外发请求的 token 占用量。
 type TokenEstimator interface {
 	EstimateRequestTokens(systemPrompt string, history []storage.Message, tools []openai.Tool) int
 	ContextTokenBudget() int
 }
 
-// DefaultTokenEstimator uses a conservative ceil(utf8Bytes/3) approximation.
+// DefaultTokenEstimator 使用保守的 ceil(utf8Bytes/3) 近似估算。
 type DefaultTokenEstimator struct{}
 
 func (DefaultTokenEstimator) ContextTokenBudget() int {

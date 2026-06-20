@@ -318,15 +318,6 @@ func (sl *SkillLoader) Summaries() []SkillSummary {
 	return summaries
 }
 
-func (sl *SkillLoader) GetContent(name string) (string, error) {
-	entry, err := sl.GetEntry(name)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("<skill name=\"%s\">\n%s\n</skill>", name, entry.Body), nil
-}
-
 func (sl *SkillLoader) GetEntry(name string) (*SkillEntry, error) {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()

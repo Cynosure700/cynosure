@@ -22,7 +22,6 @@ type ToolContext struct {
 	User                  storage.User
 	Conversation          storage.Conversation
 	Skills                *agenttools.SkillSnapshot
-	ParentToolCallID      string
 	PersistedOutputReader agenttools.PersistedOutputReader
 	Todos                 []agenttools.TodoItem
 }
@@ -50,9 +49,8 @@ func NewToolRegistry(cfg config.AppConfig) *ToolRegistry {
 	}
 }
 
-// appendPersistedOutputTool always exposes read_persisted_output to the main
-// agent so that <persisted-output> markers produced by context compression
-// remain readable regardless of the configured AllowedTools list.
+// appendPersistedOutputTool 始终向主 Agent 暴露 read_persisted_output，使得上下文
+// 压缩产生的 <persisted-output> 标记无论配置的 AllowedTools 列表如何，都保持可读。
 func appendPersistedOutputTool(defs []openai.Tool) []openai.Tool {
 	for _, def := range defs {
 		if def.Function != nil && def.Function.Name == agenttools.ReadPersistedOutputToolName {
@@ -291,9 +289,8 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
 }
 
-// withWebProcessor injects an LLM-backed processor used by the web_fetch tool
-// to summarize/extract from fetched content. When no LLM is configured the
-// context is returned unchanged and web_fetch falls back to raw text.
+// withWebProcessor 注入一个由 LLM 支撑的处理器，供 web_fetch 工具对抓取到的内容
+// 进行摘要/提取。当未配置 LLM 时，原样返回 context，web_fetch 回退到原始文本。
 func (s *Service) withWebProcessor(ctx context.Context) context.Context {
 	if s.LLM == nil {
 		return ctx

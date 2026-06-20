@@ -15,13 +15,13 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// Client is the minimal chat-completion interface the runtime depends on.
+// Client 是 runtime 依赖的最小化聊天补全接口。
 type Client interface {
 	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
 	CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (ChatCompletionStream, error)
 }
 
-// ChatCompletionStream is a streamed chat-completion response.
+// ChatCompletionStream 是流式聊天补全响应。
 type ChatCompletionStream interface {
 	Recv() (openai.ChatCompletionStreamResponse, error)
 	Close() error
@@ -33,7 +33,7 @@ type deepseekClient struct {
 	http    *http.Client
 }
 
-// NewDeepseekClient returns a Client backed by the DeepSeek chat-completions API.
+// NewDeepseekClient 返回一个基于 DeepSeek 聊天补全 API 实现的 Client。
 func NewDeepseekClient(baseURL, apiKey string) Client {
 	return &deepseekClient{
 		baseURL: baseURL,
@@ -42,8 +42,8 @@ func NewDeepseekClient(baseURL, apiKey string) Client {
 	}
 }
 
-// buildRequestBody assembles the DeepSeek request body, passing through
-// max_tokens when set so callers can control/override the output budget.
+// buildRequestBody 组装 DeepSeek 请求体，在设置了 max_tokens 时透传该值，
+// 以便调用方控制/覆盖输出预算。
 func buildRequestBody(req openai.ChatCompletionRequest, stream bool) map[string]any {
 	body := map[string]any{
 		"model":            req.Model,
@@ -61,9 +61,8 @@ func buildRequestBody(req openai.ChatCompletionRequest, stream bool) map[string]
 	return body
 }
 
-// retryTransient runs do until it succeeds, returns a non-retryable error, or
-// the transient-retry budget is exhausted. 429/529 are retried with
-// exponential backoff plus jitter; ctx cancellation aborts immediately.
+// retryTransient 反复执行 do，直到成功、返回不可重试错误，或瞬时重试预算耗尽。
+// 429/529 会以指数退避加抖动的方式重试；ctx 被取消时立即中止。
 func retryTransient[T any](ctx context.Context, do func() (T, error)) (T, error) {
 	var zero T
 	for attempt := 0; ; attempt++ {

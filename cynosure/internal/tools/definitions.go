@@ -212,8 +212,8 @@ var baseToolSpecs = []ToolSpec{
 
 var baseToolDefs = toolDefsFromSpecs(baseToolSpecs)
 
-// webSearchToolSpec is defined separately because it is not enabled by default;
-// it is exposed in AllToolDefs so users can opt in via configuration.
+// webSearchToolSpec 单独定义，因为它默认不启用；
+// 它会暴露在 AllToolDefs 中，以便用户通过配置选择启用。
 var webSearchToolSpec = toolSpec("web_search", "Search the web and use the results to inform responses. Provides up-to-date information for current events and recent data.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
@@ -235,9 +235,8 @@ var spawnSubagentToolSpec = toolSpec("spawn_subagent", "Spawn a child agent with
 })
 var spawnSubagentToolDef = spawnSubagentToolSpec.Definition
 
-// ReadPersistedOutputToolName is exposed automatically alongside context
-// compression so the model can fetch the full content behind a
-// <persisted-output> marker when the inline preview is insufficient.
+// ReadPersistedOutputToolName 会随上下文压缩自动一并暴露，
+// 以便当内联预览不足时，模型能获取 <persisted-output> 标记背后的完整内容。
 const ReadPersistedOutputToolName = "read_persisted_output"
 
 var ReadPersistedOutputToolSpec = toolSpec(ReadPersistedOutputToolName, "Read a chunk of a persisted tool output by id when a <persisted-output> marker preview is insufficient. Only outputs from the current conversation are accessible.", map[string]any{
@@ -251,10 +250,9 @@ var ReadPersistedOutputToolSpec = toolSpec(ReadPersistedOutputToolName, "Read a 
 })
 var ReadPersistedOutputToolDef = ReadPersistedOutputToolSpec.Definition
 
-// UpdateMemoryToolName / DeleteMemoryToolName let the model maintain long-term
-// project memories that turn out to be wrong or outdated. They are executed in
-// the runtime layer (not the stateless Dispatch) because memory files live
-// outside the workspace and must be kept in sync with MEMORY.md.
+// UpdateMemoryToolName / DeleteMemoryToolName 让模型可以维护那些被证明
+// 错误或过时的长期项目记忆。它们在运行时层执行（而非无状态的 Dispatch），
+// 因为记忆文件位于工作区之外，且必须与 MEMORY.md 保持同步。
 const (
 	UpdateMemoryToolName = "update_memory"
 	DeleteMemoryToolName = "delete_memory"

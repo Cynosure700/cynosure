@@ -57,9 +57,8 @@ func currentWorkingDirFromContext(ctx context.Context) string {
 	return env.WorkspaceRoot
 }
 
-// WebProcessor processes fetched web content with an LLM given a user prompt.
-// It is injected by the runtime layer so the tools package does not depend on
-// the llm/runtime packages.
+// WebProcessor 根据用户 prompt 用 LLM 处理获取到的网页内容。
+// 它由运行时层注入，从而使 tools 包不依赖 llm/runtime 包。
 type WebProcessor func(ctx context.Context, prompt, content string) (string, error)
 
 const webProcessorContextKey contextKey = "web_processor"

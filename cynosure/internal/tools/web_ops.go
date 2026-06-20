@@ -23,9 +23,9 @@ var (
 	blankLinesRe  = regexp.MustCompile(`\n{3,}`)
 )
 
-// RunWebFetch fetches a URL, converts the HTML body to plain text and, when a
-// WebProcessor is available in ctx, runs the prompt over that text via the
-// LLM. Without a processor it returns the cleaned text directly.
+// RunWebFetch 获取一个 URL，将 HTML 正文转换为纯文本；当 ctx 中存在
+// WebProcessor 时，通过 LLM 对该文本运行 prompt。若没有处理器，则直接返回
+// 清洗后的文本。
 func RunWebFetch(ctx context.Context, rawURL, prompt string) (string, error) {
 	if strings.TrimSpace(rawURL) == "" {
 		return "", fmt.Errorf("url is required")
@@ -86,8 +86,7 @@ func fetchAndCleanText(ctx context.Context, rawURL string) (string, error) {
 	return text, nil
 }
 
-// htmlToText strips scripts/styles and tags, decodes entities and collapses
-// whitespace into readable plain text.
+// htmlToText 去除脚本/样式与标签，解码实体并将空白折叠成可读的纯文本。
 func htmlToText(s string) string {
 	s = scriptStyleRe.ReplaceAllString(s, " ")
 	s = htmlTagRe.ReplaceAllString(s, " ")
@@ -102,8 +101,8 @@ func htmlToText(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// RunWebSearch is a placeholder until a search backend is configured. It
-// reports clearly that the capability is unavailable so the model can adapt.
+// RunWebSearch 在配置搜索后端之前只是一个占位实现。它会明确报告该能力不可用，
+// 以便模型据此调整。
 func RunWebSearch(ctx context.Context, query string) (string, error) {
 	if strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("query is required")

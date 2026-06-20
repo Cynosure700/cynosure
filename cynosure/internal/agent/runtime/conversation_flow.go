@@ -24,26 +24,24 @@ const (
 	reasoningDeltaEvent  = "reasoning_delta"
 	toolCallStartEvent   = "tool_call_start"
 	toolCallDoneEvent    = "tool_call_done"
-	maxRound             = 300
+	maxRound             = 1000
 	toolArgsPreviewMax   = 160
 	toolResultPreviewMax = 300
 
-	// mainAgentTurnTimeout bounds a single main-agent turn. It is a soft
-	// boundary checked between rounds.
+	// mainAgentTurnTimeout 限定单个主 Agent 回合的耗时上限，它是在各轮之间
+	// 进行检查的软边界。
 	mainAgentTurnTimeout = 24 * time.Hour
 
-	// defaultMaxTokens is the per-request output budget; on the first
-	// truncation it is upgraded to truncationMaxTokens.
+	// defaultMaxTokens 是单次请求的输出预算；在首次发生截断时会被升级为
+	// truncationMaxTokens。
 	defaultMaxTokens = 8000
-	// truncationMaxTokens is the upgraded output budget after the first
-	// truncation (8x the default).
+	// truncationMaxTokens 是首次截断后升级的输出预算（为默认值的 8 倍）。
 	truncationMaxTokens = 64 * 1024
-	// maxResumeAttempts is how many continuation requests are issued after the
-	// upgraded budget still truncates.
+	// maxResumeAttempts 表示在升级预算后仍发生截断时，最多发起的续写请求次数。
 	maxResumeAttempts = 3
 
-	// truncationResumePrompt is injected as a user message to make the model
-	// continue an output that was cut off by the token limit.
+	// truncationResumePrompt 作为一条 user 消息注入，用于让模型继续输出被
+	// token 上限截断的内容。
 	truncationResumePrompt = `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`
 )
 
@@ -196,7 +194,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 				return storage.Message{Role: "assistant", Content: "操作已被拒绝，已结束本轮。"}, nil
 			}
 			emitToolCallStart(state, toolCtx)
-			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, ParentToolCallID: tc.ID, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID), Todos: state.Todos}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
+			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID), Todos: state.Todos}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
 			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
 				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
 			}
@@ -323,19 +321,16 @@ func truncatePreview(text string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
-// runModelRoundWithRecovery wraps runModelRoundStream with truncation and
-// context-overflow recovery. Transient 429/529 retries are handled inside the
-// LLM client and are transparent here.
+// runModelRoundWithRecovery 在 runModelRoundStream 之上封装了截断与上下文溢出
+// 的恢复逻辑。瞬时的 429/529 重试在 LLM 客户端内部处理，对这里是透明的。
 //
-//   - Truncation (finish_reason == length): the first time, the output budget is
-//     upgraded to truncationMaxTokens and the same request is retried WITHOUT
-//     touching messages (the partial output is discarded). If it still
-//     truncates, up to maxResumeAttempts continuation requests are issued, each
-//     appending the truncated text plus a resume prompt; segments are streamed
-//     and concatenated into one assistant message.
-//   - Context overflow (HTTP 413): reactiveCompact is run once and the request
-//     rebuilt from the compacted history, then retried. A second overflow is
-//     returned to the caller (handled by the existing fallback boundary).
+//   - 截断（finish_reason == length）：首次发生时，把输出预算升级为
+//     truncationMaxTokens，并在不改动 messages 的情况下重试同一请求（丢弃
+//     已产生的部分输出）。若仍然截断，则最多发起 maxResumeAttempts 次续写
+//     请求，每次都追加被截断的文本以及一条续写提示；各分段以流式方式输出
+//     并拼接为一条 assistant 消息。
+//   - 上下文溢出（HTTP 413）：执行一次 reactiveCompact，从压缩后的历史重建
+//     请求并重试。若再次溢出，则返回给调用方（由既有的兜底边界处理）。
 func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
 	cur := req
 	upgraded := false
@@ -381,15 +376,15 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 			return msg, finishReason, nil
 		}
 
-		// Truncated output.
+		// 输出被截断。
 		if !upgraded {
-			// Discard the partial output, upgrade the budget, retry unchanged.
+			// 丢弃部分输出，升级预算，原样重试。
 			upgraded = true
 			cur.MaxTokens = truncationMaxTokens
 			continue
 		}
 		if resumeAttempts >= maxResumeAttempts {
-			// Best-effort: emit and return what we have so far.
+			// 尽力而为：输出并返回目前已获得的内容。
 			flushContentDeltas(state, deltas)
 			logger.Warn(fmt.Sprintf("truncation resume exhausted conversation=%s after %d attempts", state.Conversation.ID, resumeAttempts))
 			return openai.ChatCompletionMessage{
@@ -398,7 +393,7 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 				ReasoningContent: accumulatedReasoning.String() + msg.ReasoningContent,
 			}, finishReason, nil
 		}
-		// Keep this partial segment and ask the model to continue.
+		// 保留这一段部分输出，并要求模型继续。
 		flushContentDeltas(state, deltas)
 		accumulated.WriteString(msg.Content)
 		accumulatedReasoning.WriteString(msg.ReasoningContent)

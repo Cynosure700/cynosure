@@ -6,13 +6,13 @@ import (
 	"fmt"
 )
 
-// New returns a random, collision-resistant ID with the given prefix,
-// formatted as "<prefix>_<24 hex chars>".
+// New 返回带指定前缀的随机抗碰撞 ID，
+// 格式为 "<prefix>_<24 位十六进制字符>"。
 func New(prefix string) string {
 	return prefix + "_" + Hex()
 }
 
-// Hex returns a random 24-character hex string (12 random bytes).
+// Hex 返回一个随机的 24 字符十六进制字符串（由 12 个随机字节生成）。
 func Hex() string {
 	buf := make([]byte, 12)
 	if _, err := rand.Read(buf); err != nil {
@@ -21,7 +21,7 @@ func Hex() string {
 	return hex.EncodeToString(buf)
 }
 
-// UUID returns a random RFC 4122 version 4 UUID string.
+// UUID 返回一个随机的 RFC 4122 版本 4 UUID 字符串。
 func UUID() string {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {

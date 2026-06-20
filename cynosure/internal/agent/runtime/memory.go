@@ -32,8 +32,8 @@ const (
 	maxMemoryNameRunes       = 80
 	maxMemoryDescRunes       = 300
 	maxMemoryBodyRunes       = 2000
-	// memoryIndexMaxLines mirrors the store-side limit, used only for the
-	// truncation warning text injected into the system prompt.
+	// memoryIndexMaxLines 与存储侧的上限保持一致，仅用于注入系统提示词中的
+	// 截断警告文本。
 	memoryIndexMaxLines = 200
 )
 
@@ -76,10 +76,9 @@ type extractedMemory struct {
 	Body        string `json:"body"`
 }
 
-// extractMemories runs once at the end of a conversation turn: it asks the LLM
-// to extract the four kinds of long-term memories from the dialogue, persists
-// them, and triggers consolidation/pruning by type. It is best-effort: failures
-// are logged and swallowed so the user-facing response is never affected.
+// extractMemories 在一个会话回合结束时运行一次：它请求 LLM 从对话中提取四类
+// 长期记忆，将其持久化，并按类型触发去重/淘汰。它是尽力而为的：任何失败都会
+// 被记录并吞掉，从而绝不影响面向用户的响应。
 func (s *Service) extractMemories(ctx context.Context, user storage.User, history []storage.Message) {
 	if s.LLM == nil {
 		return
@@ -179,9 +178,8 @@ func (s *Service) maybeRunConsolidation(ctx context.Context, user storage.User) 
 	}
 }
 
-// consolidateViaLLM feeds the full memory list to the model and parses the
-// refined complete list. Returns nil on failure so the caller leaves data
-// untouched.
+// consolidateViaLLM 把完整的记忆列表喂给模型，并解析出精炼后的完整列表。
+// 失败时返回 nil，使调用方保持数据不变。
 func (s *Service) consolidateViaLLM(ctx context.Context, typeLabel, typeValue string, items []storage.Memory) []storage.Memory {
 	if s.LLM == nil {
 		return nil
@@ -437,9 +435,8 @@ func humanizeRelativeTime(t, now time.Time) string {
 	}
 }
 
-// parseExtractedMemories extracts a JSON array of memory objects from model
-// output, tolerating surrounding code fences or prose, then validates types
-// and truncates fields.
+// parseExtractedMemories 从模型输出中提取一个记忆对象的 JSON 数组，容忍其周围
+// 的代码围栏或散文，然后校验类型并截断各字段。
 func parseExtractedMemories(raw string) []extractedMemory {
 	trimmed := extractJSONArray(raw)
 	if trimmed == "" {
@@ -466,7 +463,7 @@ func parseExtractedMemories(raw string) []extractedMemory {
 	return result
 }
 
-// parseSelectedIDs parses a JSON array of integer indices from model output.
+// parseSelectedIDs 从模型输出中解析一个整数下标的 JSON 数组。
 func parseSelectedIDs(raw string) []int {
 	trimmed := extractJSONArray(raw)
 	if trimmed == "" {
@@ -479,8 +476,8 @@ func parseSelectedIDs(raw string) []int {
 	return parsed
 }
 
-// pickScannedByIndex resolves indices into scanned candidates, dropping
-// out-of-range and duplicate indices, capped at max.
+// pickScannedByIndex 把下标解析为扫描得到的候选项，丢弃越界与重复的下标，
+// 并以 max 为上限截断。
 func pickScannedByIndex(all []storage.ScannedMemory, indices []int, max int) []storage.ScannedMemory {
 	seen := make(map[int]struct{})
 	result := make([]storage.ScannedMemory, 0, len(indices))
@@ -567,11 +564,10 @@ func renderMemoryListForPrompt(items []storage.Memory) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderModelHistoryForMemory builds a transcript of the model history for
-// memory extraction. Unlike a text-only dialogue, it includes the full
-// interaction: user/assistant text, the assistant's tool calls (name +
-// arguments), and tool results (status + result), so memories are grounded in
-// what actually happened. It is capped by maxMemoryTranscriptChars.
+// renderModelHistoryForMemory 为记忆提取构建模型历史的文字记录。与纯文本对话
+// 不同，它包含完整的交互：user/assistant 文本、assistant 的工具调用（名称 +
+// 参数）以及工具结果（状态 + 结果），从而让记忆扎根于实际发生的事情。它受
+// maxMemoryTranscriptChars 限制其长度。
 func renderModelHistoryForMemory(history []storage.Message) string {
 	var b strings.Builder
 	for _, msg := range history {

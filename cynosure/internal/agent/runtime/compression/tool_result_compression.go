@@ -15,21 +15,19 @@ import (
 
 const toolResultCompressionStrategyName = "tool_result_compression"
 
-// ToolResultCompressionStrategy persists oversized tool_result outputs from the
-// latest user turn and replaces their inline content with a <persisted-output>
-// marker plus a short preview.
+// ToolResultCompressionStrategy 将最近用户回合中超大的 tool_result 输出持久化，
+// 并把它们的内联内容替换为一个 <persisted-output> 标记加一段简短预览。
 type ToolResultCompressionStrategy struct{}
 
 func (s *ToolResultCompressionStrategy) Name() string { return toolResultCompressionStrategyName }
 
-// toolResultMessageContent is the JSON wrapper used by tool messages.
+// toolResultMessageContent 是 tool 消息所使用的 JSON 包装结构。
 type toolResultMessageContent struct {
 	Status string `json:"status"`
 	Result string `json:"result"`
 }
 
-// rebuildToolResult reassembles a tool message content, preserving the JSON
-// wrapper and status when the original was JSON.
+// rebuildToolResult 重新组装 tool 消息内容，当原始内容为 JSON 时保留 JSON 包装与 status。
 func rebuildToolResult(status, result string, isJSON bool) string {
 	if !isJSON {
 		return result
@@ -45,8 +43,7 @@ func isCompactedResult(result string) bool {
 	return result == earlierToolResultPlaceholder || strings.Contains(result, PersistedOutputMarkerPrefix)
 }
 
-// latestUserTurnToolIndexes returns the indexes of tool messages that appear
-// after the last user message.
+// latestUserTurnToolIndexes 返回出现在最后一条用户消息之后的 tool 消息的下标。
 func latestUserTurnToolIndexes(history []storage.Message) []int {
 	lastUser := -1
 	for i := len(history) - 1; i >= 0; i-- {

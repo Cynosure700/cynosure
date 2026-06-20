@@ -4,7 +4,6 @@ import "time"
 
 type User struct {
 	ID            string    `json:"id"`
-	Email         string    `json:"email"`
 	Username      string    `json:"username"`
 	MemoryEnabled bool      `json:"memory_enabled"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -29,14 +28,12 @@ type MCPServer struct {
 }
 
 type Conversation struct {
-	ID            string    `json:"id"`
-	SessionID     string    `json:"session_id,omitempty"`
-	UserID        string    `json:"user_id"`
-	RootMessageID string    `json:"root_message_id"`
-	Title         string    `json:"title"`
-	HistoryJSON   string    `json:"-"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id,omitempty"`
+	UserID    string    `json:"user_id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ResumableSession struct {
@@ -49,7 +46,7 @@ type ResumableSession struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// 该表已经不使用，作为存储的结构体，用于存储消息历史
+// Message 是单条对话消息的存储结构，用于消息历史的编解码与展示。
 type Message struct {
 	ID               string            `json:"id"`
 	ConversationID   string            `json:"conversation_id"`
@@ -117,21 +114,6 @@ type ToolResultLogEntry struct {
 	Result         string    `json:"result"`
 	AuditSummary   string    `json:"audit_summary,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
-}
-
-type SubagentMessage struct {
-	ID               string            `json:"id"`
-	RunID            string            `json:"run_id"`
-	ParentToolCallID string            `json:"parent_tool_call_id"`
-	ConversationID   string            `json:"conversation_id"`
-	UserID           string            `json:"user_id"`
-	SequenceNo       int               `json:"sequence_no"`
-	Role             string            `json:"role"`
-	Content          string            `json:"content"`
-	ReasoningContent string            `json:"reasoning_content,omitempty"`
-	ToolCallID       string            `json:"tool_call_id,omitempty"`
-	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
 }
 
 type Memory struct {

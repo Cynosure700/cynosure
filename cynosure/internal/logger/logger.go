@@ -107,7 +107,7 @@ func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err 
 	fmt.Fprintf(logFile, "[%s] Round %d | Source: %s\n", now, round, source)
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 80))
 
-	// Request
+	// 请求
 	fmt.Fprintf(logFile, ">>> REQUEST:\n")
 	var reqPretty bytes.Buffer
 	if json.Indent(&reqPretty, reqBody, "", "  ") == nil {
@@ -118,7 +118,7 @@ func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err 
 
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 80))
 
-	// Response
+	// 响应
 	if err != nil {
 		fmt.Fprintf(logFile, "<<< ERROR: %v\n", err)
 	} else {

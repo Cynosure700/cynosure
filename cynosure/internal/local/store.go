@@ -171,10 +171,6 @@ func (s *Store) CreateToolCall(ctx context.Context, tc storage.ToolCall) error {
 	return nil
 }
 
-func (s *Store) CreateSubagentMessage(ctx context.Context, message storage.SubagentMessage) error {
-	return nil
-}
-
 func (s *Store) CreatePersistedOutput(ctx context.Context, output storage.PersistedOutput) error {
 	s.mu.RLock()
 	conv := s.conversations[output.ConversationID]
@@ -491,13 +487,12 @@ func (s *Store) ResumeSession(ctx context.Context, sessionID, currentWorkspace s
 // 不删除任何已有会话的内存或磁盘数据，旧会话仍可被 /resume 找回。
 func (s *Store) StartNewConversation(ctx context.Context, user storage.User) (storage.Conversation, error) {
 	conv := storage.Conversation{
-		ID:            idgen.New("conv"),
-		SessionID:     idgen.UUID(),
-		UserID:        user.ID,
-		RootMessageID: idgen.New("msg"),
-		Title:         "TUI 会话",
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ID:        idgen.New("conv"),
+		SessionID: idgen.UUID(),
+		UserID:    user.ID,
+		Title:     "TUI 会话",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	if err := s.CreateConversation(ctx, conv); err != nil {
 		return storage.Conversation{}, err

@@ -91,8 +91,8 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	}
 	mcpManager.SetWorkspaceServers(ctx, workspaceMCPServers)
 	runtimeService.SetMCPManager(mcpManager)
-	user := storage.User{ID: LocalUserID, Email: "local@cynosure", Username: "local", MemoryEnabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	conversation := storage.Conversation{ID: idgen.New("conv"), SessionID: sessionID, UserID: user.ID, RootMessageID: idgen.New("msg"), Title: "TUI 会话", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	user := storage.User{ID: LocalUserID, Username: "local", MemoryEnabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	conversation := storage.Conversation{ID: idgen.New("conv"), SessionID: sessionID, UserID: user.ID, Title: "TUI 会话", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := store.CreateConversation(ctx, conversation); err != nil {
 		mcpManager.Close()
 		return nil, err

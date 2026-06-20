@@ -173,16 +173,12 @@ func lastMessageID(history []storage.Message) string {
 	return history[len(history)-1].ID
 }
 
-// updateConversationMemory runs at the end of a conversation turn or mid-loop
-// when trigger conditions are met: it asks the LLM to rewrite the full
-// conversation memory list based on existing entries plus the latest dialogue,
-// then replaces the stored entries for this conversation. It is best-effort:
-// failures are logged and swallowed so the user-facing response is never
-// affected. The result is never injected into the system prompt; it is only
-// consumed by the context compression pipeline.
+// updateConversationMemory 在一个会话回合结束时、或满足触发条件的回合中途运行：
+// 它请求 LLM 基于既有条目加上最新对话来重写完整的会话记忆列表，然后替换该会话
+// 已存储的条目。它是尽力而为的：失败会被记录并吞掉，从而绝不影响面向用户的响应。
+// 结果绝不会注入系统提示词，它只被上下文压缩流水线消费。
 //
-// It returns true only when the rewrite succeeded and produced a non-empty
-// replacement, so callers can commit the session-memory breakpoint/baseline.
+// 仅当重写成功且产生了非空替换时返回 true，以便调用方提交会话记忆断点/基线。
 func (s *Service) updateConversationMemory(ctx context.Context, conversation storage.Conversation, user storage.User, history []storage.Message) bool {
 	if s.LLM == nil {
 		return false
@@ -226,8 +222,8 @@ func (s *Service) updateConversationMemory(ctx context.Context, conversation sto
 	return true
 }
 
-// parseConversationMemories extracts a JSON array of memory objects from model
-// output, tolerating surrounding code fences or prose, then truncates fields.
+// parseConversationMemories 从模型输出中提取一个记忆对象的 JSON 数组，容忍其
+// 周围的代码围栏或散文，然后截断各字段。
 func parseConversationMemories(raw string) []extractedConversationMemory {
 	trimmed := extractJSONArray(raw)
 	if trimmed == "" {

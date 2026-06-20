@@ -8,24 +8,23 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// resolvedSchemaCache caches compiled schemas keyed by the raw schema bytes so
-// that repeated tool calls do not re-resolve the same schema.
+// resolvedSchemaCache 以原始 schema 字节为键缓存已编译的 schema，
+// 这样重复的工具调用就不必反复解析同一个 schema。
 var (
 	resolvedSchemaMu    sync.Mutex
 	resolvedSchemaCache = map[string]*jsonschema.Resolved{}
 )
 
-// ValidateToolArgs validates the parsed tool arguments against the tool's
-// declared JSON Schema (params). It performs a full JSON Schema validation
-// (required, type, enum, nested objects/arrays, etc.) via
-// github.com/google/jsonschema-go.
+// ValidateToolArgs 依据工具声明的 JSON Schema（params）校验已解析的工具参数。
+// 它通过 github.com/google/jsonschema-go 执行完整的 JSON Schema 校验
+// （必填项、类型、枚举、嵌套对象/数组等）。
 //
-// Behaviour:
-//   - Empty/absent params or a params object with no constraints: pass through.
-//   - A malformed schema (one that cannot be parsed or resolved): pass through,
-//     since that is an authoring bug in the tool definition, not an LLM error.
-//   - Otherwise validation errors are returned with a clear, LLM-readable
-//     message so the model can correct its arguments and retry.
+// 行为：
+//   - params 为空/缺失，或 params 对象没有任何约束：直接放行。
+//   - schema 格式错误（无法解析或解析失败）：直接放行，
+//     因为这属于工具定义的编写错误，而非 LLM 的错误。
+//   - 其余情况下返回带有清晰、便于 LLM 阅读的错误信息，
+//     以便模型修正参数后重试。
 func ValidateToolArgs(name string, params json.RawMessage, args map[string]any) error {
 	resolved, ok := resolveSchema(params)
 	if !ok {
@@ -37,8 +36,8 @@ func ValidateToolArgs(name string, params json.RawMessage, args map[string]any) 
 	return nil
 }
 
-// resolveSchema parses and resolves the schema bytes, returning false when the
-// schema is empty or invalid (in which case validation should be skipped).
+// resolveSchema 解析并求解 schema 字节，当 schema 为空或无效时返回 false
+// （此时应跳过校验）。
 func resolveSchema(params json.RawMessage) (*jsonschema.Resolved, bool) {
 	raw := trimmedSchemaBytes(params)
 	if len(raw) == 0 {
@@ -57,8 +56,8 @@ func resolveSchema(params json.RawMessage) (*jsonschema.Resolved, bool) {
 	return resolved, resolved != nil
 }
 
-// compileSchema unmarshals and resolves the schema. It returns nil when the
-// schema is malformed so the caller can skip validation.
+// compileSchema 反序列化并求解 schema。当 schema 格式错误时返回 nil，
+// 以便调用方跳过校验。
 func compileSchema(raw []byte) *jsonschema.Resolved {
 	var schema jsonschema.Schema
 	if err := json.Unmarshal(raw, &schema); err != nil {
@@ -71,8 +70,8 @@ func compileSchema(raw []byte) *jsonschema.Resolved {
 	return resolved
 }
 
-// trimmedSchemaBytes normalises the params into raw JSON bytes, treating "null"
-// and empty values as "no schema".
+// trimmedSchemaBytes 将 params 规整为原始 JSON 字节，把 "null"
+// 和空值都当作“无 schema”处理。
 func trimmedSchemaBytes(params json.RawMessage) []byte {
 	raw := []byte(params)
 	if len(raw) == 0 {
@@ -84,9 +83,9 @@ func trimmedSchemaBytes(params json.RawMessage) []byte {
 	return raw
 }
 
-// RawSchemaFromParameters extracts the JSON Schema bytes from an
-// openai.FunctionDefinition.Parameters value, which is typed as any but holds
-// json.RawMessage in this project. Other shapes are marshalled best-effort.
+// RawSchemaFromParameters 从 openai.FunctionDefinition.Parameters 的值中提取
+// JSON Schema 字节。该字段类型为 any，但在本项目中实际保存的是 json.RawMessage。
+// 对其他形态会尽力进行序列化。
 func RawSchemaFromParameters(params any) json.RawMessage {
 	switch v := params.(type) {
 	case nil:

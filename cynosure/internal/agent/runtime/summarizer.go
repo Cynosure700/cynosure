@@ -11,8 +11,8 @@ import (
 	"nano_cc/internal/agent/storage"
 )
 
-// summarizeHistoryForContext runs a single non-tool LLM call to summarize the
-// request-state history. It never mutates state.History.
+// summarizeHistoryForContext 执行一次非工具的 LLM 调用，对请求态历史进行摘要。
+// 它绝不会改动 state.History。
 func (s *Service) summarizeHistoryForContext(ctx context.Context, req compression.SummaryRequest) (compression.SummaryResult, error) {
 	if s.LLM == nil {
 		return compression.SummaryResult{}, fmt.Errorf("llm client is not configured")

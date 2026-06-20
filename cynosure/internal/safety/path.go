@@ -7,10 +7,8 @@ import (
 	"strings"
 )
 
-func SafePath(p string) (string, error) {
-	return SafePathFromRoot("", p)
-}
-
+// SafePathFromRoot 将 p 解析为基于 root 的绝对路径并清理。
+// root 为空时回退到当前工作目录。
 func SafePathFromRoot(root, p string) (string, error) {
 	workdir, err := os.Getwd()
 	if strings.TrimSpace(root) != "" {

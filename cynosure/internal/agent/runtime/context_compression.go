@@ -10,10 +10,9 @@ import (
 	agenttools "nano_cc/internal/tools"
 )
 
-// loadModelHistory returns the reusable "model history" persisted from the
-// previous turn's compressed request history. When no row exists, decoding
-// fails, or the store errors, it falls back to a clone of the full display
-// history (current behavior).
+// loadModelHistory 返回从上一回合压缩后的请求历史中持久化下来、可复用的
+// “模型历史”。当不存在对应记录、解码失败或存储出错时，回退为完整展示历史
+// 的克隆（即当前行为）。
 func (s *Service) loadModelHistory(ctx context.Context, conversationID string, displayHistory []storage.Message) []storage.Message {
 	modelHistory, ok, err := s.Store.GetConversationModelHistory(ctx, conversationID)
 	if err != nil {
@@ -25,19 +24,16 @@ func (s *Service) loadModelHistory(ctx context.Context, conversationID string, d
 	return modelHistory
 }
 
-// compressContextBeforeLLM deep-copies the model history and runs the
-// compression pipeline, returning the compressed real-message history for this
-// round. The caller assigns the result back into state.ModelHistory, so the
-// single real-message history always reflects the latest compression output
-// (in-memory == sent == persisted). The verbatim display history state.History
-// is never mutated (it is only cloned into req.DisplayHistory so summary /
-// conversation-memory strategies keep their retained tail from the original
-// messages).
+// compressContextBeforeLLM 深拷贝模型历史并运行压缩流水线，返回本轮压缩后的
+// 真实消息历史。调用方会把结果赋回 state.ModelHistory，使这条唯一的真实消息
+// 历史始终反映最新的压缩输出（内存态 == 发送态 == 落库态）。逐字的展示历史
+// state.History 不会被改动（它只会被克隆进 req.DisplayHistory，以便摘要/会话
+// 记忆策略从原始消息中保留各自的尾部）。
 func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState) ([]storage.Message, error) {
 	requestHistory := cloneMessages(state.ModelHistory)
 	store, ok := s.Store.(compression.Store)
 	if !ok {
-		// Store does not support compression artifacts; skip silently.
+		// 存储不支持压缩产物；静默跳过。
 		return requestHistory, nil
 	}
 	compressor := s.ContextCompressor
@@ -66,11 +62,10 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 	return req.RequestHistory, nil
 }
 
-// reactiveCompact runs the aggressive ReactiveCompactStrategy out-of-band when
-// the LLM rejects a request with HTTP 413 (context overflow). On success it
-// updates both state.Messages (effective this round) and state.ModelHistory
-// (the new baseline reused by later rounds), but never state.History (the
-// verbatim display history). On failure state is left untouched.
+// reactiveCompact 在 LLM 因 HTTP 413（上下文溢出）拒绝请求时，带外执行激进的
+// ReactiveCompactStrategy。成功时会同时更新 state.Messages（本轮生效）与
+// state.ModelHistory（后续各轮复用的新基线），但绝不更新 state.History（逐字
+// 展示历史）。失败时保持 state 不变。
 func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 	store, ok := s.Store.(compression.Store)
 	if !ok {
@@ -114,8 +109,8 @@ func cloneMessages(messages []storage.Message) []storage.Message {
 	return cloned
 }
 
-// persistedOutputReader adapts the storage layer to the tool-facing reader,
-// enforcing conversation/user scoping.
+// persistedOutputReader 将存储层适配为面向工具的读取器，并强制按会话/用户进行
+// 作用域隔离。
 type persistedOutputReader struct {
 	store          compressionReaderStore
 	userID         string

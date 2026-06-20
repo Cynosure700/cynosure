@@ -8,26 +8,25 @@ import (
 	"time"
 )
 
-// TodoWriteToolName is the tool that updates the task plan and returns
-// structured todo items in addition to a textual summary.
+// TodoWriteToolName 是用于更新任务计划的工具，除返回文本摘要外，
+// 还会返回结构化的待办项。
 const TodoWriteToolName = "todo_write"
 
-// TodoListToolName is the read-only tool that returns the current task plan.
+// TodoListToolName 是只读工具，返回当前任务计划。
 const TodoListToolName = "todo_list"
 
-// normalToolTimeout bounds the execution of non-terminal tools. The terminal
-// tool (bash) enforces its own timeout in bash.go.
+// normalToolTimeout 限定非终端类工具的执行时长。终端类工具（bash）
+// 在 bash.go 中自行实现超时。
 const normalToolTimeout = 60 * time.Second
 
-// ExecResult is the unified result of executing a stateless tool. Todos is
-// populated only by the todo_write tool.
+// ExecResult 是执行无状态工具的统一结果。Todos 仅由 todo_write 工具填充。
 type ExecResult struct {
 	Output string
 	Todos  []TodoItem
 }
 
-// Handlers maps stateless tool names to their textual handlers. todo_write is
-// dispatched separately because it returns structured todos (see Dispatch).
+// Handlers 将无状态工具名映射到对应的文本处理函数。todo_write 单独分发，
+// 因为它会返回结构化的待办项（见 Dispatch）。
 var Handlers = map[string]ToolHandler{
 	"bash":                  handleBash,
 	"read_file":             handleRead,
@@ -44,12 +43,11 @@ var Handlers = map[string]ToolHandler{
 	"read_persisted_output": handleReadPersistedOutput,
 }
 
-// Dispatch is the single entry point for executing a stateless tool by name.
-// It is the authority for tool execution semantics, including todo_write's
-// structured output.
+// Dispatch 是按名称执行无状态工具的唯一入口。它是工具执行语义的权威所在，
+// 包括 todo_write 的结构化输出。
 //
-// The terminal tool (bash) enforces its own 120s timeout internally; all other
-// tools are bounded by normalToolTimeout via a watchdog here.
+// 终端类工具（bash）在内部自行实现 120 秒超时；其余所有工具均由这里的
+// 看门狗按 normalToolTimeout 限定执行时长。
 func Dispatch(ctx context.Context, name string, args map[string]any) (ExecResult, error) {
 	if name == "bash" {
 		return dispatchOnce(ctx, name, args)
@@ -78,9 +76,8 @@ func dispatchOnce(ctx context.Context, name string, args map[string]any) (ExecRe
 	return ExecResult{Output: output}, nil
 }
 
-// runWithTimeout executes fn in a goroutine and abandons the wait after d,
-// returning a timeout error. The result channel is buffered so the goroutine
-// never blocks on send even after a timeout.
+// runWithTimeout 在一个 goroutine 中执行 fn，并在超过 d 后放弃等待，
+// 返回超时错误。结果通道带缓冲，因此即便超时后 goroutine 也不会在发送时阻塞。
 func runWithTimeout(d time.Duration, name string, fn func() (ExecResult, error)) (ExecResult, error) {
 	type result struct {
 		out ExecResult
@@ -250,9 +247,8 @@ func handleWebSearch(ctx context.Context, args map[string]any) (string, error) {
 	return RunWebSearch(ctx, query)
 }
 
-// resolveSearchPathFromContext resolves the optional path argument for grep and
-// glob, defaulting to the current working directory and constraining the result
-// to the workspace.
+// resolveSearchPathFromContext 解析 grep 和 glob 的可选 path 参数，
+// 默认使用当前工作目录，并将结果限制在工作区内。
 func resolveSearchPathFromContext(ctx context.Context, args map[string]any) (string, string, error) {
 	path, _ := args["path"].(string)
 	if strings.TrimSpace(path) == "" {

@@ -8,9 +8,8 @@ import (
 
 const recentToolResultRetentionStrategyName = "recent_tool_result_retention"
 
-// RecentToolResultRetentionStrategy keeps only the most recent N full inline
-// tool results once their count exceeds the micro compaction threshold; earlier
-// full inline tool results are replaced with a one-line placeholder.
+// RecentToolResultRetentionStrategy 在完整内联的 tool 结果数量超过微压缩阈值后，
+// 仅保留最近的 N 个；更早的完整内联 tool 结果会被替换为一行占位符。
 type RecentToolResultRetentionStrategy struct{}
 
 func (s *RecentToolResultRetentionStrategy) Name() string {

@@ -6,7 +6,7 @@
 
 - **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
 - **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`todo_list`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
-- **工作区安全边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；文件和 shell 工具默认不能越过工作区。
+- **工作区与权限边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；不再有静态的“禁止越界工作区”硬校验，越权风险统一由命令权限审批在执行前拦截。
 - **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
@@ -83,13 +83,11 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ### `~/.cynosure/config.json` 示例（可选）
 
-不创建该文件时使用内置默认值。需要自定义工具白名单或安全开关时才创建：
+不创建该文件时使用内置默认值。需要自定义工具白名单或记忆/锁超时等参数时才创建：
 
 ```json
 {
-  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent",
-  "bash_allow_outside_workspace": false,
-  "bash_allow_dangerous_commands": false
+  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent"
 }
 ```
 
@@ -246,11 +244,10 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 安全边界：
 
-- 文件读写、编辑、内容/文件名检索、目录列举和命令执行都以 TUI 工作区为默认边界。
-- `grep`/`glob` 的 `path` 默认是当前工作目录，会被约束在工作区内；`ls` 要求传入绝对路径且同样受工作区约束。
+- 文件读写、编辑、内容/文件名检索、目录列举和命令执行都以 TUI 工作区为默认工作目录；越权风险由命令权限审批在执行前拦截，而非静态路径沙箱。
+- `grep`/`glob` 的 `path` 默认是当前工作目录；`ls` 要求传入绝对路径。三者均为只读检索，默认免审批。
 - `web_fetch` 会将 `http://` 升级为 `https://`，限制响应体大小并复用普通工具的 60 秒看门狗；`web_search` 当前为占位实现。
-- `bash_allow_outside_workspace=false` 时拒绝访问工作区外路径。
-- `bash_allow_dangerous_commands=false` 时拒绝危险命令。
+- 变更类操作（`bash`、`write_file`、`edit_file`、`multi_edit`）在执行前通过交互式审批门控，详见下文“命令权限审批”。
 
 超时机制：
 

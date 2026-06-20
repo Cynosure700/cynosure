@@ -17,12 +17,10 @@ const (
 	conversationMemorySystemPreamble = "以下是本会话的记忆，由系统随对话持续维护，仅用于本次模型推理，不是用户发送的真实消息。请把它当作已发生对话的可靠浓缩。"
 )
 
-// ConversationMemoryStrategy runs just before FullHistorySummarizationStrategy.
-// When the request still exceeds the token budget but a sufficiently rich,
-// already-maintained conversation memory exists, it rebuilds RequestHistory from
-// that memory (plus a recent tail and the always-kept last message), so the
-// fallback full-history summarization is skipped entirely. Otherwise it is a
-// no-op and the fallback summarizer handles compression.
+// ConversationMemoryStrategy 在 FullHistorySummarizationStrategy 之前运行。
+// 当请求仍超出 token 预算，但存在一份足够丰富、已持续维护的会话记忆时，
+// 它会用该记忆（加上一个近期尾部以及始终保留的最后一条消息）重建 RequestHistory，
+// 从而完全跳过兜底的全量历史摘要。否则它什么都不做，由兜底摘要器处理压缩。
 type ConversationMemoryStrategy struct{}
 
 func (s *ConversationMemoryStrategy) Name() string {
