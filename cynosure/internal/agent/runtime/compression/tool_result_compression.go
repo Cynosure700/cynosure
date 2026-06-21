@@ -86,7 +86,7 @@ func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request)
 			continue
 		}
 		toolName := toolNames[history[idx].ToolCallID]
-		if toolName == agenttools.ReadPersistedOutputToolName {
+		if toolName == agenttools.ReadPersistedOutputToolName || toolName ==  "spawn_subagent" { 
 			continue
 		}
 		chars := len([]rune(result))
