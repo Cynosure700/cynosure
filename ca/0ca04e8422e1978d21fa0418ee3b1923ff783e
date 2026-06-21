@@ -1,0 +1,16 @@
+cynosure/internal/agent/runtime/compression/compression.go
+  h_3b65c6a993f880 22,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ca0ca04e8422e1978d21fa0418ee3b1923ff783e",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
