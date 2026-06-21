@@ -136,6 +136,26 @@ func TestLoadLocalConfigRejectsMissingWorkspaceCWD(t *testing.T) {
 	}
 }
 
+func TestCynosureSessionLogsDirUsesGlobalLogsWorkspaceSessionLayout(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	workspace := filepath.Join(tmp, "project")
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := CynosureSessionLogsDir(workspace, "session/with spaces")
+	if err != nil {
+		t.Fatalf("CynosureSessionLogsDir returned error: %v", err)
+	}
+
+	want := filepath.Join(home, ".cynosure", "logs", WorkspaceKey(workspace), "session-with-spaces")
+	if dir != want {
+		t.Fatalf("CynosureSessionLogsDir = %q, want %q", dir, want)
+	}
+}
+
 func TestLoadCynosureMarkdownContextReadsUserAndWorkspaceFiles(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")

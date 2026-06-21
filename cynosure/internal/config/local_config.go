@@ -54,16 +54,16 @@ func LoadLocalConfig(cwd string) (AppConfig, error) {
 	}
 	allowedTools := firstNonEmpty(fileCfg.AllowedTools, defaultLocalAllowedTools)
 	return AppConfig{
-		LLM:                         llm,
-		AppHome:                     appHome,
-		SystemPromptPath:            systemPromptPath,
-		WorkspaceRoot:               workspaceRoot,
-		LogsDir:                     "",
-		AllowedTools:                parseCSVList(allowedTools),
-		ConversationLockTTL:         time.Duration(intOrDefault(fileCfg.ConversationLockTTLSeconds, 30)) * time.Second,
-		MemoryWorkTimeout:           time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
-		ConversationLockWaitTimeout: time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
-		MemoryConsolidationInterval: time.Duration(intOrDefault(fileCfg.MemoryConsolidationIntervalHours, 24)) * time.Hour,
+		LLM:                            llm,
+		AppHome:                        appHome,
+		SystemPromptPath:               systemPromptPath,
+		WorkspaceRoot:                  workspaceRoot,
+		LogsDir:                        "",
+		AllowedTools:                   parseCSVList(allowedTools),
+		ConversationLockTTL:            time.Duration(intOrDefault(fileCfg.ConversationLockTTLSeconds, 30)) * time.Second,
+		MemoryWorkTimeout:              time.Duration(intOrDefault(fileCfg.MemoryWorkTimeoutSeconds, 110)) * time.Second,
+		ConversationLockWaitTimeout:    time.Duration(intOrDefault(fileCfg.ConversationLockWaitTimeoutSeconds, 130)) * time.Second,
+		MemoryConsolidationInterval:    time.Duration(intOrDefault(fileCfg.MemoryConsolidationIntervalHours, 24)) * time.Hour,
 		MemoryConsolidationMinSessions: intOrDefault(fileCfg.MemoryConsolidationMinSessions, 5),
 	}, nil
 }
@@ -177,7 +177,7 @@ func WorkspaceKey(workspaceRoot string) string {
 }
 
 // CynosureSessionLogsDir 返回按工作区与会话隔离的日志目录：
-// ~/.cynosure/<workspace-key>/<session_id>/logs
+// ~/.cynosure/logs/<workspace-key>/<session_id>
 func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -187,7 +187,7 @@ func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
 	if session == "" {
 		session = "session"
 	}
-	return filepath.Join(home, ".cynosure", WorkspaceKey(workspaceRoot), session, "logs"), nil
+	return filepath.Join(home, ".cynosure", "logs", WorkspaceKey(workspaceRoot), session), nil
 }
 
 // sanitizePathSegment 把任意字符串收敛为安全的单层目录名。
