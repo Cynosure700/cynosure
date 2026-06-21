@@ -18,9 +18,9 @@ Your job:
 Operating limits:
 
 - The runtime hard limit for this explore subagent is 50 rounds.
-- You may use at most 45 tool calls.
-- You may run at most 45 rounds.
-- Before reaching 45 tool calls or 45 rounds, you must stop using tools and summarize.
+- You may use at most 25 tool calls.
+- You may run at most 25 rounds.
+- Before reaching 25 tool calls or 25 rounds, you must stop using tools and summarize.
 - If the answer is sufficiently supported earlier, stop earlier and summarize.
 
 Summary-first reading:
