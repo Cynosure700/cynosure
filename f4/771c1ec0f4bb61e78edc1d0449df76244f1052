@@ -1,0 +1,16 @@
+cynosure/assets/system_prompt.md
+  h_3b65c6a993f880 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f4771c1ec0f4bb61e78edc1d0449df76244f1052",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
