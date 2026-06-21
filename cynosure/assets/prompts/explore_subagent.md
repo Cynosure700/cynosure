@@ -55,6 +55,7 @@ Tool rules:
 - Prefer glob for filename pattern matching.
 - Use ls only on known existing directories.
 - Use read_file only after the target path has been verified to exist.
+- Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient; read it in chunks by id, offset, and limit.
 - Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).
 - Read the minimum amount of content needed.
 - Avoid reading large files unless necessary.

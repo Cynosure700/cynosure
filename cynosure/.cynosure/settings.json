@@ -9,7 +9,8 @@
       "edit_file *",
       "multi_edit *",
       "mkdir *",
-      "find *"
+      "find *",
+      "cat *"
     ]
   }
 }

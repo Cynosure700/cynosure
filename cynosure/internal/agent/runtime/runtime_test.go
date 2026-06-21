@@ -479,8 +479,8 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 	for _, want := range []string{
 		"You are Cynosure's explore subagent",
 		"READ-ONLY MODE",
-		"45 tool calls",
-		"45 rounds",
+		"25 tool calls",
+		"25 rounds",
 		"must stop using tools and summarize",
 		"Prefer summary-oriented files first",
 		"README",
@@ -489,6 +489,8 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"glob",
 		"ls",
 		"read_file",
+		"read_persisted_output",
+		"Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient",
 		"Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).",
 		"Current working directory: /workspace/project",
 		"absolute path",
@@ -570,7 +572,7 @@ func TestNewExploreToolRegistryAllowsOnlyReadOnlySearchTools(t *testing.T) {
 			got[def.Function.Name] = true
 		}
 	}
-	for _, want := range []string{"bash", "read_file", "grep", "glob", "ls"} {
+	for _, want := range []string{"bash", "read_file", "grep", "glob", "ls", "read_persisted_output"} {
 		if !got[want] {
 			t.Fatalf("expected explore registry to include %s, got %#v", want, got)
 		}
@@ -1411,7 +1413,7 @@ func TestRespondToConversation_SpawnExploreSubagentUsesFreshMessagesAndExploreTo
 			gotTools[tool.Function.Name] = true
 		}
 	}
-	for _, want := range []string{"read_file", "grep", "glob", "ls"} {
+	for _, want := range []string{"read_file", "grep", "glob", "ls", "read_persisted_output"} {
 		if !gotTools[want] {
 			t.Fatalf("expected explore request tools to include %s, got %#v", want, gotTools)
 		}

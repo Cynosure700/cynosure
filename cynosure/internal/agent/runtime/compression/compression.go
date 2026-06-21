@@ -19,9 +19,9 @@ const (
 	messageWindowTail  = 46
 	// recentToolResultRetentionThreshold 表示仅当完整内联的 tool_result 数量超过该值时，
 	// 才触发微压缩。
-	recentToolResultRetentionThreshold = 20
+	recentToolResultRetentionThreshold = 30
 	// recentToolResultRetention 表示一旦触发微压缩，保留最近 N 个完整内联的 tool_result。
-	recentToolResultRetention = 5
+	recentToolResultRetention = 15
 
 	earlierToolResultPlaceholder = "[Earlier result compacted. Re-run if needed]"
 	// PersistedOutputMarkerPrefix 用于标记某个 tool_result：其完整内容已在带外持久化，

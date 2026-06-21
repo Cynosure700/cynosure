@@ -81,7 +81,7 @@ func NewExploreToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
 	allowed := intersectTools(loadAllowedToolNames(cfg), []string{"bash", "read_file", "grep", "glob", "ls"})
 	env := runtimeEnvFromConfig(cfg)
 	env.CurrentWorkingDir = strings.TrimSpace(cwd)
-	definitions := buildToolDefinitions(allowed)
+	definitions := appendPersistedOutputTool(buildToolDefinitions(allowed))
 	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env, bashPolicy: bashPolicyExploreReadOnly}
 }
 
