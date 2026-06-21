@@ -1658,6 +1658,44 @@ func TestRespondToConversation_EmitsRejectedToolLifecycleEvent(t *testing.T) {
 	}
 }
 
+func TestPreviewToolResultKeepsFiveLinesAndReportsOmittedLines(t *testing.T) {
+	outcome := toolExecutionOutcome{Status: "success", Result: strings.Join([]string{
+		"line1",
+		"line2",
+		"line3",
+		"line4",
+		"line5",
+		"line6",
+		"line7",
+	}, "\n")}
+
+	got := previewToolResult(outcome)
+	want := "line1\nline2\nline3\nline4\nline5\n... + 2 lines"
+	if got != want {
+		t.Fatalf("previewToolResult() = %q, want %q", got, want)
+	}
+}
+
+func TestPreviewToolResultKeepsFiveLinesWithoutOmissionMarker(t *testing.T) {
+	outcome := toolExecutionOutcome{Status: "success", Result: "line1\nline2\nline3\nline4\nline5"}
+
+	got := previewToolResult(outcome)
+	if got != outcome.Result {
+		t.Fatalf("previewToolResult() = %q, want original five lines", got)
+	}
+	if strings.Contains(got, "... +") {
+		t.Fatalf("previewToolResult() = %q, should not include omission marker", got)
+	}
+}
+
+func TestPreviewToolResultFallsBackToAuditSummaryWhenResultEmpty(t *testing.T) {
+	outcome := toolExecutionOutcome{Status: "success", Audit: toolExecutionAudit{OutcomeSummary: "summary line"}}
+
+	if got := previewToolResult(outcome); got != "summary line" {
+		t.Fatalf("previewToolResult() = %q, want audit summary", got)
+	}
+}
+
 func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{

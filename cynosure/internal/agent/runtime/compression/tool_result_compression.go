@@ -11,6 +11,7 @@ import (
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/idgen"
 	"nano_cc/internal/textutil"
+	agenttools "nano_cc/internal/tools"
 )
 
 const toolResultCompressionStrategyName = "tool_result_compression"
@@ -85,6 +86,9 @@ func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request)
 			continue
 		}
 		toolName := toolNames[history[idx].ToolCallID]
+		if toolName == agenttools.ReadPersistedOutputToolName {
+			continue
+		}
 		chars := len([]rune(result))
 		if chars <= req.maxResultSizeChars(toolName) {
 			continue

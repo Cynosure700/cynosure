@@ -541,6 +541,31 @@ func TestModelDisplaysToolCallLifecycle(t *testing.T) {
 	}
 }
 
+func TestModelDisplaysMultilineToolResultPreview(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_multiline",
+		"tool_name":      "bash",
+		"args_preview":   "command: seq 1 7",
+		"status":         "success",
+		"result_preview": "line1\nline2\nline3\nline4\nline5\n... + 2 lines",
+	}})
+	model := updated.(Model)
+
+	rendered := plainTerminalText(model.renderMessages())
+	for _, want := range []string{"line1", "line2", "line3", "line4", "line5", "... + 2 lines"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want multiline preview segment %q", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, "line6") || strings.Contains(rendered, "line7") {
+		t.Fatalf("rendered = %q, should not include omitted lines", rendered)
+	}
+}
+
 func TestTodoWriteToolMessageRendersCheckboxList(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1

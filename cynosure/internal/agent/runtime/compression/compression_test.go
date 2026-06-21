@@ -49,6 +49,10 @@ func assistantToolCallMsg(callID string) storage.Message {
 	return storage.Message{Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: callID, Type: "function", Function: storage.MessageFunctionCall{Name: "bash", Arguments: "{}"}}}}
 }
 
+func assistantNamedToolCallMsg(callID, name string) storage.Message {
+	return storage.Message{Role: "assistant", ToolCalls: []storage.MessageToolCall{{ID: callID, Type: "function", Function: storage.MessageFunctionCall{Name: name, Arguments: "{}"}}}}
+}
+
 func resultOf(t *testing.T, content string) string {
 	t.Helper()
 	_, result, _ := textutil.ParseToolResult(content)
@@ -169,6 +173,32 @@ func TestToolResultCompression_UsesDefaultLimitWhenToolNameMissing(t *testing.T)
 	}
 	if len(store.persistedOutputs) != 1 {
 		t.Fatalf("expected default limit to persist over-limit result, got %d persisted outputs", len(store.persistedOutputs))
+	}
+}
+
+func TestToolResultCompression_SkipsReadPersistedOutputEvenWhenOverLimit(t *testing.T) {
+	store := &fakeStore{}
+	result := strings.Repeat("persisted chunk\n", 20)
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantNamedToolCallMsg("c1", "read_persisted_output"),
+		toolMsg("c1", "success", result),
+	}
+	req := &Request{
+		User:                   storage.User{ID: "u"},
+		Conversation:           storage.Conversation{ID: "c"},
+		RequestHistory:         history,
+		Store:                  store,
+		ToolMaxResultSizeChars: func(toolName string) int { return 10 },
+	}
+	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(store.persistedOutputs) != 0 {
+		t.Fatalf("expected read_persisted_output result to skip compression, got %d persisted outputs", len(store.persistedOutputs))
+	}
+	if got := resultOf(t, history[2].Content); got != result {
+		t.Fatalf("expected read_persisted_output result to stay inline, got %q", got)
 	}
 }
 

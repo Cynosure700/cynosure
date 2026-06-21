@@ -20,13 +20,13 @@ import (
 )
 
 const (
-	assistantDeltaEvent  = "assistant_delta"
-	reasoningDeltaEvent  = "reasoning_delta"
-	toolCallStartEvent   = "tool_call_start"
-	toolCallDoneEvent    = "tool_call_done"
-	maxRound             = 1000
-	toolArgsPreviewMax   = 160
-	toolResultPreviewMax = 300
+	assistantDeltaEvent       = "assistant_delta"
+	reasoningDeltaEvent       = "reasoning_delta"
+	toolCallStartEvent        = "tool_call_start"
+	toolCallDoneEvent         = "tool_call_done"
+	maxRound                  = 1000
+	toolArgsPreviewMax        = 160
+	toolResultPreviewMaxLines = 5
 
 	// mainAgentTurnTimeout 限定单个主 Agent 回合的耗时上限，它是在各轮之间
 	// 进行检查的软边界。
@@ -278,11 +278,11 @@ func preferredToolArgKeys(toolName string) []string {
 }
 
 func previewToolResult(outcome toolExecutionOutcome) string {
-	preview := outcome.Audit.OutcomeSummary
+	preview := outcome.Result
 	if strings.TrimSpace(preview) == "" {
-		preview = outcome.Result
+		preview = outcome.Audit.OutcomeSummary
 	}
-	return truncatePreview(limitPreviewLines(singleLine(preview), 3), toolResultPreviewMax)
+	return truncatePreviewLines(preview, toolResultPreviewMaxLines)
 }
 
 func stableJSON(args map[string]any) string {
@@ -308,6 +308,21 @@ func limitPreviewLines(text string, maxLines int) string {
 		return strings.Join(lines, "\n")
 	}
 	return strings.Join(lines[:maxLines], "\n") + " …"
+}
+
+func truncatePreviewLines(text string, maxLines int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	omitted := len(lines) - maxLines
+	kept := append([]string(nil), lines[:maxLines]...)
+	kept = append(kept, fmt.Sprintf("... + %d lines", omitted))
+	return strings.Join(kept, "\n")
 }
 
 func truncatePreview(text string, maxLen int) string {
