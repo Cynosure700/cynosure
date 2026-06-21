@@ -814,6 +814,101 @@ func TestRespondToConversation_DirectAnswerWithoutTools(t *testing.T) {
 	}
 }
 
+func TestRespondToConversation_RetriesOnceWhenFinalAnswerContentIsEmpty(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_empty_final_retry", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "给出最终答案", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected retried final answer, got %q", message.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected empty final answer to retry exactly once, got %d calls", llm.calls)
+	}
+	if !strings.Contains(openAIRequestContent(llm.reqs[1]), "请输出最终可见答案") {
+		t.Fatalf("expected retry request to include final-answer prompt, got %#v", llm.reqs[1].Messages)
+	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one visible history update, got %d", len(store.historyUpdates))
+	}
+	for _, msg := range store.historyUpdates[0] {
+		if strings.Contains(msg.Content, "请输出最终可见答案") {
+			t.Fatalf("expected internal retry prompt not to be persisted in display history, got %#v", store.historyUpdates[0])
+		}
+	}
+}
+
+func TestRespondToConversation_EmptyToolCallRoundDoesNotTriggerFinalAnswerRetry(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"bash"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_empty_tool_round", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "先执行工具", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected tool round plus final round only, got %d calls", llm.calls)
+	}
+	for _, req := range llm.reqs {
+		if strings.Contains(openAIRequestContent(req), "请输出最终可见答案") {
+			t.Fatalf("expected tool-call round not to inject empty-final retry prompt, got %#v", req.Messages)
+		}
+	}
+}
+
+func TestRespondToConversation_EmptyFinalAnswerRetryStopsAfterOneAttempt(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "unexpected third call"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_empty_final_once", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "给出最终答案", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "(no response)" {
+		t.Fatalf("expected existing fallback after one retry, got %q", message.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected exactly one retry after empty final answer, got %d calls", llm.calls)
+	}
+}
+
 func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "你"}}}},
@@ -1364,6 +1459,43 @@ func TestRespondToConversation_SubagentCompressesContextBeforeNextRound(t *testi
 	}
 	if strings.Contains(joined, big) {
 		t.Fatalf("expected subagent follow-up request not to contain the full oversized tool result")
+	}
+}
+
+func TestRunSubagentLoopSummarizesWhenMaxRoundsReached(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		bashToolRound("bash_1"),
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "subagent max-round summary"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"bash"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	state := service.newLoopState(storage.Conversation{ID: "conv_sub_max"}, storage.User{ID: "usr_1", Username: "alice"}, "inspect once", nil, nil, nil)
+	state.SystemPrompt = "subagent system"
+	state.UserMessage = storage.Message{ID: state.NextMessageID(), ConversationID: state.Conversation.ID, UserID: state.User.ID, Role: "user", Content: "inspect once"}
+	state.History = []storage.Message{state.UserMessage}
+	state.ModelHistory = cloneMessages(state.History)
+	tools := NewChildToolRegistry(cfg, cfg.WorkspaceRoot)
+
+	msg, err := service.runSubagentLoop(context.Background(), state, tools, ToolContext{Conversation: state.Conversation, User: state.User}, "subagent_test", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg.Content != "subagent max-round summary" {
+		t.Fatalf("expected max-round summary, got %q", msg.Content)
+	}
+	if llm.calls != 2 {
+		t.Fatalf("expected one tool round and one summary fallback request, got %d calls", llm.calls)
+	}
+	summaryReq := llm.reqs[1]
+	if !strings.Contains(openAIRequestContent(summaryReq), "请基于历史会话进行总结输出") {
+		t.Fatalf("expected summary fallback request to include summary prompt, got %#v", summaryReq.Messages)
+	}
+	if len(summaryReq.Tools) != 0 {
+		t.Fatalf("expected summary fallback request to disable tools, got %#v", summaryReq.Tools)
 	}
 }
 

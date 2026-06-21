@@ -3,6 +3,7 @@ package runtime
 import (
 	"strings"
 
+	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/idgen"
 )
 
@@ -13,6 +14,16 @@ func fallbackAssistantContent(content string) string {
 		return "(no response)"
 	}
 	return content
+}
+
+func appendInternalUserPrompt(state *LoopState, content string) {
+	state.ModelHistory = append(state.ModelHistory, storage.Message{
+		ID:             state.NextMessageID(),
+		ConversationID: state.Conversation.ID,
+		UserID:         state.User.ID,
+		Role:           "user",
+		Content:        content,
+	})
 }
 
 func shouldInferConversationTitle(currentTitle string) bool {

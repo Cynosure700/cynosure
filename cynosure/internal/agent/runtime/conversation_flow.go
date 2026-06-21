@@ -43,6 +43,8 @@ const (
 	// truncationResumePrompt 作为一条 user 消息注入，用于让模型继续输出被
 	// token 上限截断的内容。
 	truncationResumePrompt = `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`
+
+	emptyFinalAnswerRetryPrompt = `请输出最终可见答案。如果无法完成，也要清楚说明原因和下一步建议。`
 )
 
 type bufferedModelDelta struct {
@@ -105,6 +107,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	roundsSinceTodoWrite := 0
 	turnStart := time.Now()
 	var cumulativeReasoning strings.Builder
+	retriedEmptyFinalAnswer := false
 
 	for {
 		round++
@@ -152,6 +155,11 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
+			if finishReason != "tool_calls" && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" && !retriedEmptyFinalAnswer {
+				retriedEmptyFinalAnswer = true
+				appendInternalUserPrompt(state, emptyFinalAnswerRetryPrompt)
+				continue
+			}
 			// 会话结束：把本轮模型最终回复纳入真实消息历史后重算，得到会话结束时的最终
 			// token 用量，覆盖请求前的估算值，确保存储与下发的都是最终用量。
 			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}

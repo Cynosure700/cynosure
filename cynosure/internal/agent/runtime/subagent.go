@@ -20,6 +20,9 @@ import (
 const (
 	defaultSubagentMaxRounds = 300
 	exploreSubagentMaxRounds = 50
+	subagentSummaryRound     = 0
+
+	subagentMaxRoundsSummaryPrompt = `请基于历史会话进行总结输出。不要继续调用工具，直接总结已完成的观察、关键结论、仍未解决的问题，以及建议父 Agent 下一步如何处理。`
 )
 
 // subAgentTurnTimeout 限定单个子 Agent 回合的耗时上限，它是在各轮之间进行检查的
@@ -182,7 +185,30 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 		}
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, tools, roundsSinceTodoWrite)
 	}
-	return openai.ChatCompletionMessage{}, fmt.Errorf("subagent exceeded max rounds")
+	msg, err := s.summarizeSubagentAtMaxRounds(ctx, state, tools, parent, runID)
+	if err != nil {
+		return openai.ChatCompletionMessage{}, fmt.Errorf("subagent exceeded max rounds and summary fallback failed: %w", err)
+	}
+	return msg, nil
+}
+
+func (s *Service) summarizeSubagentAtMaxRounds(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, runID string) (openai.ChatCompletionMessage, error) {
+	appendInternalUserPrompt(state, subagentMaxRoundsSummaryPrompt)
+	modelHistory, err := s.compressSubagentContextBeforeLLM(ctx, state, tools)
+	if err != nil {
+		return openai.ChatCompletionMessage{}, err
+	}
+	state.ModelHistory = modelHistory
+	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
+	req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, MaxTokens: defaultMaxTokens}
+	reqBody, _ := json.Marshal(req)
+	msg, _, err := s.runModelRoundWithRecovery(ctx, state, req)
+	respBody, _ := json.Marshal(msg)
+	logger.LogLLMRound(subagentSummaryRound, fmt.Sprintf("subagent run=%s conversation=%s max-round-summary", runID, parent.Conversation.ID), reqBody, respBody, err)
+	if err != nil {
+		return openai.ChatCompletionMessage{}, err
+	}
+	return msg, nil
 }
 
 func (s *Service) executeChildToolCall(ctx context.Context, tools *ToolRegistry, toolCtx ToolContext, name string, rawArgs string, audit toolExecutionAudit) toolExecutionOutcome {
