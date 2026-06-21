@@ -99,6 +99,7 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 			return msg, nil
 		}
 		state.History = append(state.History, storedAssistant)
+		state.ModelHistory = append(state.ModelHistory, storedAssistant)
 		for _, tc := range msg.ToolCalls {
 			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}
 			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
