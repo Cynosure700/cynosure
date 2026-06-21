@@ -56,52 +56,63 @@ func (s *MessageWindowCompressionStrategy) Apply(ctx context.Context, req *Reque
 	return nil
 }
 
-// repairToolCallBoundaries 移除孤立的 tool 消息（没有前置的 assistant tool_call），
-// 并清除丢失了对应 tool 结果的 assistant tool_calls。
-func repairToolCallBoundaries(history []storage.Message) []storage.Message {
-	// 收集 assistant 消息仍然暴露的 tool_call id。
-	assistantCallIDs := make(map[string]struct{})
-	for _, msg := range history {
-		if msg.Role == "assistant" {
-			for _, call := range msg.ToolCalls {
-				assistantCallIDs[call.ID] = struct{}{}
-			}
-		}
-	}
-	// 收集窗口中存在的 tool 结果 id。
-	toolResultIDs := make(map[string]struct{})
-	for _, msg := range history {
-		if msg.Role == "tool" && msg.ToolCallID != "" {
-			toolResultIDs[msg.ToolCallID] = struct{}{}
-		}
-	}
-
+// RepairToolCallBoundaries 移除会让 OpenAI 请求非法的 tool_call / tool
+// 片段。OpenAI 要求 role=tool 消息必须紧跟在带 tool_calls 的 assistant
+// 消息之后，并且只能响应该 assistant 声明的调用。
+func RepairToolCallBoundaries(history []storage.Message) []storage.Message {
 	repaired := make([]storage.Message, 0, len(history))
-	for _, msg := range history {
-		switch msg.Role {
-		case "tool":
-			// 丢弃没有匹配 assistant 调用的孤立 tool 消息。
-			if _, ok := assistantCallIDs[msg.ToolCallID]; !ok {
-				continue
-			}
-			repaired = append(repaired, msg)
-		case "assistant":
-			if len(msg.ToolCalls) > 0 {
-				kept := msg.ToolCalls[:0:0]
-				for _, call := range msg.ToolCalls {
-					if _, ok := toolResultIDs[call.ID]; ok {
-						kept = append(kept, call)
-					}
-				}
-				msg.ToolCalls = kept
-				if len(kept) == 0 && strings.TrimSpace(msg.Content) == "" && strings.TrimSpace(msg.ReasoningContent) == "" {
-					continue
-				}
-			}
-			repaired = append(repaired, msg)
-		default:
-			repaired = append(repaired, msg)
+	for i := 0; i < len(history); i++ {
+		msg := history[i]
+		if msg.Role == "tool" {
+			// 丢弃没有紧邻 assistant tool_calls 的孤立 tool 消息。
+			continue
 		}
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			repaired = append(repaired, msg)
+			continue
+		}
+
+		allowed := make(map[string]storage.MessageToolCall, len(msg.ToolCalls))
+		for _, call := range msg.ToolCalls {
+			allowed[call.ID] = call
+		}
+
+		j := i + 1
+		matched := make(map[string]struct{}, len(msg.ToolCalls))
+		toolMessages := make([]storage.Message, 0, len(msg.ToolCalls))
+		for j < len(history) && history[j].Role == "tool" {
+			toolMsg := history[j]
+			if _, ok := allowed[toolMsg.ToolCallID]; ok {
+				if _, duplicate := matched[toolMsg.ToolCallID]; !duplicate {
+					matched[toolMsg.ToolCallID] = struct{}{}
+					toolMessages = append(toolMessages, toolMsg)
+				}
+			}
+			j++
+		}
+
+		keptCalls := make([]storage.MessageToolCall, 0, len(toolMessages))
+		for _, call := range msg.ToolCalls {
+			if _, ok := matched[call.ID]; ok {
+				keptCalls = append(keptCalls, call)
+			}
+		}
+		msg.ToolCalls = keptCalls
+		if len(keptCalls) == 0 {
+			if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
+				repaired = append(repaired, msg)
+			}
+			i = j - 1
+			continue
+		}
+
+		repaired = append(repaired, msg)
+		repaired = append(repaired, toolMessages...)
+		i = j - 1
 	}
 	return repaired
+}
+
+func repairToolCallBoundaries(history []storage.Message) []storage.Message {
+	return RepairToolCallBoundaries(history)
 }

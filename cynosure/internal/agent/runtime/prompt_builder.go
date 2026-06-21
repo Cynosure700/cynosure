@@ -7,6 +7,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/agent/runtime/compression"
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/assistant"
 	"nano_cc/internal/sessions"
@@ -59,7 +60,7 @@ func (s *Service) buildSkillSnapshot(ctx context.Context, userID string) (*agent
 
 func buildOpenAIMessages(systemPrompt string, history []storage.Message) []openai.ChatCompletionMessage {
 	messages := []openai.ChatCompletionMessage{{Role: "system", Content: systemPrompt}}
-	for _, msg := range history {
+	for _, msg := range compression.RepairToolCallBoundaries(history) {
 		messages = append(messages, openai.ChatCompletionMessage{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCallID: msg.ToolCallID, ToolCalls: storageToolCallsToOpenAI(msg.ToolCalls)})
 	}
 	return messages

@@ -385,6 +385,49 @@ func TestMessageWindow_DropsOrphanToolAtCut(t *testing.T) {
 	}
 }
 
+func TestRepairToolCallBoundaries_DropsNonAdjacentToolMessage(t *testing.T) {
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantToolCallMsg("c1"),
+		{Role: "assistant", Content: "intervening"},
+		toolMsg("c1", "success", "late"),
+	}
+	got := RepairToolCallBoundaries(history)
+	for _, msg := range got {
+		if msg.Role == "tool" {
+			t.Fatalf("expected non-adjacent tool message to be dropped, got %#v", got)
+		}
+	}
+	for _, msg := range got {
+		if msg.Role == "assistant" && msg.Content == "" && len(msg.ToolCalls) > 0 {
+			t.Fatalf("expected unmatched assistant tool_calls to be cleared or dropped, got %#v", got)
+		}
+	}
+}
+
+func TestRepairToolCallBoundaries_TrimsAssistantCallsToAdjacentResults(t *testing.T) {
+	history := []storage.Message{
+		{Role: "user", Content: "go"},
+		assistantNamedToolCallMsg("c1", "bash"),
+		toolMsg("c1", "success", "ok"),
+		toolMsg("orphan", "success", "drop"),
+	}
+	history[1].ToolCalls = append(history[1].ToolCalls, storage.MessageToolCall{
+		ID: "missing", Type: "function", Function: storage.MessageFunctionCall{Name: "bash", Arguments: "{}"},
+	})
+
+	got := RepairToolCallBoundaries(history)
+	if len(got) != 3 {
+		t.Fatalf("expected user, assistant, one tool; got %#v", got)
+	}
+	if got[1].Role != "assistant" || len(got[1].ToolCalls) != 1 || got[1].ToolCalls[0].ID != "c1" {
+		t.Fatalf("expected assistant calls trimmed to c1, got %#v", got[1])
+	}
+	if got[2].Role != "tool" || got[2].ToolCallID != "c1" {
+		t.Fatalf("expected only matching adjacent tool result, got %#v", got[2])
+	}
+}
+
 func TestMessageWindow_NoopWhenCurrentTurnWithinLimit(t *testing.T) {
 	// 80 messages total but the latest user turn is short (10 messages after the
 	// latest user), so the current turn count (10) is within the limit and no
