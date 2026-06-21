@@ -44,7 +44,7 @@ const (
 	// token 上限截断的内容。
 	truncationResumePrompt = `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`
 
-	emptyFinalAnswerRetryPrompt = `请输出最终可见答案。如果无法完成，也要清楚说明原因和下一步建议。`
+	emptyFinalAnswerRetryPrompt = `请继续执行。若执行完成，请输出总结。`
 )
 
 type bufferedModelDelta struct {
