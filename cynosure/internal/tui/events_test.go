@@ -140,6 +140,37 @@ func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
 	}
 }
 
+func TestSpawnSubagentToolMessageDisplaysSubTypeAsToolName(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	for _, tt := range []struct {
+		name    string
+		rawArgs string
+		want    string
+	}{
+		{name: "explore", rawArgs: `{"sub_type":"explore","task":"inspect workspace"}`, want: "● ⏺ Explore("},
+		{name: "general", rawArgs: `{"sub_type":"general","task":"analyze design"}`, want: "● ⏺ General("},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := Message{Role: "tool", ToolCall: &ToolCallView{
+				Name:        "spawn_subagent",
+				RawArgs:     tt.rawArgs,
+				ArgsPreview: tt.rawArgs,
+				Status:      "running",
+			}}
+
+			rendered := plainTerminalText(app.renderMessage(msg))
+
+			if !strings.Contains(rendered, tt.want) {
+				t.Fatalf("tool render = %q, want subtype display %q", rendered, tt.want)
+			}
+			if strings.Contains(rendered, "SpawnSubagent") {
+				t.Fatalf("tool render = %q, should hide raw spawn_subagent tool name", rendered)
+			}
+		})
+	}
+}
+
 func TestWorkspaceDirectoryRendersYellowInHeader(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

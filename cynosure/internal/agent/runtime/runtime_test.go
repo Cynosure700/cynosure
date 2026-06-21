@@ -457,7 +457,12 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"read_file",
 		"Current working directory: /workspace/project",
 		"absolute path",
-		"Do not use write_file, edit_file, multi_edit, todo_write, update_memory, delete_memory, spawn_subagent",
+		"Do not use write_file.",
+		"Do not use edit_file.",
+		"Do not use multi_edit.",
+		"Do not use update_memory.",
+		"Do not use delete_memory.",
+		"Do not use spawn_subagent.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected explore prompt to contain %q, got %q", want, prompt)

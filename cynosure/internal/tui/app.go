@@ -817,7 +817,7 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 		return m.renderTodoWriteToolMessage(tool, status)
 	}
 	icon := toolIcon(status)
-	name := displayToolName(tool.Name)
+	name := displayToolName(tool.Name, tool.RawArgs)
 	line := icon + " " + name
 	if strings.TrimSpace(tool.ArgsPreview) != "" {
 		line += "(" + tool.ArgsPreview + ")"
@@ -906,10 +906,15 @@ func toolIcon(status string) string {
 	}
 }
 
-func displayToolName(name string) string {
+func displayToolName(name string, rawArgs string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return "Tool"
+	}
+	if strings.EqualFold(trimmed, "spawn_subagent") {
+		if subType := spawnSubagentDisplayName(rawArgs); subType != "" {
+			return subType
+		}
 	}
 	if strings.HasPrefix(trimmed, "mcp__") {
 		parts := strings.Split(trimmed, "__")
@@ -918,6 +923,23 @@ func displayToolName(name string) string {
 		}
 	}
 	return humanToolName(trimmed)
+}
+
+func spawnSubagentDisplayName(rawArgs string) string {
+	var args struct {
+		SubType string `json:"sub_type"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err != nil {
+		return ""
+	}
+	switch strings.TrimSpace(args.SubType) {
+	case "explore":
+		return "Explore"
+	case "general":
+		return "General"
+	default:
+		return ""
+	}
 }
 
 func humanToolName(name string) string {
