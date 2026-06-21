@@ -117,6 +117,18 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 	}
 }
 
+func TestDefaultBaseSystemPromptRequiresExploreForSearchSubagents(t *testing.T) {
+	for _, want := range []string{
+		"spawn_subagent 必须提供 sub_type 与 task",
+		"搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 sub_type=explore",
+		"sub_type=general 仅用于需要隔离上下文的综合分析或执行型子任务，不得用于搜索相关任务",
+	} {
+		if !strings.Contains(DefaultBaseSystemPrompt, want) {
+			t.Fatalf("expected default base prompt to contain %q", want)
+		}
+	}
+}
+
 func TestBuildSystemPromptOmitsMemoryGuidanceWhenMemorySectionIsEmpty(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
 	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）段可能同时包含过往记忆索引") {

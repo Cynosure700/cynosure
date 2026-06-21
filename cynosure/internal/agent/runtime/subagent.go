@@ -24,8 +24,23 @@ const defaultSubagentMaxRounds = 300
 const subAgentTurnTimeout = 1 * time.Hour
 
 type spawnSubagentArgs struct {
-	Task string `json:"task"`
-	CWD  string `json:"cwd"`
+	SubType string `json:"sub_type"`
+	Task    string `json:"task"`
+	CWD     string `json:"cwd"`
+}
+
+type subagentType string
+
+const (
+	subagentTypeGeneral subagentType = "general"
+	subagentTypeExplore subagentType = "explore"
+)
+
+type subagentProfile struct {
+	Type         subagentType
+	SystemPrompt string
+	ToolRegistry *ToolRegistry
+	MaxRounds    int
 }
 
 type subagentContextKey string
@@ -40,31 +55,106 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	if task == "" {
 		return "", fmt.Errorf("task is required")
 	}
+	kind, err := parseSubagentType(args.SubType)
+	if err != nil {
+		return "", err
+	}
 	resolvedCWD, err := resolveSubagentCWD(s.Cfg.WorkspaceRoot, args.CWD)
 	if err != nil {
 		return "", err
 	}
 	runID := idgen.New("subagent")
-	childTools := NewChildToolRegistry(s.Cfg, resolvedCWD)
+	profile := s.buildSubagentProfile(kind, parent.User, parent.Skills, resolvedCWD)
+	childTools := profile.ToolRegistry
 	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, nil)
 	childState.SkillSnapshot = parent.Skills
-	childState.SystemPrompt = s.buildSubagentSystemPrompt(parent.User, parent.Skills)
+	childState.SystemPrompt = profile.SystemPrompt
 	childState.UserMessage = storage.Message{ID: childState.NextMessageID(), ConversationID: parent.Conversation.ID, UserID: parent.User.ID, Role: "user", Content: task}
 	childState.History = []storage.Message{childState.UserMessage}
 	childState.ModelHistory = cloneMessages(childState.History)
 	childState.Messages = buildOpenAIMessages(childState.SystemPrompt, childState.ModelHistory)
 	childState.ToolRuntimeEnv = childTools.runtimeEnv
 	childCtx := context.WithValue(ctx, subagentDepthKey, 1)
-	msg, err := s.runSubagentLoop(childCtx, childState, childTools, parent, runID, defaultSubagentMaxRounds)
+	msg, err := s.runSubagentLoop(childCtx, childState, childTools, parent, runID, profile.MaxRounds)
 	if err != nil {
 		return "", err
 	}
 	return "Subagent completed.\n\nSummary:\n" + fallbackAssistantContent(msg.Content), nil
 }
 
+func parseSubagentType(value string) (subagentType, error) {
+	switch kind := subagentType(strings.TrimSpace(value)); kind {
+	case subagentTypeGeneral, subagentTypeExplore:
+		return kind, nil
+	case "":
+		return "", fmt.Errorf("sub_type is required")
+	default:
+		return "", fmt.Errorf("unsupported sub_type %q; allowed values: general, explore", value)
+	}
+}
+
+func (s *Service) buildSubagentProfile(kind subagentType, user storage.User, snapshot *agenttools.SkillSnapshot, cwd string) subagentProfile {
+	switch kind {
+	case subagentTypeExplore:
+		return subagentProfile{
+			Type:         kind,
+			SystemPrompt: buildExploreSubagentSystemPrompt(cwd),
+			ToolRegistry: NewExploreToolRegistry(s.Cfg, cwd),
+			MaxRounds:    defaultSubagentMaxRounds,
+		}
+	default:
+		return subagentProfile{
+			Type:         subagentTypeGeneral,
+			SystemPrompt: s.buildSubagentSystemPrompt(user, snapshot),
+			ToolRegistry: NewChildToolRegistry(s.Cfg, cwd),
+			MaxRounds:    defaultSubagentMaxRounds,
+		}
+	}
+}
+
 func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agenttools.SkillSnapshot) string {
 	base := s.buildSystemPromptWithMemory(user, snapshot, "")
-	return base + "\n\n<subagent>\n你是由 `spawn_subagent` 派生出来的子智能体。\n\n规则：\n- 你看不到父对话的历史记录。\n- 只能依据当前任务和工作区文件来工作。\n- 不要调用 `spawn_subagent`。\n- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。\n</subagent>"
+	return base + "\n\n<subagent>\n你是由 `spawn_subagent` 派生出来的 general 子智能体。\n\n规则：\n- 你看不到父对话的历史记录。\n- 只能依据当前任务和工作区文件来工作。\n- 不要调用 `spawn_subagent`。\n- 搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须交给 explore 子智能体，不应由 general 子智能体承担。\n- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。\n</subagent>"
+}
+
+func buildExploreSubagentSystemPrompt(cwd string) string {
+	currentWorkingDir := strings.TrimSpace(cwd)
+	if currentWorkingDir == "" {
+		currentWorkingDir = "."
+	}
+	return strings.TrimSpace(`You are Cynosure's explore subagent, a read-only codebase search specialist.
+
+=== READ-ONLY MODE ===
+You must only inspect existing files and report findings. You must not create, modify, delete, move, copy, install, or persist files. You must not change repository, workspace, system, network, dependency, or package-manager state.
+
+Your job:
+- Rapidly locate relevant files, symbols, configuration, tests, docs, and implementation details.
+- Read only the files needed to answer the caller's search request.
+- Return a concise report with file paths, important line references when available, and confidence or gaps.
+
+Tool rules:
+- Prefer grep for content search.
+- Prefer glob for filename pattern matching.
+- Use ls only for known absolute directories.
+- Use read_file when you already know the specific file path.
+- Do not use write_file, edit_file, multi_edit, todo_write, update_memory, delete_memory, spawn_subagent, package managers, git mutation commands, or any state-changing operation.
+- If bash is unavailable, do not ask for it; complete the search with grep, glob, ls, and read_file.
+
+Environment:
+- Current working directory: ` + currentWorkingDir + `
+- Treat relative paths in the user task as relative to the current working directory unless the task gives an absolute path.
+- Prefer reporting absolute paths or workspace-root-relative paths consistently; include enough path context for the parent agent to jump directly to the evidence.
+- The parent conversation history is not available. Rely only on this task, the current working directory, and files you inspect.
+
+Efficiency:
+- Search broadly first, then read the smallest set of high-signal files.
+- Run independent searches in parallel whenever the runtime supports it.
+- Stop when you have enough evidence to answer the request; do not perform unrelated exploration.
+
+Final response:
+- Reply directly in normal text.
+- Do not create files.
+- Include key findings, evidence paths, and unresolved gaps.`)
 }
 
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, runID string, maxRounds int) (openai.ChatCompletionMessage, error) {

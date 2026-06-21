@@ -222,7 +222,7 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
 
-基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索优先 `grep`、文件名匹配优先 `glob`、目录浏览使用 `ls`，文件读取和修改分别使用 `read_file`、`edit_file`、`multi_edit`、`write_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 仅用于隔离子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
+基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索优先 `grep`、文件名匹配优先 `glob`、目录浏览使用 `ls`，文件读取和修改分别使用 `read_file`、`edit_file`、`multi_edit`、`write_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 必须提供 `sub_type` 与 `task`，搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 `sub_type=explore`，`sub_type=general` 仅用于需要隔离上下文的综合分析或执行型子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
 
 ## 工具系统
 
@@ -241,7 +241,7 @@ cwd /path/to/project · skills 6 · mcp tools 4
 | `web_search` | 联网搜索（占位）；未配置搜索后端时返回提示，默认不启用 |
 | `todo_write` | 维护多步骤任务清单 |
 | `todo_list` | 查询当前任务清单状态，不修改任务 |
-| `spawn_subagent` | 派生隔离子 Agent |
+| `spawn_subagent` | 派生带 `sub_type` 的隔离子 Agent；`explore` 用于只读搜索，`general` 用于非搜索的综合分析或执行型子任务 |
 | `read_persisted_output` | 自动暴露，用于读取上下文压缩落盘的大工具结果 |
 
 安全边界：

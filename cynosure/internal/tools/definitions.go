@@ -225,13 +225,14 @@ var webSearchToolSpec = toolSpec("web_search", "Search the web and use the resul
 })
 var webSearchToolDef = webSearchToolSpec.Definition
 
-var spawnSubagentToolSpec = toolSpec("spawn_subagent", "Spawn a child agent with a fresh message list to complete an isolated task. The child agent may use workspace tools, but it cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
+var spawnSubagentToolSpec = toolSpec("spawn_subagent", "Spawn a typed child agent with a fresh message list to complete an isolated task. Use sub_type=explore for read-only code search, file discovery, implementation tracing, and evidence gathering. Use sub_type=general for non-search isolated analysis or execution tasks. The child agent cannot spawn another subagent. Only its final summary is returned to the parent agent.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"task": strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
-		"cwd":  strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace."),
+		"sub_type": map[string]any{"type": "string", "enum": []string{"general", "explore"}, "description": "Type of child agent to spawn. Use explore for read-only codebase search and file exploration. Use general for non-search isolated analysis or execution tasks."},
+		"task":     strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
+		"cwd":      strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace."),
 	},
-	"required": []string{"task"},
+	"required": []string{"sub_type", "task"},
 })
 var spawnSubagentToolDef = spawnSubagentToolSpec.Definition
 

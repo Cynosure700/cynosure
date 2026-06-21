@@ -87,6 +87,25 @@ func TestValidateToolArgs_TodoListRejectsUnexpectedArgument(t *testing.T) {
 	}
 }
 
+func TestValidateToolArgs_SpawnSubagentRequiresSubType(t *testing.T) {
+	err := ValidateToolArgs("spawn_subagent", schemaOf(t, "spawn_subagent"), map[string]any{
+		"task": "inspect workspace",
+	})
+	if err == nil {
+		t.Fatal("expected spawn_subagent to require sub_type")
+	}
+}
+
+func TestValidateToolArgs_SpawnSubagentRejectsUnknownSubType(t *testing.T) {
+	err := ValidateToolArgs("spawn_subagent", schemaOf(t, "spawn_subagent"), map[string]any{
+		"sub_type": "review",
+		"task":     "inspect workspace",
+	})
+	if err == nil {
+		t.Fatal("expected spawn_subagent to reject unknown sub_type")
+	}
+}
+
 func TestValidateToolArgs_EmptySchemaPassThrough(t *testing.T) {
 	if err := ValidateToolArgs("x", nil, map[string]any{"a": 1}); err != nil {
 		t.Fatalf("nil schema should pass through, got: %v", err)

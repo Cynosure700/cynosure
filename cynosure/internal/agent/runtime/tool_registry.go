@@ -68,6 +68,14 @@ func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
 	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env}
 }
 
+func NewExploreToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
+	allowed := intersectTools(loadAllowedToolNames(cfg), []string{"read_file", "grep", "glob", "ls"})
+	env := runtimeEnvFromConfig(cfg)
+	env.CurrentWorkingDir = strings.TrimSpace(cwd)
+	definitions := buildToolDefinitions(allowed)
+	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env}
+}
+
 func (r *ToolRegistry) Definitions() []openai.Tool {
 	return append([]openai.Tool(nil), r.definitions...)
 }
@@ -142,6 +150,20 @@ func withoutTool(names []string, excluded string) []string {
 			continue
 		}
 		filtered = append(filtered, name)
+	}
+	return filtered
+}
+
+func intersectTools(names []string, allowed []string) []string {
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		allowedSet[name] = struct{}{}
+	}
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := allowedSet[name]; ok {
+			filtered = append(filtered, name)
+		}
 	}
 	return filtered
 }

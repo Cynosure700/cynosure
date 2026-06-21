@@ -419,15 +419,95 @@ func TestBuildSubagentSystemPromptAppendsStructuredChildAgentContext(t *testing.
 
 	for _, want := range []string{
 		"<subagent>",
-		"你是由 `spawn_subagent` 派生出来的子智能体。",
+		"你是由 `spawn_subagent` 派生出来的 general 子智能体。",
 		"- 你看不到父对话的历史记录。",
 		"- 只能依据当前任务和工作区文件来工作。",
 		"- 不要调用 `spawn_subagent`。",
+		"- 搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须交给 explore 子智能体，不应由 general 子智能体承担。",
 		"- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。",
 		"</subagent>",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected subagent prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
+func TestParseSubagentTypeAcceptsDefinedTypesOnly(t *testing.T) {
+	for _, value := range []string{"general", " explore "} {
+		if _, err := parseSubagentType(value); err != nil {
+			t.Fatalf("expected %q to be accepted, got %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "review"} {
+		if _, err := parseSubagentType(value); err == nil {
+			t.Fatalf("expected %q to be rejected", value)
+		}
+	}
+}
+
+func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T) {
+	prompt := buildExploreSubagentSystemPrompt("/workspace/project")
+	for _, want := range []string{
+		"You are Cynosure's explore subagent",
+		"READ-ONLY MODE",
+		"grep",
+		"glob",
+		"ls",
+		"read_file",
+		"Current working directory: /workspace/project",
+		"absolute path",
+		"Do not use write_file, edit_file, multi_edit, todo_write, update_memory, delete_memory, spawn_subagent",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected explore prompt to contain %q, got %q", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"通用型智能体",
+		"维护记忆时必须",
+		"todo_write 工具来管理和规划任务",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("expected explore prompt not to inherit main-agent text %q, got %q", forbidden, prompt)
+		}
+	}
+}
+
+func TestNewExploreToolRegistryAllowsOnlyReadOnlySearchTools(t *testing.T) {
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{
+		"load_skill",
+		"bash",
+		"read_file",
+		"write_file",
+		"edit_file",
+		"multi_edit",
+		"grep",
+		"glob",
+		"ls",
+		"web_fetch",
+		"todo_write",
+		"todo_list",
+		"spawn_subagent",
+		"update_memory",
+		"delete_memory",
+	}
+	registry := NewExploreToolRegistry(cfg, cfg.WorkspaceRoot)
+	got := map[string]bool{}
+	for _, def := range registry.Definitions() {
+		if def.Function != nil {
+			got[def.Function.Name] = true
+		}
+	}
+	for _, want := range []string{"read_file", "grep", "glob", "ls"} {
+		if !got[want] {
+			t.Fatalf("expected explore registry to include %s, got %#v", want, got)
+		}
+	}
+	for _, forbidden := range []string{"bash", "write_file", "edit_file", "multi_edit", "todo_write", "todo_list", "update_memory", "delete_memory", "spawn_subagent", "web_fetch", "load_skill"} {
+		if got[forbidden] {
+			t.Fatalf("expected explore registry not to include %s, got %#v", forbidden, got)
 		}
 	}
 }
@@ -1047,7 +1127,7 @@ func TestShouldEmitAssistantContentDeltas(t *testing.T) {
 }
 
 func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesNotEmitToolEvents(t *testing.T) {
-	spawnArgs := `{"task":"inspect workspace only","cwd":"."}`
+	spawnArgs := `{"sub_type":"general","task":"inspect workspace only","cwd":"."}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
@@ -1095,15 +1175,67 @@ func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesN
 	}
 }
 
+func TestRespondToConversation_SpawnExploreSubagentUsesFreshMessagesAndExploreTools(t *testing.T) {
+	spawnArgs := `{"sub_type":"explore","task":"find runtime files","cwd":"."}`
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "explore summary"}, FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{cached: []storage.Message{{ID: "old_msg", ConversationID: "conv_explore", UserID: "usr_1", Role: "user", Content: "previous context must not leak"}}}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"spawn_subagent", "read_file", "grep", "glob", "ls", "bash", "write_file", "edit_file", "multi_edit"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_explore", Title: "已有标题"}, storage.User{ID: "usr_1", Username: "alice"}, "parent request", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	subReq := llm.reqs[1]
+	if len(subReq.Messages) != 2 || subReq.Messages[1].Role != "user" || subReq.Messages[1].Content != "find runtime files" {
+		t.Fatalf("expected explore subagent to receive fresh system+task messages only, got %#v", subReq.Messages)
+	}
+	if !strings.Contains(subReq.Messages[0].Content, "Cynosure's explore subagent") || !strings.Contains(subReq.Messages[0].Content, "READ-ONLY MODE") {
+		t.Fatalf("expected explore subagent system prompt, got %q", subReq.Messages[0].Content)
+	}
+	for _, msg := range subReq.Messages {
+		if contains(msg.Content, "previous context must not leak") || contains(msg.Content, "parent request") {
+			t.Fatalf("explore subagent messages leaked parent context: %#v", subReq.Messages)
+		}
+	}
+	gotTools := map[string]bool{}
+	for _, tool := range subReq.Tools {
+		if tool.Function != nil {
+			gotTools[tool.Function.Name] = true
+		}
+	}
+	for _, want := range []string{"read_file", "grep", "glob", "ls"} {
+		if !gotTools[want] {
+			t.Fatalf("expected explore request tools to include %s, got %#v", want, gotTools)
+		}
+	}
+	for _, forbidden := range []string{"bash", "write_file", "edit_file", "multi_edit", "spawn_subagent"} {
+		if gotTools[forbidden] {
+			t.Fatalf("expected explore request tools not to include %s, got %#v", forbidden, gotTools)
+		}
+	}
+}
+
 func TestRespondToConversation_SubagentCompressesContextBeforeNextRound(t *testing.T) {
-	spawnArgs := `{"task":"produce large output","cwd":"."}`
+	spawnArgs := `{"sub_type":"general","task":"produce large output","cwd":"."}`
 	big := strings.Repeat("x", 60000)
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
 		},
 		{
-			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "bash_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"printf '` + big + `'"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "bash_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"yes x | head -c 60000"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
 		},
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "sub summary"}, FinishReason: openai.FinishReasonStop}}},
