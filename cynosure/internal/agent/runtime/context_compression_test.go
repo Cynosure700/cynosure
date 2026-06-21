@@ -91,6 +91,63 @@ func TestCompressContextBeforeLLM_UsesToolRegistryResultLimit(t *testing.T) {
 	}
 }
 
+func TestCompressSubagentContextBeforeLLM_UsesChildToolRegistryResultLimit(t *testing.T) {
+	store := &fakeStore{}
+	cfg := config.AppConfig{LLM: config.Config{ModelID: "m"}}
+	parentTools := NewToolRegistry(cfg)
+	childTools := NewToolRegistry(cfg)
+	childTools.maxResultSizeChars["bash"] = 10
+	service := &Service{Store: store, Cfg: cfg, Tools: parentTools}
+
+	result := "12345678901"
+	history := []storage.Message{
+		{Role: "user", Content: "inspect"},
+		compAssistantToolCallMsg("c1"),
+		compToolMsg("c1", "success", result),
+	}
+	state := &LoopState{Conversation: storage.Conversation{ID: "c"}, User: storage.User{ID: "u"}, History: history, ModelHistory: cloneMessages(history), SystemPrompt: "sys"}
+
+	requestHistory, err := service.compressSubagentContextBeforeLLM(context.Background(), state, childTools)
+	if err != nil {
+		t.Fatalf("compress subagent: %v", err)
+	}
+	if compResultOf(t, state.History[2].Content) != result {
+		t.Fatalf("expected display history tool result untouched")
+	}
+	if !strings.Contains(compResultOf(t, requestHistory[2].Content), compression.PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected subagent request history compacted by child tool registry limit")
+	}
+}
+
+func TestCompressSubagentContextBeforeLLM_DoesNotInjectConversationMemory(t *testing.T) {
+	store := &fakeStore{conversationMemories: []storage.ConversationMemory{{
+		ID:             "mem_1",
+		ConversationID: "c",
+		UserID:         "u",
+		Name:           "parent-memory",
+		Body:           "parent memory must not enter child context",
+	}}}
+	cfg := config.AppConfig{LLM: config.Config{ModelID: "m"}}
+	service := &Service{Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	state := &LoopState{
+		Conversation: storage.Conversation{ID: "c"},
+		User:         storage.User{ID: "u"},
+		History:      []storage.Message{{Role: "user", Content: "child task"}},
+		ModelHistory: []storage.Message{{Role: "user", Content: "child task"}},
+		SystemPrompt: "sys",
+	}
+
+	requestHistory, err := service.compressSubagentContextBeforeLLM(context.Background(), state, service.Tools)
+	if err != nil {
+		t.Fatalf("compress subagent: %v", err)
+	}
+	for _, msg := range requestHistory {
+		if strings.Contains(msg.Content, "<conversation-memory>") || strings.Contains(msg.Content, "parent memory must not enter child context") {
+			t.Fatalf("subagent compression injected conversation memory: %#v", requestHistory)
+		}
+	}
+}
+
 // --- ModelHistory carries compression output forward across rounds ---
 
 // TestModelHistory_CompressionWriteBackIsStableAcrossRounds verifies the

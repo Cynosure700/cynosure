@@ -14,6 +14,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"nano_cc/internal/agent/runtime/compression"
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/config"
 	llmpkg "nano_cc/internal/llm"
@@ -383,6 +384,21 @@ func stringValue(value any) string {
 		return s
 	}
 	return ""
+}
+
+func openAIRequestContent(req openai.ChatCompletionRequest) string {
+	var b strings.Builder
+	for _, msg := range req.Messages {
+		b.WriteString(msg.Content)
+		b.WriteByte('\n')
+		for _, tc := range msg.ToolCalls {
+			b.WriteString(tc.Function.Name)
+			b.WriteByte('\n')
+			b.WriteString(tc.Function.Arguments)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func testAppConfig(t *testing.T) config.AppConfig {
@@ -1076,6 +1092,45 @@ func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesN
 		if payload["name"] == "spawn_subagent" {
 			t.Fatalf("spawn_subagent tool event should not be emitted to frontend: %#v", writer.events)
 		}
+	}
+}
+
+func TestRespondToConversation_SubagentCompressesContextBeforeNextRound(t *testing.T) {
+	spawnArgs := `{"task":"produce large output","cwd":"."}`
+	big := strings.Repeat("x", 60000)
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "bash_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"printf '` + big + `'"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "sub summary"}, FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"spawn_subagent", "bash"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_sub_compress", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "parent request", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if llm.calls != 4 {
+		t.Fatalf("expected main, subagent tool, subagent final, main final llm calls, got %d", llm.calls)
+	}
+	subNextReq := llm.reqs[2]
+	joined := openAIRequestContent(subNextReq)
+	if !strings.Contains(joined, compression.PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected subagent follow-up request to contain persisted-output marker")
+	}
+	if strings.Contains(joined, big) {
+		t.Fatalf("expected subagent follow-up request not to contain the full oversized tool result")
 	}
 }
 

@@ -91,6 +91,18 @@ func NewDefaultCompressor() *Compressor {
 	}}
 }
 
+// NewSubagentCompressor returns the four-layer request compression chain used
+// by child agents. It intentionally excludes ConversationMemoryStrategy so a
+// fresh subagent context never receives parent conversation memories.
+func NewSubagentCompressor() *Compressor {
+	return &Compressor{strategies: []Strategy{
+		&ToolResultCompressionStrategy{},
+		&MessageWindowCompressionStrategy{},
+		&RecentToolResultRetentionStrategy{},
+		&FullHistorySummarizationStrategy{},
+	}}
+}
+
 func (c *Compressor) Compress(ctx context.Context, req *Request) error {
 	for _, strategy := range c.strategies {
 		if err := strategy.Apply(ctx, req); err != nil {

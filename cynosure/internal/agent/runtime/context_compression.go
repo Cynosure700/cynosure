@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	openai "github.com/sashabaranov/go-openai"
+
 	"nano_cc/internal/agent/runtime/compression"
 	"nano_cc/internal/agent/storage"
 	"nano_cc/internal/logger"
@@ -57,6 +59,40 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		req.ToolMaxResultSizeChars = s.Tools.MaxResultSizeChars
 	}
 	if err := compressor.Compress(ctx, req); err != nil {
+		return nil, err
+	}
+	return req.RequestHistory, nil
+}
+
+// compressSubagentContextBeforeLLM applies the child-agent four-layer
+// compression chain to the subagent model history. It mirrors the main-agent
+// request compression semantics but deliberately skips conversation-memory
+// injection to preserve the subagent's fresh-context contract.
+func (s *Service) compressSubagentContextBeforeLLM(ctx context.Context, state *LoopState, tools *ToolRegistry) ([]storage.Message, error) {
+	requestHistory := cloneMessages(state.ModelHistory)
+	store, ok := s.Store.(compression.Store)
+	if !ok {
+		return requestHistory, nil
+	}
+	toolDefs := []openai.Tool(nil)
+	if tools != nil {
+		toolDefs = tools.Definitions()
+	}
+	req := &compression.Request{
+		Conversation:   state.Conversation,
+		User:           state.User,
+		RequestHistory: requestHistory,
+		SystemPrompt:   state.SystemPrompt,
+		Tools:          toolDefs,
+		Store:          store,
+		Estimator:      compression.DefaultTokenEstimator{},
+		Summarizer:     s.summarizeHistoryForContext,
+		DisplayHistory: cloneMessages(state.History),
+	}
+	if tools != nil {
+		req.ToolMaxResultSizeChars = tools.MaxResultSizeChars
+	}
+	if err := compression.NewSubagentCompressor().Compress(ctx, req); err != nil {
 		return nil, err
 	}
 	return req.RequestHistory, nil

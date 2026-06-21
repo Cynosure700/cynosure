@@ -158,7 +158,6 @@ func TestSelectUnfoldedTail(t *testing.T) {
 	}
 }
 
-
 func TestFullHistorySummarization_KeepsTailFromDisplayHistory(t *testing.T) {
 	store := &fakeStore{}
 	summarizer := func(ctx context.Context, r SummaryRequest) (SummaryResult, error) {

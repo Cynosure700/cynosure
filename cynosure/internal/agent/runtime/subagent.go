@@ -49,7 +49,10 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, nil)
 	childState.SkillSnapshot = parent.Skills
 	childState.SystemPrompt = s.buildSubagentSystemPrompt(parent.User, parent.Skills)
-	childState.Messages = []openai.ChatCompletionMessage{{Role: "system", Content: childState.SystemPrompt}, {Role: "user", Content: task}}
+	childState.UserMessage = storage.Message{ID: childState.NextMessageID(), ConversationID: parent.Conversation.ID, UserID: parent.User.ID, Role: "user", Content: task}
+	childState.History = []storage.Message{childState.UserMessage}
+	childState.ModelHistory = cloneMessages(childState.History)
+	childState.Messages = buildOpenAIMessages(childState.SystemPrompt, childState.ModelHistory)
 	childState.ToolRuntimeEnv = childTools.runtimeEnv
 	childCtx := context.WithValue(ctx, subagentDepthKey, 1)
 	msg, err := s.runSubagentLoop(childCtx, childState, childTools, parent, runID, defaultSubagentMaxRounds)
@@ -71,6 +74,12 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 		if time.Since(turnStart) > subAgentTurnTimeout {
 			return openai.ChatCompletionMessage{}, fmt.Errorf("subagent turn timed out after %v", subAgentTurnTimeout)
 		}
+		modelHistory, err := s.compressSubagentContextBeforeLLM(ctx, state, tools)
+		if err != nil {
+			return openai.ChatCompletionMessage{}, err
+		}
+		state.ModelHistory = modelHistory
+		state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
 		req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, Tools: tools.Definitions(), MaxTokens: defaultMaxTokens}
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
