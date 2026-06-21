@@ -9,7 +9,10 @@ const persistedOutputGuidance = "当较早的消息中出现 `<persisted-output 
 	"如果预览不足以完成任务，请用标记中的 id 和偏移量调用 `read_persisted_output` 分块读取更多内容，不要猜测被省略的部分。" +
 	"当看到 `[Earlier result compacted. Re-run if needed]` 时，请重新执行相关工具以再次获取该结果。"
 
-const memorySectionGuidance = "记忆（Memory）仅用于提供历史上下文，不代表当前真实状态，不具有事实优先级。" +
+const memorySectionGuidance = "记忆（Memory）段可能同时包含过往记忆索引和真实有效记忆，两者边界必须严格区分。" +
+	"memory.md 只提供过往记忆文件索引，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件；索引条目本身不作为任何有用信息，不得当作用户偏好、项目事实或参考资料使用。" +
+	"只有标注为真实有效记忆、且来自具体记忆文件的内容，才可作为历史上下文参考。" +
+	"记忆不代表当前真实状态，不具有事实优先级。" +
 	"分析需求、阅读代码、设计方案、排查问题、生成代码时，应始终以当前用户输入、当前会话内容、当前项目代码、配置文件、运行环境和用户明确提供的信息为最高优先级。" +
 	"对于记忆中的内容，应默认其可能已经过期、被修改或不再适用，必须经过当前上下文验证后才能使用。" +
 	"当记忆与当前信息冲突时，必须忽略记忆并采用当前信息作为唯一可信来源。"
@@ -107,7 +110,7 @@ assistant: 我将先用 todo_write 规划：研究现有指标跟踪、设计指
 - 运行期 <workspace> 段落提供当前 Surface 与工作目录；除非运行时另有说明，默认以工作目录作为运行时文件与 Shell 操作的根目录。
 - 运行期 <tools> 段落提供本次会话真实可用工具；只调用其中列出的工具。
 - 运行期 <skills> 段落只提供 Skill 摘要；需要使用某个 Skill 时先加载正文。
-- 运行期 <memory> 与 <system-reminder> 段落可能包含项目事实、用户偏好或工作区说明；仅在与当前任务相关时使用，并遵循其中更高优先级的明确指令。
+- 运行期 <memory> 段可能同时包含过往记忆索引和真实有效记忆：memory.md 索引仅用于 update_memory/delete_memory 定位记忆文件，不作为任何有用信息；真实有效记忆来自具体记忆文件，仅在与当前任务相关时参考，并必须服从当前代码和用户输入。
 - Update or remove memories that turn out to be wrong or outdated：当你发现某条记忆与当前代码或事实不符、已过期或不再适用时，使用 update_memory 修正它，或使用 delete_memory 删除它（按 <memory> 段索引中的文件路径定位）。`
 
 type PromptOptions struct {

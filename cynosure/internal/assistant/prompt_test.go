@@ -49,9 +49,9 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"</workspace>",
 		"<system-reminder>",
 		"# cynosureMd",
-			"用户全局说明：",
+		"用户全局说明：",
 		"# User Rule\n全局说明",
-			"项目说明：",
+		"项目说明：",
 		"# Project Rule\n项目说明",
 		"重要：这些上下文可能与当前任务相关，也可能无关。除非与任务高度相关，否则不要对其作出回应。",
 		"</system-reminder>",
@@ -66,7 +66,9 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"不要仅凭摘要臆测完整的工作流。",
 		"可用技能：\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
 		"<memory>",
-		"记忆（Memory）仅用于提供历史上下文，不代表当前真实状态，不具有事实优先级。",
+		"记忆（Memory）段可能同时包含过往记忆索引和真实有效记忆，两者边界必须严格区分。",
+		"memory.md 只提供过往记忆文件索引，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件；索引条目本身不作为任何有用信息",
+		"只有标注为真实有效记忆、且来自具体记忆文件的内容，才可作为历史上下文参考。",
 		"Remember user preference.",
 		"</memory>",
 	} {
@@ -109,14 +111,14 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 			t.Fatalf("expected default base prompt to contain domain section %q", want)
 		}
 	}
-	if strings.Contains(DefaultBaseSystemPrompt, "记忆（Memory）仅用于提供历史上下文") {
+	if strings.Contains(DefaultBaseSystemPrompt, "记忆（Memory）段可能同时包含过往记忆索引") {
 		t.Fatalf("expected memory guidance to be injected dynamically, not embedded in default base prompt")
 	}
 }
 
 func TestBuildSystemPromptOmitsMemoryGuidanceWhenMemorySectionIsEmpty(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
-	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）仅用于提供历史上下文") {
+	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）段可能同时包含过往记忆索引") {
 		t.Fatalf("expected empty memory section to omit dynamic memory guidance, got %q", prompt)
 	}
 }

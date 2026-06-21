@@ -146,7 +146,8 @@ func (m *MarkdownMemoryStore) ReplaceMemoriesByUserAndType(ctx context.Context, 
 }
 
 // LoadMemoryIndexForPrompt 读取 memory.md 用于注入系统提示词，受行数与单行字节
-// 上限约束。返回截断后的文本、是否发生截断、以及 memory.md 的真实总行数。
+// 上限约束。仅当存在索引条目时返回文本；空索引不注入系统提示词。返回截断后
+// 的文本、是否发生截断、以及参与注入的真实索引行数。
 func (m *MarkdownMemoryStore) LoadMemoryIndexForPrompt() (string, bool, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -155,14 +156,28 @@ func (m *MarkdownMemoryStore) LoadMemoryIndexForPrompt() (string, bool, int) {
 		return "", false, 0
 	}
 	rawLines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	totalLines := len(rawLines)
+	entryLines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		if strings.HasPrefix(strings.TrimSpace(line), "- [") {
+			entryLines = append(entryLines, line)
+		}
+	}
+	if len(entryLines) == 0 {
+		return "", false, 0
+	}
+	totalLines := len(entryLines)
 	truncated := false
-	if totalLines > memoryIndexMaxLines {
-		rawLines = rawLines[:memoryIndexMaxLines]
+	entryLimit := memoryIndexMaxLines - 1
+	if entryLimit < 1 {
+		entryLimit = 1
+	}
+	if totalLines > entryLimit {
+		entryLines = entryLines[:entryLimit]
 		truncated = true
 	}
-	kept := make([]string, 0, len(rawLines))
-	for _, line := range rawLines {
+	kept := make([]string, 0, len(entryLines)+1)
+	kept = append(kept, strings.TrimRight(memoryIndexHeader, "\n"))
+	for _, line := range entryLines {
 		if len(line) > memoryIndexMaxEntryBytes {
 			line = truncateBytesAtRune(line, memoryIndexMaxEntryBytes)
 			truncated = true

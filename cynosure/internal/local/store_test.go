@@ -361,11 +361,15 @@ func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
 	if strings.Contains(string(indexBytes), "偏好") {
 		t.Fatalf("expected index entry removed after delete, got %q", string(indexBytes))
 	}
+	emptyText, emptyTruncated, emptyTotal := store.LoadMemoryIndexForPrompt(ctx)
+	if emptyText != "" || emptyTruncated || emptyTotal != 0 {
+		t.Fatalf("expected empty index to be omitted, got text=%q truncated=%v total=%d", emptyText, emptyTruncated, emptyTotal)
+	}
 
 	var b strings.Builder
 	b.WriteString(memoryIndexHeader)
 	for i := 0; i < memoryIndexMaxLines+50; i++ {
-		b.WriteString("- entry line\n")
+		b.WriteString("- [entry](entry.md) — line\n")
 	}
 	if err := atomicWriteFile(filepath.Join(memoryRoot, "memory.md"), []byte(b.String()), 0o644); err != nil {
 		t.Fatalf("write big index: %v", err)

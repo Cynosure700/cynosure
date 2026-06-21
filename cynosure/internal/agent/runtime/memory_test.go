@@ -209,6 +209,19 @@ func TestBuildMemorySection_NoCandidatesReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestBuildMemorySection_OmitsEmptyMemoryIndex(t *testing.T) {
+	store := &fakeStore{memoryIndex: "# Memory Index\n\n"}
+	llm := &fakeLLMClient{}
+	service := &Service{Store: store, LLM: llm, EnableMemory: true}
+	got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if got != "" {
+		t.Fatalf("expected empty memory section when memory.md has no entries, got %q", got)
+	}
+	if len(llm.reqs) != 0 {
+		t.Fatalf("expected no LLM calls when no candidates, got %d", len(llm.reqs))
+	}
+}
+
 func TestBuildMemorySection_InjectsIndexAndSelectedFullContentWithStaleNote(t *testing.T) {
 	old := time.Now().Add(-47 * 24 * time.Hour)
 	store := &fakeStore{
@@ -227,9 +240,14 @@ func TestBuildMemorySection_InjectsIndexAndSelectedFullContentWithStaleNote(t *t
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
 	got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
 	for _, want := range []string{
-		"Memory index (MEMORY.md)",
+		"过往记忆索引（memory.md）",
+		"仅用于 update_memory/delete_memory 定位、更新或删除对应记忆文件",
+		"索引条目不是有效记忆内容",
+		"真实有效记忆",
+		"以下内容来自被选中的具体记忆文件，不是 memory.md 索引",
+		"只是可能与当前会话相关的历史上下文",
+		"若与当前用户描述、当前会话上下文或当前项目事实不符，必须以当前描述和当前事实为准",
 		"- [简洁](pref.md) — 简洁中文",
-		"当前项目记忆",
 		"简洁：简洁中文",
 		"完整正文内容",
 		"47 days ago",

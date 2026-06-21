@@ -289,17 +289,27 @@ func (s *Service) buildMemorySection(ctx context.Context, conversationID string,
 // renderMemoryIndexBlock 渲染 memory.md 索引块（需求1）。
 func (s *Service) renderMemoryIndexBlock(ctx context.Context) string {
 	text, truncated, totalLines := s.Store.LoadMemoryIndexForPrompt(ctx)
-	if strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" || !hasMemoryIndexEntries(text) {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("### Memory index (MEMORY.md)\n")
+	b.WriteString("### 过往记忆索引（memory.md）\n")
+	b.WriteString("以下内容来自 memory.md，仅作为过往记忆文件的索引使用。仅用于 update_memory/delete_memory 定位、更新或删除对应记忆文件；索引条目不是有效记忆内容，不得当作用户偏好、项目事实或参考资料使用。\n\n")
 	if truncated {
 		b.WriteString(fmt.Sprintf("WARNING: MEMORY.md is %d lines (limit: %d). Only part of it was loaded.\n", totalLines, memoryIndexMaxLines))
 		b.WriteString("Keep index entries to one line under ~200 chars; move detail into topic files.\n\n")
 	}
 	b.WriteString(text)
 	return b.String()
+}
+
+func hasMemoryIndexEntries(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "- [") {
+			return true
+		}
+	}
+	return false
 }
 
 // selectRelevantMemories 从确定性扫描得到的候选集中，请 LLM 精选最多
@@ -367,7 +377,7 @@ func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationI
 	}
 
 	var b strings.Builder
-	b.WriteString("### 当前项目记忆\n以下记忆仅适用于当前项目；不要迁移到其他项目会话。")
+	b.WriteString("### 真实有效记忆\n以下内容来自被选中的具体记忆文件，不是 memory.md 索引；它们只是可能与当前会话相关的历史上下文，仅适用于当前项目。若与当前用户描述、当前会话上下文或当前项目事实不符，必须以当前描述和当前事实为准。")
 	if hasStale {
 		b.WriteString("\n")
 		b.WriteString("Memories are point-in-time observations, not live state — claims about code behavior or file:line citations may be outdated. Verify against current code before asserting as fact.")
