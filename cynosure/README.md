@@ -11,7 +11,7 @@
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
 - **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
-- **历史会话恢复**：对话历史持久化到 `~/.cynosure/session/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
+- **历史会话恢复**：对话历史持久化到 `~/.cynosure/session/{workspace}/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
 - **上下文压缩**：请求模型前自动压缩超长历史，支持大工具结果落盘、消息窗口裁剪、最近工具结果保留与 413 后激进压缩；消息窗口裁剪在消息总数超过 50 条时，从队首保留到“用户最新消息 + 其后 2 条”并补足尾部至合计 50 条，避免裁掉用户最新提问；全量摘要采用结构化提示词（用户最新问题、改动文件路径、关键决策、进展与待办、报错与命令结论），并保留最近 5 条原文，最终结构为 `[系统提示 + 摘要 + 最近 5 条]`；上下文摘要仅保存在运行期内存中，不做持久化。
 
 ## 项目结构
@@ -78,7 +78,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 ### 本地存储边界
 
 - **项目级文件**：`<cwd>/.cynosure/skills` 与 `<cwd>/.cynosure/.mcp.json` 分别提供工作区 Skills 与 MCP 配置；`<cwd>/.cynosure/settings.json` 保存工作区命令权限配置（`permissions.defaultMode` 与 `permissions.allowedRules`）。
-- **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{session_id}/` 保存历史会话。
+- **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{workspace}/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
 ### `~/.cynosure/config.json` 示例（可选）
@@ -111,13 +111,14 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 
 ## 历史会话
 
-TUI 会将每个会话的展示历史和模型历史分别写入用户目录下的 `~/.cynosure/session/{session_id}/`：
+TUI 会将每个会话的展示历史和模型历史分别写入用户目录下的 `~/.cynosure/session/{workspace}/{session_id}/`：
 
 ```text
 ~/.cynosure/session/
-└── <session_id>/
-    ├── history         # 完整展示历史，用于恢复用户与 agent 的交互记录
-    └── model_history   # 压缩后的模型上下文，恢复后继续作为 LLM 上下文基线
+└── <workspace>/
+    └── <session_id>/
+        ├── history         # 完整展示历史，用于恢复用户与 agent 的交互记录
+        └── model_history   # 压缩后的模型上下文，恢复后继续作为 LLM 上下文基线
 ```
 
 - `history` 保存完整会话消息，恢复展示时默认只渲染 user / assistant / system / error 消息，不直接展开 tool 大结果。
@@ -131,16 +132,17 @@ TUI 会在用户目录维护 `~/.cynosure/task_outputs/`，用于保存工具执
 
 ```text
 ~/.cynosure/task_outputs/
-├── tool-results/
-│   ├── <session_id>-<persisted_output_id>.txt   # 大工具结果全文
-│   └── <session_id>-<persisted_output_id>.json  # 结果 metadata 与 sha256
-└── <session_id>/
-    └── tools.md                                 # 当前会话工具执行结果追加日志
+└── <workspace>/
+    └── <session_id>/
+        ├── tool-results/
+        │   ├── <persisted_output_id>.txt        # 大工具结果全文
+        │   └── <persisted_output_id>.json       # 结果 metadata 与 sha256
+        └── tools.md                             # 当前会话工具执行结果追加日志
 ```
 
-- 当最近一轮 `tool_result` 总量超过预算时，系统会从最大的结果开始落盘到 `~/.cynosure/task_outputs/tool-results/`，模型上下文中只保留 `<persisted-output>` 标记和前 2000 字符预览。
+- 当最近一轮 `tool_result` 总量超过预算时，系统会从最大的结果开始落盘到 `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`，模型上下文中只保留 `<persisted-output>` 标记和前 2000 字符预览。
 - 模型如需读取完整结果，会通过 `read_persisted_output(id, offset, limit)` 分段读取，读取时会校验会话、用户、conversation 和 sha256。
-- 每次工具执行完成后，都会向 `~/.cynosure/task_outputs/{session_id}/tools.md` 追加工具名、参数、状态、审计摘要和结果内容，便于本地排查；该文件不会自动注入模型上下文。
+- 每次工具执行完成后，都会向 `~/.cynosure/task_outputs/{workspace}/{session_id}/tools.md` 追加工具名、参数、状态、审计摘要和结果内容，便于本地排查；该文件不会自动注入模型上下文。
 
 ## 安装与启动
 

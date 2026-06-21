@@ -34,7 +34,7 @@ type persistedOutputMetadata struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-func persistOutputToWorkspace(ctx context.Context, sessionID string, output storage.PersistedOutput) (storage.PersistedOutput, error) {
+func persistOutputToWorkspace(ctx context.Context, workspaceRoot, sessionID string, output storage.PersistedOutput) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return output, err
 	}
@@ -56,9 +56,9 @@ func persistOutputToWorkspace(ctx context.Context, sessionID string, output stor
 		output.ContentSHA256 = computedSHA
 	}
 
-	contentFile := persistedOutputContentFileName(sessionID, output.ID)
-	metadataFile := persistedOutputMetadataFileName(sessionID, output.ID)
-	dir, err := persistedOutputDir()
+	contentFile := persistedOutputContentFileName(output.ID)
+	metadataFile := persistedOutputMetadataFileName(output.ID)
+	dir, err := persistedOutputDir(workspaceRoot, sessionID)
 	if err != nil {
 		return output, err
 	}
@@ -91,7 +91,7 @@ func persistOutputToWorkspace(ctx context.Context, sessionID string, output stor
 	return output, nil
 }
 
-func loadPersistedOutputFromWorkspace(ctx context.Context, sessionID, id string) (storage.PersistedOutput, error) {
+func loadPersistedOutputFromWorkspace(ctx context.Context, workspaceRoot, sessionID, id string) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return storage.PersistedOutput{}, err
 	}
@@ -101,11 +101,11 @@ func loadPersistedOutputFromWorkspace(ctx context.Context, sessionID, id string)
 	if !validStoredOutputID(id) {
 		return storage.PersistedOutput{}, fmt.Errorf("invalid persisted output id: %q", id)
 	}
-	dir, err := persistedOutputDir()
+	dir, err := persistedOutputDir(workspaceRoot, sessionID)
 	if err != nil {
 		return storage.PersistedOutput{}, err
 	}
-	metadataBytes, err := os.ReadFile(filepath.Join(dir, persistedOutputMetadataFileName(sessionID, id)))
+	metadataBytes, err := os.ReadFile(filepath.Join(dir, persistedOutputMetadataFileName(id)))
 	if err != nil {
 		return storage.PersistedOutput{}, err
 	}
@@ -144,14 +144,14 @@ func loadPersistedOutputFromWorkspace(ctx context.Context, sessionID, id string)
 	}, nil
 }
 
-func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, sessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error) {
+func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, workspaceRoot, sessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256 string) (storage.PersistedOutput, error) {
 	if err := ctx.Err(); err != nil {
 		return storage.PersistedOutput{}, err
 	}
 	if !validSessionID(sessionID) {
 		return storage.PersistedOutput{}, fmt.Errorf("invalid session_id: %q", sessionID)
 	}
-	dir, err := persistedOutputDir()
+	dir, err := persistedOutputDir(workspaceRoot, sessionID)
 	if err != nil {
 		return storage.PersistedOutput{}, err
 	}
@@ -162,13 +162,12 @@ func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, sessionID,
 		}
 		return storage.PersistedOutput{}, err
 	}
-	prefix := sessionID + "-"
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return storage.PersistedOutput{}, ctx.Err()
 		}
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".json") {
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		metadataBytes, err := os.ReadFile(filepath.Join(dir, name))
@@ -182,29 +181,32 @@ func findPersistedOutputByMessageHashInWorkspace(ctx context.Context, sessionID,
 		if metadata.SessionID != sessionID || metadata.ConversationID != conversationID || metadata.UserID != userID || metadata.MessageID != messageID || metadata.ToolCallID != toolCallID || metadata.Strategy != strategy || metadata.ContentSHA256 != contentSHA256 {
 			continue
 		}
-		return loadPersistedOutputFromWorkspace(ctx, sessionID, metadata.ID)
+		return loadPersistedOutputFromWorkspace(ctx, workspaceRoot, sessionID, metadata.ID)
 	}
 	return storage.PersistedOutput{}, sql.ErrNoRows
 }
 
-func persistedOutputDir() (string, error) {
+func persistedOutputDir(workspaceRoot, sessionID string) (string, error) {
+	if !validSessionID(sessionID) {
+		return "", fmt.Errorf("invalid session_id: %q", sessionID)
+	}
 	dir, err := taskOutputsDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "tool-results"), nil
+	return filepath.Join(dir, workspaceDirName(workspaceRoot), sessionID, "tool-results"), nil
 }
 
 func taskOutputsDir() (string, error) {
 	return config.CynosureTaskOutputsDir()
 }
 
-func persistedOutputContentFileName(sessionID, id string) string {
-	return sessionID + "-" + id + ".txt"
+func persistedOutputContentFileName(id string) string {
+	return id + ".txt"
 }
 
-func persistedOutputMetadataFileName(sessionID, id string) string {
-	return sessionID + "-" + id + ".json"
+func persistedOutputMetadataFileName(id string) string {
+	return id + ".json"
 }
 
 func validStoredOutputID(id string) bool {

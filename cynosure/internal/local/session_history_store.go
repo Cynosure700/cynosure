@@ -32,8 +32,8 @@ type SessionHistoryDocument struct {
 	Messages       []storage.Message `json:"messages"`
 }
 
-func NewSessionHistoryStore() (*SessionHistoryStore, error) {
-	dir, err := config.CynosureSessionDir()
+func NewSessionHistoryStore(workspaceRoot string) (*SessionHistoryStore, error) {
+	dir, err := config.CynosureSessionDir(workspaceRoot)
 	if err != nil {
 		return nil, err
 	}

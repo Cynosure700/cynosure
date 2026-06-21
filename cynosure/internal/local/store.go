@@ -51,7 +51,7 @@ func NewStoreWithMemory(workspaceRoot string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessionHistory, err := NewSessionHistoryStore()
+	sessionHistory, err := NewSessionHistoryStore(workspaceRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *Store) CreatePersistedOutput(ctx context.Context, output storage.Persis
 	workspaceRoot := s.workspaceRoot
 	s.mu.RUnlock()
 	if workspaceRoot != "" && conv.SessionID != "" {
-		persisted, err := persistOutputToWorkspace(ctx, conv.SessionID, output)
+		persisted, err := persistOutputToWorkspace(ctx, workspaceRoot, conv.SessionID, output)
 		if err != nil {
 			return err
 		}
@@ -206,7 +206,7 @@ func (s *Store) GetPersistedOutputForConversation(ctx context.Context, id, userI
 	if workspaceRoot == "" || conv.SessionID == "" {
 		return storage.PersistedOutput{}, sql.ErrNoRows
 	}
-	output, err := loadPersistedOutputFromWorkspace(ctx, conv.SessionID, id)
+	output, err := loadPersistedOutputFromWorkspace(ctx, workspaceRoot, conv.SessionID, id)
 	if err != nil {
 		return storage.PersistedOutput{}, err
 	}
@@ -234,7 +234,7 @@ func (s *Store) GetPersistedOutputByMessageHash(ctx context.Context, conversatio
 	if workspaceRoot == "" || conv.SessionID == "" {
 		return storage.PersistedOutput{}, sql.ErrNoRows
 	}
-	output, err := findPersistedOutputByMessageHashInWorkspace(ctx, conv.SessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256)
+	output, err := findPersistedOutputByMessageHashInWorkspace(ctx, workspaceRoot, conv.SessionID, conversationID, userID, messageID, toolCallID, strategy, contentSHA256)
 	if err != nil {
 		return storage.PersistedOutput{}, err
 	}

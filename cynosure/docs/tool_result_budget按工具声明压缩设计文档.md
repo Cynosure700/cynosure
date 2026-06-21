@@ -6,8 +6,8 @@
 
 - `ToolResultCompressionStrategy` 在请求 LLM 前处理最近一轮 user turn 之后的 tool messages，当前触发条件是最近一轮未压缩 tool_result 总字节数超过 `200 * 1024`。
 - 超阈值后按结果大小从大到小持久化，内联内容替换为 `<persisted-output>` 标记和前 2000 字符预览。
-- 完整结果已经通过 `local.Store.CreatePersistedOutput` 写入现有目录 `~/.cynosure/task_outputs/tool-results/`，并可由 `read_persisted_output` 按 id 分段读取。
-- 工具执行日志已经追加到 `~/.cynosure/task_outputs/{session_id}/tools.md`。
+- 完整结果已经通过 `local.Store.CreatePersistedOutput` 写入现有目录 `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`，并可由 `read_persisted_output` 按 id 分段读取。
+- 工具执行日志已经追加到 `~/.cynosure/task_outputs/{workspace}/{session_id}/tools.md`。
 - 其他压缩策略包括 `MessageWindowCompressionStrategy`、`RecentToolResultRetentionStrategy`、`ConversationMemoryStrategy` 和 `FullHistorySummarizationStrategy`。
 
 本次需求是调整 `tool_result_budget` 压缩策略：由全局总量预算改为每个工具声明 `maxResultSizeChars`，默认 `50,000` 字符；单个工具结果超过该声明值时，将完整结果落盘到项目现有落盘目录，并在上下文中保留可读 marker 与预览。
@@ -19,7 +19,7 @@
 1. 每个工具拥有一个结果内联上限声明：`maxResultSizeChars`。
 2. 默认上限为 `50,000` 字符；未显式声明的工具，包括 MCP 工具，使用默认值。
 3. 当单个 tool result 的字符数超过对应工具的 `maxResultSizeChars` 时：
-   - 完整结果写入现有 `~/.cynosure/task_outputs/tool-results/`；
+   - 完整结果写入现有 `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`；
    - 进入 LLM 请求上下文的 tool message 改为 `<persisted-output>` marker；
    - marker 继续包含前 2000 字符预览；
    - 模型仍通过 `read_persisted_output` 读取完整结果。
@@ -30,7 +30,7 @@
 
 1. 不改变工具调用权限、审批、超时、参数校验和调度逻辑。
 2. 不改变 `read_persisted_output` 的参数和返回格式。
-3. 不迁移或重命名 `~/.cynosure/task_outputs/tool-results/`。
+3. 不改变 `read_persisted_output` 读取 persisted output 的行为。
 4. 不改变 `RecentToolResultRetentionStrategy` 的“只保留最近 N 个完整 tool results”行为。
 5. 不把 `tools.md` 自动注入模型上下文。
 6. 不为用户配置新增可编辑项；本次只做代码层工具声明。
@@ -265,12 +265,12 @@ tool result C: 50001 chars -> 落盘并替换为 marker
 
 ### 5.6 落盘目录与 marker
 
-落盘目录保持现有实现：
+落盘目录使用当前 workspace 与 session 隔离：
 
 ```text
-~/.cynosure/task_outputs/tool-results/
-├── {session_id}-{persisted_output_id}.txt
-└── {session_id}-{persisted_output_id}.json
+~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/
+├── {persisted_output_id}.txt
+└── {persisted_output_id}.json
 ```
 
 marker 格式保持不变：
@@ -330,14 +330,14 @@ FullHistorySummarizationStrategy
 1. 工具执行返回完整 `ExecResult.Output`。
 2. runtime 构造 `toolExecutionOutcome.Result`。
 3. hook 将完整 tool result 写入 `state.History` 和 `state.ModelHistory`。
-4. hook 将完整 tool result 追加到 `~/.cynosure/task_outputs/{session_id}/tools.md`。
+4. hook 将完整 tool result 追加到 `~/.cynosure/task_outputs/{workspace}/{session_id}/tools.md`。
 
 ### 6.2 下一次请求 LLM 前
 
 1. runtime 复制 model history 得到 request history。
 2. runtime 构造 `compression.Request`，传入 tool result limit resolver。
 3. `ToolResultCompressionStrategy` 查找每个 tool result 对应工具的 `maxResultSizeChars`。
-4. 超出上限的结果通过现有 Store 写入 `~/.cynosure/task_outputs/tool-results/`。
+4. 超出上限的结果通过现有 Store 写入 `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`。
 5. request history 中该 tool message 替换为 `<persisted-output>` marker。
 6. LLM 如需完整内容，调用 `read_persisted_output`。
 
@@ -402,10 +402,10 @@ FullHistorySummarizationStrategy
 
 1. 每个内置工具都有 `maxResultSizeChars` 声明路径，默认值为 `50,000`。
 2. 未知工具或 MCP 工具默认按 `50,000` 字符处理。
-3. 单个 tool result 超过对应上限时，完整结果落盘到现有 `~/.cynosure/task_outputs/tool-results/`。
+3. 单个 tool result 超过对应上限时，完整结果落盘到现有 `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`。
 4. LLM 请求上下文中只保留 `<persisted-output>` marker 和 2000 字符预览。
 5. 单个 tool result 未超过对应上限时，不因多个工具结果总量过大而触发本策略压缩。
 6. `read_persisted_output` 能读取落盘完整结果。
 7. `MessageWindowCompressionStrategy`、`RecentToolResultRetentionStrategy`、memory 和 summarization 策略行为不变。
-8. 工具执行日志 `~/.cynosure/task_outputs/{session_id}/tools.md` 继续追加完整工具结果。
+8. 工具执行日志 `~/.cynosure/task_outputs/{workspace}/{session_id}/tools.md` 继续追加完整工具结果。
 9. 现有测试通过，新增测试覆盖 per-tool 阈值、默认值、未知工具、CJK 字符计数和内部截断清理。

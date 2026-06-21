@@ -106,7 +106,7 @@ class LLMClient:
 ```
 
 #### `agent/storage` 包
-Go 中的会话持久化（`~/.cynosure/session/<id>/`）：
+Go 中的会话持久化（`~/.cynosure/session/<workspace>/<id>/`）：
 - 存储格式：JSON 文件
 - 关键接口：`ConversationHistory.{Append, Load, Save}`
 
@@ -569,8 +569,8 @@ Python 中可考虑使用专门的向量存储（如 ChromaDB）来增强记忆�
 - 文件存储路径：`~/.cynosure/`（与 Go 版本兼容）
 - 配置格式：`.json`（`config.json`, `.mcp.json`）
 - MCP 工具命名格式：`mcp__{server}__{tool}`
-- 大结果落盘路径：`~/.cynosure/task_outputs/tool-results/`
-- 会话存储路径：`~/.cynosure/session/<id>/`
+- 大结果落盘路径：`~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`
+- 会话存储路径：`~/.cynosure/session/<workspace>/<id>/`
 - 技能目录：`~/.cynosure/skills/` + `./.cynosure/skills/`
 
 ---

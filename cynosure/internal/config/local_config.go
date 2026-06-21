@@ -134,12 +134,16 @@ func CynosureTaskOutputsDir() (string, error) {
 	return filepath.Join(home, ".cynosure", "task_outputs"), nil
 }
 
-func CynosureSessionDir() (string, error) {
+func CynosureSessionDir(workspaceRoot string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user home: %w", err)
 	}
-	return filepath.Join(home, ".cynosure", "session"), nil
+	workspace, err := WorkspaceName(workspaceRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cynosure", "session", workspace), nil
 }
 
 func CynosureMarkdownPath() (string, error) {

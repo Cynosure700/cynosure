@@ -36,7 +36,7 @@ func (s *Store) AppendToolResultLog(ctx context.Context, entry storage.ToolResul
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(dir, sessionID, "tools.md")
+	path := filepath.Join(dir, workspaceDirName(s.workspaceRoot), sessionID, "tools.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

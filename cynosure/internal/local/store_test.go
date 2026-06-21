@@ -67,8 +67,8 @@ func TestStorePersistsToolResultOutputToWorkspaceFileAndRestoresAfterRestart(t *
 	if err := store.CreatePersistedOutput(ctx, output); err != nil {
 		t.Fatalf("CreatePersistedOutput returned error: %v", err)
 	}
-	contentPath := filepath.Join(home, ".cynosure", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
-	metaPath := filepath.Join(home, ".cynosure", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".json")
+	contentPath := filepath.Join(home, ".cynosure", "task_outputs", workspaceDirName(workspace), conv.SessionID, "tool-results", output.ID+".txt")
+	metaPath := filepath.Join(home, ".cynosure", "task_outputs", workspaceDirName(workspace), conv.SessionID, "tool-results", output.ID+".json")
 	contentBytes, err := os.ReadFile(contentPath)
 	if err != nil {
 		t.Fatalf("expected persisted content file: %v", err)
@@ -81,7 +81,7 @@ func TestStorePersistsToolResultOutputToWorkspaceFileAndRestoresAfterRestart(t *
 		t.Fatalf("expected persisted metadata file: %v", err)
 	}
 	meta := string(metaBytes)
-	if !strings.Contains(meta, `"session_id": "`+conv.SessionID+`"`) || !strings.Contains(meta, `"content_file": "`+conv.SessionID+`-`+output.ID+`.txt"`) {
+	if !strings.Contains(meta, `"session_id": "`+conv.SessionID+`"`) || !strings.Contains(meta, `"content_file": "`+output.ID+`.txt"`) {
 		t.Fatalf("metadata missing session/content file fields: %s", meta)
 	}
 
@@ -168,7 +168,7 @@ func TestStoreRejectsCorruptPersistedToolResultFile(t *testing.T) {
 	if err := store.CreatePersistedOutput(ctx, output); err != nil {
 		t.Fatalf("CreatePersistedOutput returned error: %v", err)
 	}
-	contentPath := filepath.Join(home, ".cynosure", "task_outputs", "tool-results", conv.SessionID+"-"+output.ID+".txt")
+	contentPath := filepath.Join(home, ".cynosure", "task_outputs", workspaceDirName(workspace), conv.SessionID, "tool-results", output.ID+".txt")
 	if err := os.WriteFile(contentPath, []byte("被篡改"), 0o644); err != nil {
 		t.Fatalf("tamper content file: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestStoreAppendsToolResultLogUnderSessionDirectory(t *testing.T) {
 	if err := store.AppendToolResultLog(ctx, second); err != nil {
 		t.Fatalf("AppendToolResultLog second returned error: %v", err)
 	}
-	logPath := filepath.Join(home, ".cynosure", "task_outputs", conv.SessionID, "tools.md")
+	logPath := filepath.Join(home, ".cynosure", "task_outputs", workspaceDirName(workspace), conv.SessionID, "tools.md")
 	bodyBytes, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read tools.md: %v", err)
@@ -726,8 +726,8 @@ func TestStorePersistsConversationAndModelHistoryUnderSessionDirectory(t *testin
 		t.Fatalf("UpsertConversationModelHistory returned error: %v", err)
 	}
 
-	historyPath := filepath.Join(home, ".cynosure", "session", conv.SessionID, "history")
-	modelHistoryPath := filepath.Join(home, ".cynosure", "session", conv.SessionID, "model_history")
+	historyPath := filepath.Join(home, ".cynosure", "session", workspaceDirName(workspace), conv.SessionID, "history")
+	modelHistoryPath := filepath.Join(home, ".cynosure", "session", workspaceDirName(workspace), conv.SessionID, "model_history")
 	for _, path := range []string{historyPath, modelHistoryPath} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)

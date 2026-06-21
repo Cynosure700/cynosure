@@ -27,7 +27,7 @@ case "/clear":
 问题：只清空了 TUI 展示用的 `m.messages`，**没有**触碰后端会话状态。下一轮发话时：
 
 - `RespondToConversation` 仍用 `m.session.Conversation`（同一个 `conversation.ID` / `SessionID`）；
-- `Store` 会从内存 map（`messages` / `modelHistory`）或磁盘 `~/.cynosure/session/<SessionID>/{history,model_history}` 把旧历史读回来塞给模型。
+- `Store` 会从内存 map（`messages` / `modelHistory`）或磁盘 `~/.cynosure/session/<workspace>/<SessionID>/{history,model_history}` 把旧历史读回来塞给模型。
 
 所以"上下文"并未真正清除，只是视觉上消失了。
 
@@ -38,7 +38,7 @@ case "/clear":
 | TUI 显示 | `Model.messages` (`app.go:89`) | — |
 | 当前会话引用 | `Model.session.Conversation` (`app.go:28`) | — |
 | 内存历史 | `Store.messages` / `Store.cache` / `Store.modelHistory` (`store.go:18,19,24`) | `conversation.ID` |
-| 磁盘历史 | `~/.cynosure/session/<SessionID>/{history,model_history}` | `SessionID` |
+| 磁盘历史 | `~/.cynosure/session/<workspace>/<SessionID>/{history,model_history}` | `SessionID` |
 
 会话由 `bootstrap.go:86` 在启动时创建，`SessionID = idgen.UUID()`，`ID = idgen.New("conv")`，一次进程一份。
 

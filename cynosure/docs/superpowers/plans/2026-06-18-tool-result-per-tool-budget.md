@@ -6,13 +6,13 @@
 
 **Architecture:** Keep tool execution and persisted output storage boundaries intact. Add result-size metadata next to built-in tool definitions, pass a resolver into request-only compression, and make `ToolResultCompressionStrategy` persist each oversized individual result.
 
-**Tech Stack:** Go, existing `go-openai` tool definitions, `internal/tools`, `internal/agent/runtime`, `internal/agent/runtime/compression`, existing local persisted output files under `~/.cynosure/task_outputs/tool-results/`.
+**Tech Stack:** Go, existing `go-openai` tool definitions, `internal/tools`, `internal/agent/runtime`, `internal/agent/runtime/compression`, existing local persisted output files under `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/`.
 
 ## Global Constraints
 
 - Default `maxResultSizeChars` is exactly `50,000` characters.
 - Unknown tools and MCP tools use the default `50,000` character limit.
-- Existing persisted output directory `~/.cynosure/task_outputs/tool-results/` stays unchanged.
+- Existing persisted output directory `~/.cynosure/task_outputs/{workspace}/{session_id}/tool-results/` stays unchanged.
 - Existing marker format and `read_persisted_output` behavior stay unchanged.
 - Other compression strategies and their order stay unchanged.
 - Use TDD: write failing tests before implementation changes.
