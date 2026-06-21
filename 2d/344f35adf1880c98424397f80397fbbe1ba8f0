@@ -1,0 +1,33 @@
+cynosure/internal/agent/runtime/conversation_flow.go
+  h_3b65c6a993f880 47 gitai:{"mixed_line_ranges":[{"Single":47}],"operations":[]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2d344f35adf1880c98424397f80397fbbe1ba8f0",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "cynosure/internal/agent/runtime/conversation_flow.go": [
+      {
+        "hash": "h_3b65c6a993f880",
+        "line_ranges": [
+          {
+            "Single": 47
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 47
+          }
+        ],
+        "operations": []
+      }
+    ]
+  },
+  "remote_transcripts": {}
+}
