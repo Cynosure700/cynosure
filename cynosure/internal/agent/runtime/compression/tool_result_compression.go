@@ -16,7 +16,7 @@ import (
 
 const toolResultCompressionStrategyName = "tool_result_compression"
 
-// ToolResultCompressionStrategy 将最近用户回合中超大的 tool_result 输出持久化，
+// ToolResultCompressionStrategy 将 RequestHistory 中超大的 tool_result 输出持久化，
 // 并把它们的内联内容替换为一个 <persisted-output> 标记加一段简短预览。
 type ToolResultCompressionStrategy struct{}
 
@@ -44,17 +44,10 @@ func isCompactedResult(result string) bool {
 	return result == earlierToolResultPlaceholder || strings.Contains(result, PersistedOutputMarkerPrefix)
 }
 
-// latestUserTurnToolIndexes 返回出现在最后一条用户消息之后的 tool 消息的下标。
-func latestUserTurnToolIndexes(history []storage.Message) []int {
-	lastUser := -1
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == "user" {
-			lastUser = i
-			break
-		}
-	}
+// requestHistoryToolIndexes 返回 RequestHistory 中所有 tool 消息的下标。
+func requestHistoryToolIndexes(history []storage.Message) []int {
 	var indexes []int
-	for i := lastUser + 1; i < len(history); i++ {
+	for i := 0; i < len(history); i++ {
 		if history[i].Role == "tool" {
 			indexes = append(indexes, i)
 		}
@@ -74,7 +67,7 @@ type toolResultCandidate struct {
 
 func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request) error {
 	history := req.RequestHistory
-	indexes := latestUserTurnToolIndexes(history)
+	indexes := requestHistoryToolIndexes(history)
 	if len(indexes) == 0 {
 		return nil
 	}
@@ -86,7 +79,7 @@ func (s *ToolResultCompressionStrategy) Apply(ctx context.Context, req *Request)
 			continue
 		}
 		toolName := toolNames[history[idx].ToolCallID]
-		if toolName == agenttools.ReadPersistedOutputToolName || toolName ==  "spawn_subagent" { 
+		if toolName == agenttools.ReadPersistedOutputToolName || toolName == "spawn_subagent" {
 			continue
 		}
 		chars := len([]rune(result))

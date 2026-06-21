@@ -267,7 +267,7 @@ func TestToolResultCompression_SkipsAlreadyMarked(t *testing.T) {
 	}
 }
 
-func TestToolResultCompression_IgnoresToolsBeforeLastUser(t *testing.T) {
+func TestToolResultCompression_PersistsToolsFromRequestHistoryStart(t *testing.T) {
 	store := &fakeStore{}
 	big := strings.Repeat("b", 300*1024)
 	history := []storage.Message{
@@ -279,8 +279,14 @@ func TestToolResultCompression_IgnoresToolsBeforeLastUser(t *testing.T) {
 	if err := (&ToolResultCompressionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(store.persistedOutputs) != 0 {
-		t.Fatalf("expected tool results before last user to be ignored")
+	if len(store.persistedOutputs) != 1 {
+		t.Fatalf("expected tool result before last user to be persisted, got %d", len(store.persistedOutputs))
+	}
+	if store.persistedOutputs[0].Content != big {
+		t.Fatalf("expected full old tool result persisted")
+	}
+	if !strings.Contains(resultOf(t, history[1].Content), PersistedOutputMarkerPrefix) {
+		t.Fatalf("expected old tool result replaced with marker, got %q", history[1].Content)
 	}
 }
 
