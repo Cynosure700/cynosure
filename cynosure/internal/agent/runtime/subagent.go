@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	defaultSubagentMaxRounds = 300
-	exploreSubagentMaxRounds = 50
+	defaultSubagentMaxRounds = 50
+	exploreSubagentMaxRounds = 30
 	subagentSummaryRound     = 0
 
 	subagentMaxRoundsSummaryPrompt = `请基于历史会话进行总结输出。不要继续调用工具，直接总结已完成的观察、关键结论、仍未解决的问题，以及建议父 Agent 下一步如何处理。`
