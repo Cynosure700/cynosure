@@ -566,6 +566,49 @@ func TestModelDisplaysMultilineToolResultPreview(t *testing.T) {
 	}
 }
 
+func TestReadFileToolMessageAlignsMultilineContent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":   "tool_read",
+		"tool_name":      "read_file",
+		"args_preview":   "path: cynosure/internal/tui/app.go",
+		"status":         "success",
+		"result_preview": "package tui\n\nimport \"strings\"\n\nfunc render() {}",
+	}})
+	model := updated.(Model)
+
+	lines := strings.Split(plainTerminalText(model.renderMessages()), "\n")
+	wantColumn := -1
+	for _, line := range lines {
+		if idx := strings.Index(line, "package tui"); idx >= 0 {
+			wantColumn = lipgloss.Width(line[:idx])
+			break
+		}
+	}
+	if wantColumn < 0 {
+		t.Fatalf("rendered lines = %#v, want first file content line", lines)
+	}
+	for _, want := range []string{"import \"strings\"", "func render() {}"} {
+		found := false
+		for _, line := range lines {
+			if strings.Contains(line, want) {
+				found = true
+				idx := strings.Index(line, want)
+				if got := lipgloss.Width(line[:idx]); got != wantColumn {
+					t.Fatalf("line %q starts content at column %d, want %d", line, got, wantColumn)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("rendered lines = %#v, want line containing %q", lines, want)
+		}
+	}
+}
+
 func TestTodoWriteToolMessageRendersCheckboxList(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
@@ -582,11 +625,15 @@ func TestTodoWriteToolMessageRendersCheckboxList(t *testing.T) {
 	}})
 	model := updated.(Model)
 
-	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"✓ Update Todos", "⎿ [✓] 梳理需求", "  [ ] 实现功能", "  [ ] 运行测试"} {
+	rawRendered := model.renderMessages()
+	rendered := plainTerminalText(rawRendered)
+	for _, want := range []string{"✓ Update Todos", "⎿ [✓] 梳理需求", "  [•] 实现功能", "  [ ] 运行测试"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}
+	}
+	if !strings.Contains(rawRendered, ansiForeground(tuiPalette.blue)+"•") {
+		t.Fatalf("rendered = %q, want in-progress todo dot rendered blue", rawRendered)
 	}
 	for _, forbidden := range []string{"todos: 3 items", "Todo list updated"} {
 		if strings.Contains(rendered, forbidden) {

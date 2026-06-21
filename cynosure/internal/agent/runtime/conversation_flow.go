@@ -26,7 +26,7 @@ const (
 	toolCallDoneEvent         = "tool_call_done"
 	maxRound                  = 1000
 	toolArgsPreviewMax        = 160
-	toolResultPreviewMaxLines = 5
+	toolResultPreviewMaxLines = 3
 
 	// mainAgentTurnTimeout 限定单个主 Agent 回合的耗时上限，它是在各轮之间
 	// 进行检查的软边界。

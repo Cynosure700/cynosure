@@ -824,10 +824,26 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	}
 	result := status
 	if !hideResult && strings.TrimSpace(tool.ResultPreview) != "" {
-		result += " · " + tool.ResultPreview
+		resultPrefix := result + " · "
+		result += " · " + alignToolResultPreview(tool.ResultPreview, lipgloss.Width("  ⎿ "+resultPrefix))
 	}
 	body := line + "\n  ⎿ " + result
 	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
+}
+
+func alignToolResultPreview(preview string, continuationIndent int) string {
+	lines := strings.Split(preview, "\n")
+	if len(lines) <= 1 {
+		return preview
+	}
+	indent := strings.Repeat(" ", max(0, continuationIndent))
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "" {
+			continue
+		}
+		lines[i] = indent + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderTodoWriteToolMessage(tool *ToolCallView, status string) string {
@@ -838,7 +854,7 @@ func (m Model) renderTodoWriteToolMessage(tool *ToolCallView, status string) str
 			if i == 0 {
 				prefix = "  ⎿ "
 			}
-			body += "\n" + prefix + todo.checkbox() + " " + todo.Content
+			body += "\n" + prefix + todo.checkbox(ansiForeground(toolTextColorForStatus(status))) + " " + todo.Content
 		}
 	} else if strings.TrimSpace(tool.ResultPreview) != "" {
 		body += "\n  ⎿ " + status + " · " + tool.ResultPreview
@@ -853,11 +869,15 @@ type todoDisplayItem struct {
 	Status  string `json:"status"`
 }
 
-func (t todoDisplayItem) checkbox() string {
-	if t.Status == "completed" {
+func (t todoDisplayItem) checkbox(restoreSequence string) string {
+	switch t.Status {
+	case "completed":
 		return "[✓]"
+	case "in_progress":
+		return "[" + ansiForeground(tuiPalette.blue) + "•" + restoreSequence + "]"
+	default:
+		return "[ ]"
 	}
-	return "[ ]"
 }
 
 func parseTodoWriteTodos(rawArgs string) ([]todoDisplayItem, bool) {
@@ -1263,13 +1283,17 @@ func errorStyle() lipgloss.Style {
 }
 
 func toolStyleForStatus(status string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(toolTextColorForStatus(status)).PaddingLeft(1)
+}
+
+func toolTextColorForStatus(status string) lipgloss.Color {
 	switch status {
 	case "success":
-		return lipgloss.NewStyle().Foreground(tuiPalette.mint).PaddingLeft(1)
+		return tuiPalette.mint
 	case "rejected", "error", "failed":
-		return lipgloss.NewStyle().Foreground(tuiPalette.coral).PaddingLeft(1)
+		return tuiPalette.coral
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")).PaddingLeft(1)
+		return lipgloss.Color("245")
 	}
 }
 
