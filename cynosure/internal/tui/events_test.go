@@ -658,6 +658,29 @@ func TestRunningModelShowsThinkingIndicatorAtTranscriptBottom(t *testing.T) {
 	}
 }
 
+func TestThinkingIndicatorHidesWhenAssistantReplyStarts(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{{Role: "user", Content: "hello"}}
+	app.generation = 1
+	app.running = true
+	app.thinkingStartedAt = time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	app.thinkingNow = app.thinkingStartedAt.Add(3 * time.Second)
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "最终回答"})
+	model := updated.(Model)
+	rendered := plainTerminalText(model.renderMessages())
+
+	if !strings.Contains(rendered, "最终回答") {
+		t.Fatalf("rendered messages = %q, want assistant reply content", rendered)
+	}
+	if strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("rendered messages = %q, should hide Thinking indicator once assistant reply starts", rendered)
+	}
+	if !model.running {
+		t.Fatal("model should keep running while the final answer is streaming")
+	}
+}
+
 func TestThinkingIndicatorUpdatesElapsedSecondsAndHidesWhenDone(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.messages = []Message{{Role: "user", Content: "hello"}}

@@ -111,6 +111,7 @@ type Model struct {
 	autoFollow        bool
 	thinkingStartedAt time.Time
 	thinkingNow       time.Time
+	answerStarted     bool
 }
 
 type thinkingTickMsg struct {
@@ -221,6 +222,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.running = true
 			m.thinkingStartedAt = time.Now()
 			m.thinkingNow = m.thinkingStartedAt
+			m.answerStarted = false
 			m.toolCallCount = 0
 			m.generation++
 			generation := m.generation
@@ -259,10 +261,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.beginApproval(req)
 			}
 		case "assistant_delta":
+			m.answerStarted = true
 			m.appendAssistantDelta(msg.Content)
 		case "reasoning_delta":
 			m.appendThinkingDelta(msg.Content)
 		case "assistant":
+			m.answerStarted = true
 			m.updateMetaFromData(msg.Data)
 			content := msg.Content
 			if content == "" && msg.Data != nil {
@@ -715,7 +719,7 @@ func (m Model) renderMessages() string {
 }
 
 func (m Model) renderThinkingIndicator() string {
-	if !m.running || m.thinkingStartedAt.IsZero() {
+	if !m.running || m.answerStarted || m.thinkingStartedAt.IsZero() {
 		return ""
 	}
 	now := m.thinkingNow
