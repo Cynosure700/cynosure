@@ -71,8 +71,8 @@ func BuiltinSkillsFS() fs.FS { /* 返回 skills 子树 */ }
 
 ### 3.3 运行期可写目录统一到 `~/.cynosure/`
 
-- `logs`：从 `<app_home>/logs` 改为按工作区 + 会话隔离的 **`~/.cynosure/logs/<workspace-key>/{session_id}`**。
-  - `<workspace-key>` 与记忆目录保持一致（工作区目录名 + 绝对路径 sha256 前 8 位），复用现有 `workspaceMemoryDirName` 算法；为避免重复，抽到 `config` 包导出函数 `WorkspaceKey(workspaceRoot)`，`memory_store.go` 改为调用它（行为不变）。
+- `logs`：从 `<app_home>/logs` 改为按工作区 + 会话隔离的 **`~/.cynosure/logs/<workspace>/{session_id}`**。
+  - `<workspace>` 与记忆目录保持一致，默认使用工作区目录名；若同名工作区已存在，则按首次登记顺序追加 `_1`、`_2` 等后缀，并由 `config.WorkspaceName(workspaceRoot)` 统一分配。
   - `{session_id}` 即会话 UUID。由于 logger 初始化早于 session_id 生成，需在 `bootstrap.go` 中**将 session_id（`idgen.UUID()`）的生成提前到 logger 初始化之前**，再用该 id 计算 logs 目录。
   - 新增 `config.CynosureSessionLogsDir(workspaceRoot, sessionID)` 返回上述路径。
 - `bin`、`cmd`（bash 工具系统资产白名单）：保留能力，默认基准从 app_home 改为 `~/.cynosure/bin`、`~/.cynosure/cmd`（新增对应路径函数）；目录为空不影响运行。
@@ -132,7 +132,7 @@ func BuiltinSkillsFS() fs.FS { /* 返回 skills 子树 */ }
    - 启动成功，工作区 = 当前目录；
    - system prompt、内置 skills 正常加载（`/skills` 可见 builtin 来源）；
    - 文件 / bash 工具边界仍限制在当前目录；
-   - logs 写入 `~/.cynosure/logs/<workspace-key>/{session_id}`。
+   - logs 写入 `~/.cynosure/logs/<workspace>/{session_id}`。
 4. `cynosure --cwd /other/project` 指定其他目录仍正常。
 
 ---

@@ -54,7 +54,11 @@ func NewMarkdownMemoryStore(workspaceRoot string) (*MarkdownMemoryStore, error) 
 	if err != nil {
 		return nil, err
 	}
-	root := filepath.Join(baseDir, workspaceMemoryDirName(workspaceRoot))
+	workspaceName, err := config.WorkspaceName(workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(baseDir, workspaceName)
 	store := &MarkdownMemoryStore{
 		rootDir:     root,
 		indexPath:   filepath.Join(root, "memory.md"),
@@ -830,8 +834,12 @@ func sanitizeName(s string) string {
 	return strings.Trim(b.String(), "-._")
 }
 
-func workspaceMemoryDirName(workspaceRoot string) string {
-	return config.WorkspaceKey(workspaceRoot)
+func workspaceDirName(workspaceRoot string) string {
+	name, err := config.WorkspaceName(workspaceRoot)
+	if err != nil {
+		return sanitizeName(filepath.Base(filepath.Clean(workspaceRoot)))
+	}
+	return name
 }
 
 func safeRelativeMemoryPath(path string) bool {

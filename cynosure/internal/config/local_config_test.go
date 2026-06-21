@@ -150,7 +150,79 @@ func TestCynosureSessionLogsDirUsesGlobalLogsWorkspaceSessionLayout(t *testing.T
 		t.Fatalf("CynosureSessionLogsDir returned error: %v", err)
 	}
 
-	want := filepath.Join(home, ".cynosure", "logs", WorkspaceKey(workspace), "session-with-spaces")
+	workspaceName, err := WorkspaceName(workspace)
+	if err != nil {
+		t.Fatalf("WorkspaceName returned error: %v", err)
+	}
+	want := filepath.Join(home, ".cynosure", "logs", workspaceName, "session-with-spaces")
+	if dir != want {
+		t.Fatalf("CynosureSessionLogsDir = %q, want %q", dir, want)
+	}
+}
+
+func TestWorkspaceNameUsesDirectoryNameAndPersistentCollisionSuffixes(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	t.Setenv("HOME", home)
+	first := filepath.Join(tmp, "one", "project")
+	second := filepath.Join(tmp, "two", "project")
+	third := filepath.Join(tmp, "three", "project")
+	if err := os.MkdirAll(first, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(third, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	firstName, err := WorkspaceName(first)
+	if err != nil {
+		t.Fatalf("WorkspaceName first returned error: %v", err)
+	}
+	secondName, err := WorkspaceName(second)
+	if err != nil {
+		t.Fatalf("WorkspaceName second returned error: %v", err)
+	}
+	thirdName, err := WorkspaceName(third)
+	if err != nil {
+		t.Fatalf("WorkspaceName third returned error: %v", err)
+	}
+	firstAgain, err := WorkspaceName(first)
+	if err != nil {
+		t.Fatalf("WorkspaceName first again returned error: %v", err)
+	}
+
+	if firstName != "project" {
+		t.Fatalf("first workspace name = %q, want project", firstName)
+	}
+	if secondName != "project_1" {
+		t.Fatalf("second workspace name = %q, want project_1", secondName)
+	}
+	if thirdName != "project_2" {
+		t.Fatalf("third workspace name = %q, want project_2", thirdName)
+	}
+	if firstAgain != firstName {
+		t.Fatalf("first workspace name changed from %q to %q", firstName, firstAgain)
+	}
+}
+
+func TestCynosureSessionLogsDirUsesWorkspaceNameWithoutHash(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	workspace := filepath.Join(tmp, "project")
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := CynosureSessionLogsDir(workspace, "session-1")
+	if err != nil {
+		t.Fatalf("CynosureSessionLogsDir returned error: %v", err)
+	}
+
+	want := filepath.Join(home, ".cynosure", "logs", "project", "session-1")
 	if dir != want {
 		t.Fatalf("CynosureSessionLogsDir = %q, want %q", dir, want)
 	}

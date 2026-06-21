@@ -10,7 +10,7 @@
 - **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
-- **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace-key>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
+- **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
 - **历史会话恢复**：对话历史持久化到 `~/.cynosure/session/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
 - **上下文压缩**：请求模型前自动压缩超长历史，支持大工具结果落盘、消息窗口裁剪、最近工具结果保留与 413 后激进压缩；消息窗口裁剪在消息总数超过 50 条时，从队首保留到“用户最新消息 + 其后 2 条”并补足尾部至合计 50 条，避免裁掉用户最新提问；全量摘要采用结构化提示词（用户最新问题、改动文件路径、关键决策、进展与待办、报错与命令结论），并保留最近 5 条原文，最终结构为 `[系统提示 + 摘要 + 最近 5 条]`；上下文摘要仅保存在运行期内存中，不做持久化。
 
@@ -93,10 +93,10 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ## 项目级记忆
 
-TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace-key>/` 目录。`<workspace-key>` 由当前工作区目录名和工作区绝对路径 hash 组成；记忆只对当前项目下的会话有效，切换到其他项目时不会复用当前项目记忆。
+TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace>/` 目录。`<workspace>` 默认使用当前工作区目录名；若同名工作区已存在，则按首次登记顺序追加 `_1`、`_2` 等后缀，并记录在 `~/.cynosure/workspaces.json` 中。记忆只对当前项目下的会话有效，切换到其他项目时不会复用当前项目记忆。
 
 ```text
-~/.cynosure/memory/<workspace-key>/
+~/.cynosure/memory/<workspace>/
 ├── memory.md                 # 长期记忆索引
 ├── <memory-name>.md          # 单条长期记忆
 └── sessions/
@@ -105,7 +105,7 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
 - 长期记忆分为四类：`preference`（用户长期偏好、习惯与项目相关描述）、`feedback`（对 Agent 行为的纠正与肯定，body 含 `Why:` 与 `How to apply:`）、`project`（项目进展、决策、截止日期等不可从代码推导的动态，相对日期转为绝对日期）、`reference`（外部系统中信息的定位信息）。抽取时不会记录可从代码、Git 历史、调试上下文或 `CYNOSURE.MD` 直接获得的内容。
-- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.cynosure/memory/<workspace-key>/sessions/<session_id>.md`，不会按轮次生成多个文件。
+- 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.cynosure/memory/<workspace>/sessions/<session_id>.md`，不会按轮次生成多个文件。
 - 记忆提取（长期记忆与会话记忆）基于**模型线**而非纯文本对话：渲染时包含完整交互——用户与助手文本、助手发起的工具调用（名称与参数）、工具结果（状态与内容），使记忆扎根于真实发生的交互。轮末提取与模型历史落库共用本轮压缩后的请求线（`lastRequestHistory` + 本轮最终 assistant）；循环中途提取则取 `state.ModelHistory`（会话循环内逐字 lockstep 追加的 user / assistant / tool 消息）。
 - 会话收尾更新只对当前项目当前会话加锁，锁 key 为 `项目名 + session_id`。
 

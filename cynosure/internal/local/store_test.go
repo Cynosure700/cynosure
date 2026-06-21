@@ -288,7 +288,7 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 		t.Fatalf("InsertMemory returned error: %v", err)
 	}
 
-	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace))
 	indexPath := filepath.Join(memoryRoot, "memory.md")
 	indexBytes, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -428,7 +428,7 @@ func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
 	if err := store.DeleteMemoryFile(ctx, scanned[0].Path); err != nil {
 		t.Fatalf("DeleteMemoryFile returned error: %v", err)
 	}
-	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace))
 	if _, err := os.Stat(filepath.Join(memoryRoot, scanned[0].Path)); !os.IsNotExist(err) {
 		t.Fatalf("expected memory file to be deleted, stat err = %v", err)
 	}
@@ -491,7 +491,7 @@ func TestMarkdownMemoryStoreUpdateRenamesFileWhenNameChanges(t *testing.T) {
 		t.Fatalf("expected renamed path, got same path %q", gotPath)
 	}
 
-	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace))
 	if _, err := os.Stat(filepath.Join(memoryRoot, oldPath)); !os.IsNotExist(err) {
 		t.Fatalf("expected old file removed, stat err = %v", err)
 	}
@@ -577,11 +577,39 @@ func TestMarkdownMemoryStoreDoesNotListOtherWorkspaceMemoriesFromHomeLink(t *tes
 	if len(items) != 1 || !strings.Contains(items[0].Body, "只属于当前项目") {
 		t.Fatalf("items = %#v, want only current workspace memory", items)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace), "memory.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace), "memory.md")); err != nil {
 		t.Fatalf("current workspace memory index not under home .cynosure: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(otherWorkspace), "memory.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceDirName(otherWorkspace), "memory.md")); err != nil {
 		t.Fatalf("other workspace memory index not under home .cynosure: %v", err)
+	}
+}
+
+func TestMarkdownMemoryStoreUsesWorkspaceNameCollisionSuffixes(t *testing.T) {
+	home := t.TempDir()
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "one", "project")
+	otherWorkspace := filepath.Join(tmp, "two", "project")
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherWorkspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewStoreWithMemory(workspace); err != nil {
+		t.Fatalf("NewStoreWithMemory workspace returned error: %v", err)
+	}
+	if _, err := NewStoreWithMemory(otherWorkspace); err != nil {
+		t.Fatalf("NewStoreWithMemory other workspace returned error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", "project", "memory.md")); err != nil {
+		t.Fatalf("first workspace memory index not created under project: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", "project_1", "memory.md")); err != nil {
+		t.Fatalf("second workspace memory index not created under project_1: %v", err)
 	}
 }
 
@@ -607,7 +635,7 @@ func TestMarkdownConversationMemoryUsesSessionIDFile(t *testing.T) {
 		t.Fatalf("ReplaceConversationMemories second returned error: %v", err)
 	}
 
-	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace))
+	memoryRoot := filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace))
 	sessionPath := filepath.Join(memoryRoot, "sessions", conv.SessionID+".md")
 	bodyBytes, err := os.ReadFile(sessionPath)
 	if err != nil {
@@ -834,7 +862,7 @@ func TestBootstrapLoadsCynosureMarkdownIntoRuntime(t *testing.T) {
 	if bundle.Conversation.SessionID == "" || bundle.Conversation.SessionID == bundle.Conversation.ID {
 		t.Fatalf("SessionID = %q, ConversationID = %q", bundle.Conversation.SessionID, bundle.Conversation.ID)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceMemoryDirName(workspace), "memory.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "memory", workspaceDirName(workspace), "memory.md")); err != nil {
 		t.Fatalf("memory index not created: %v", err)
 	}
 }

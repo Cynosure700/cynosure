@@ -1,14 +1,13 @@
 package config
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,6 +29,8 @@ type CynosureMarkdownContext struct {
 	WorkspacePath    string
 	WorkspaceContent string
 }
+
+var workspaceRegistryMu sync.Mutex
 
 func LoadLocalConfig(cwd string) (AppConfig, error) {
 	fileCfg, err := loadConfigFile()
@@ -161,23 +162,118 @@ func WorkspaceMCPConfigPath(workspaceRoot string) string {
 	return filepath.Join(strings.TrimSpace(workspaceRoot), ".cynosure", ".mcp.json")
 }
 
-// WorkspaceKey 由工作区目录名与其绝对路径的 sha256 前 8 位组成，用于在
-// ~/.cynosure/ 下隔离不同项目的运行期数据（记忆、日志等）。
-func WorkspaceKey(workspaceRoot string) string {
+// WorkspaceName 返回用于 ~/.cynosure/ 下隔离工作区运行期数据的目录名。
+// 默认使用工作区目录名；同名工作区按首次登记顺序追加 _1、_2 等后缀。
+func WorkspaceName(workspaceRoot string) (string, error) {
+	workspaceRegistryMu.Lock()
+	defer workspaceRegistryMu.Unlock()
+
+	abs, err := filepath.Abs(strings.TrimSpace(workspaceRoot))
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace path: %w", err)
+	}
+	abs = filepath.Clean(abs)
+	base := workspaceBaseName(abs)
+	path, err := workspaceRegistryPath()
+	if err != nil {
+		return "", err
+	}
+	registry, err := readWorkspaceRegistry(path)
+	if err != nil {
+		return "", err
+	}
+	if name := registry.Workspaces[abs]; name != "" {
+		return name, nil
+	}
+	used := make(map[string]struct{}, len(registry.Workspaces))
+	for _, name := range registry.Workspaces {
+		if name != "" {
+			used[name] = struct{}{}
+		}
+	}
+	name := nextWorkspaceName(base, used)
+	if registry.Workspaces == nil {
+		registry.Workspaces = make(map[string]string)
+	}
+	registry.Workspaces[abs] = name
+	if err := writeWorkspaceRegistry(path, registry); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+type workspaceRegistry struct {
+	Workspaces map[string]string `json:"workspaces"`
+}
+
+func workspaceBaseName(workspaceRoot string) string {
 	base := sanitizePathSegment(filepath.Base(filepath.Clean(workspaceRoot)))
 	if base == "" {
 		base = "project"
 	}
-	abs, err := filepath.Abs(workspaceRoot)
+	return base
+}
+
+func workspaceRegistryPath() (string, error) {
+	home, err := cynosureHomeDir()
 	if err != nil {
-		abs = filepath.Clean(workspaceRoot)
+		return "", err
 	}
-	sum := sha256.Sum256([]byte(abs))
-	return base + "-" + hex.EncodeToString(sum[:])[:8]
+	return filepath.Join(home, "workspaces.json"), nil
+}
+
+func readWorkspaceRegistry(path string) (workspaceRegistry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return workspaceRegistry{Workspaces: make(map[string]string)}, nil
+		}
+		return workspaceRegistry{}, fmt.Errorf("read workspace registry %s: %w", path, err)
+	}
+	var registry workspaceRegistry
+	if err := json.Unmarshal(data, &registry); err != nil {
+		return workspaceRegistry{}, fmt.Errorf("parse workspace registry %s: %w", path, err)
+	}
+	if registry.Workspaces == nil {
+		registry.Workspaces = make(map[string]string)
+	}
+	return registry, nil
+}
+
+func writeWorkspaceRegistry(path string, registry workspaceRegistry) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create workspace registry dir: %w", err)
+	}
+	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode workspace registry: %w", err)
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write workspace registry temp file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("replace workspace registry: %w", err)
+	}
+	return nil
+}
+
+func nextWorkspaceName(base string, used map[string]struct{}) string {
+	if _, ok := used[base]; !ok {
+		return base
+	}
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s_%d", base, i)
+		if _, ok := used[candidate]; !ok {
+			return candidate
+		}
+	}
 }
 
 // CynosureSessionLogsDir 返回按工作区与会话隔离的日志目录：
-// ~/.cynosure/logs/<workspace-key>/<session_id>
+// ~/.cynosure/logs/<workspace>/<session_id>
 func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -187,7 +283,11 @@ func CynosureSessionLogsDir(workspaceRoot, sessionID string) (string, error) {
 	if session == "" {
 		session = "session"
 	}
-	return filepath.Join(home, ".cynosure", "logs", WorkspaceKey(workspaceRoot), session), nil
+	workspace, err := WorkspaceName(workspaceRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cynosure", "logs", workspace, session), nil
 }
 
 // sanitizePathSegment 把任意字符串收敛为安全的单层目录名。
