@@ -8,5 +8,7 @@ The base system prompt remains in `../system_prompt.md`.
 - `memory_selection.md`: project-scoped memory selection before prompt injection.
 - `memory_consolidation.md`: project-scoped memory cleanup template. It uses `{{type_label}}` and `{{type_value}}` placeholders.
 - `conversation_memory_update.md`: current-session memory maintenance.
+- `general_subagent.md`: appended rules for the `general` child agent.
+- `explore_subagent.md`: standalone system prompt for the read-only `explore` child agent. It uses the `{{current_working_directory}}` placeholder.
 
 Short structural messages that are tightly coupled to request shaping can remain hardcoded in Go.

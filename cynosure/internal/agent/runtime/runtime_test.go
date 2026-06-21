@@ -413,6 +413,27 @@ func TestBuildSubagentSystemPromptAppendsStructuredChildAgentContext(t *testing.
 	service := &Service{
 		Cfg:        testAppConfig(t),
 		BasePrompt: "Base prompt.",
+		Prompts: FunctionalPrompts{
+			GeneralSubagent: "<subagent>\ncustom general subagent template\n</subagent>",
+		},
+	}
+
+	prompt := service.buildSubagentSystemPrompt(storage.User{Username: "agent-user"}, nil)
+
+	for _, want := range []string{
+		"Base prompt.",
+		"custom general subagent template",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected subagent prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
+func TestBuildSubagentSystemPromptUsesEmbeddedDefaultTemplate(t *testing.T) {
+	service := &Service{
+		Cfg:        testAppConfig(t),
+		BasePrompt: "Base prompt.",
 	}
 
 	prompt := service.buildSubagentSystemPrompt(storage.User{Username: "agent-user"}, nil)
@@ -447,25 +468,54 @@ func TestParseSubagentTypeAcceptsDefinedTypesOnly(t *testing.T) {
 }
 
 func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T) {
-	prompt := buildExploreSubagentSystemPrompt("/workspace/project")
+	service := &Service{Prompts: FunctionalPrompts{
+		ExploreSubagent: "custom explore template for {{current_working_directory}}",
+	}}
+	if prompt := service.buildExploreSubagentSystemPrompt("/workspace/project"); prompt != "custom explore template for /workspace/project" {
+		t.Fatalf("expected custom explore prompt template to be rendered, got %q", prompt)
+	}
+
+	prompt := (&Service{}).buildExploreSubagentSystemPrompt("/workspace/project")
 	for _, want := range []string{
 		"You are Cynosure's explore subagent",
 		"READ-ONLY MODE",
+		"45 tool calls",
+		"45 rounds",
+		"must stop using tools and summarize",
+		"Prefer summary-oriented files first",
+		"README",
+		"Do not reread files already covered by a sufficient summary file",
 		"grep",
 		"glob",
 		"ls",
 		"read_file",
+		"Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).",
 		"Current working directory: /workspace/project",
 		"absolute path",
-		"Do not use write_file.",
-		"Do not use edit_file.",
-		"Do not use multi_edit.",
-		"Do not use update_memory.",
-		"Do not use delete_memory.",
-		"Do not use spawn_subagent.",
+		"Do not use write/edit/delete/move/copy/create tools, memory tools, task tools, subagent spawning, package managers, dependency installers, git mutation commands, network-side mutation, or any state-changing shell command.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected explore prompt to contain %q, got %q", want, prompt)
+		}
+	}
+	for _, repeated := range []string{
+		"Do not use write_file.",
+		"Do not use edit_file.",
+		"Do not use multi_edit.",
+		"Do not use delete_file.",
+		"Do not use move_file.",
+		"Do not use copy_file.",
+		"Do not use create_file.",
+		"Do not use update_memory.",
+		"Do not use delete_memory.",
+		"Do not use spawn_subagent.",
+		"Do not use package managers.",
+		"Do not use dependency installation commands.",
+		"Do not use git mutation commands.",
+		"Do not use shell commands that modify state.",
+	} {
+		if strings.Contains(prompt, repeated) {
+			t.Fatalf("expected explore prompt to summarize repeated ban %q, got %q", repeated, prompt)
 		}
 	}
 	for _, forbidden := range []string{
@@ -476,6 +526,21 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("expected explore prompt not to inherit main-agent text %q, got %q", forbidden, prompt)
 		}
+	}
+}
+
+func TestBuildSubagentProfileUsesExploreSpecificMaxRounds(t *testing.T) {
+	cfg := testAppConfig(t)
+	service := &Service{Cfg: cfg}
+
+	explore := service.buildSubagentProfile(subagentTypeExplore, storage.User{}, nil, cfg.WorkspaceRoot)
+	if explore.MaxRounds != 50 {
+		t.Fatalf("expected explore max rounds to be 50, got %d", explore.MaxRounds)
+	}
+
+	general := service.buildSubagentProfile(subagentTypeGeneral, storage.User{}, nil, cfg.WorkspaceRoot)
+	if general.MaxRounds != defaultSubagentMaxRounds {
+		t.Fatalf("expected general max rounds to keep default %d, got %d", defaultSubagentMaxRounds, general.MaxRounds)
 	}
 }
 
@@ -505,15 +570,46 @@ func TestNewExploreToolRegistryAllowsOnlyReadOnlySearchTools(t *testing.T) {
 			got[def.Function.Name] = true
 		}
 	}
-	for _, want := range []string{"read_file", "grep", "glob", "ls"} {
+	for _, want := range []string{"bash", "read_file", "grep", "glob", "ls"} {
 		if !got[want] {
 			t.Fatalf("expected explore registry to include %s, got %#v", want, got)
 		}
 	}
-	for _, forbidden := range []string{"bash", "write_file", "edit_file", "multi_edit", "todo_write", "todo_list", "update_memory", "delete_memory", "spawn_subagent", "web_fetch", "load_skill"} {
+	for _, forbidden := range []string{"write_file", "edit_file", "multi_edit", "todo_write", "todo_list", "update_memory", "delete_memory", "spawn_subagent", "web_fetch", "load_skill"} {
 		if got[forbidden] {
 			t.Fatalf("expected explore registry not to include %s, got %#v", forbidden, got)
 		}
+	}
+}
+
+func TestExploreToolRegistryBashOnlyAllowsPromptListedReadOnlyCommands(t *testing.T) {
+	original := agenttools.Handlers["bash"]
+	defer func() { agenttools.Handlers["bash"] = original }()
+	var executed []string
+	agenttools.Handlers["bash"] = func(ctx context.Context, args map[string]any) (string, error) {
+		command, _ := args["command"].(string)
+		executed = append(executed, command)
+		return command, nil
+	}
+
+	workspace := t.TempDir()
+	registry := NewExploreToolRegistry(config.AppConfig{
+		WorkspaceRoot: workspace,
+		AllowedTools:  []string{"bash", "read_file", "grep", "glob", "ls"},
+	}, workspace)
+
+	for _, command := range []string{"ls", "git status", "git log --oneline", "git diff -- README.md", "find . -maxdepth 1", "cat README.md", "head -n 5 README.md", "tail -n 5 README.md"} {
+		if _, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":`+strconv.Quote(command)+`}`); err != nil {
+			t.Fatalf("expected explore bash command %q to be allowed, got %v", command, err)
+		}
+	}
+	for _, command := range []string{"pwd", "rg TODO", "git checkout main", "git commit -m x", "git diff --output=patch.diff", "find . -delete", "cat README.md > copy.md", "rm README.md"} {
+		if _, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":`+strconv.Quote(command)+`}`); err == nil {
+			t.Fatalf("expected explore bash command %q to be rejected", command)
+		}
+	}
+	if len(executed) != 8 {
+		t.Fatalf("expected only allowed commands to execute, got %#v", executed)
 	}
 }
 
@@ -1225,7 +1321,7 @@ func TestRespondToConversation_SpawnExploreSubagentUsesFreshMessagesAndExploreTo
 			t.Fatalf("expected explore request tools to include %s, got %#v", want, gotTools)
 		}
 	}
-	for _, forbidden := range []string{"bash", "write_file", "edit_file", "multi_edit", "spawn_subagent"} {
+	for _, forbidden := range []string{"write_file", "edit_file", "multi_edit", "spawn_subagent"} {
 		if gotTools[forbidden] {
 			t.Fatalf("expected explore request tools not to include %s, got %#v", forbidden, gotTools)
 		}

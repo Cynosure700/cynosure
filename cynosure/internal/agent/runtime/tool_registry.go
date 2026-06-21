@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -35,9 +36,17 @@ type ToolRegistry struct {
 	definitions        []openai.Tool
 	maxResultSizeChars map[string]int
 	baseEnv            agenttools.RuntimeEnv
+	bashPolicy         bashExecutionPolicy
 }
 
 const defaultAllowedTool = "load_skill"
+
+type bashExecutionPolicy int
+
+const (
+	bashPolicyDefault bashExecutionPolicy = iota
+	bashPolicyExploreReadOnly
+)
 
 func NewToolRegistry(cfg config.AppConfig) *ToolRegistry {
 	allowed := loadAllowedToolNames(cfg)
@@ -69,11 +78,11 @@ func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
 }
 
 func NewExploreToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
-	allowed := intersectTools(loadAllowedToolNames(cfg), []string{"read_file", "grep", "glob", "ls"})
+	allowed := intersectTools(loadAllowedToolNames(cfg), []string{"bash", "read_file", "grep", "glob", "ls"})
 	env := runtimeEnvFromConfig(cfg)
 	env.CurrentWorkingDir = strings.TrimSpace(cwd)
 	definitions := buildToolDefinitions(allowed)
-	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env}
+	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env, bashPolicy: bashPolicyExploreReadOnly}
 }
 
 func (r *ToolRegistry) Definitions() []openai.Tool {
@@ -112,6 +121,11 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 	if !r.isAllowed(name) {
 		return ToolExecutionResult{}, fmt.Errorf("tool %s is not registered for local runtime", name)
 	}
+	if name == "bash" {
+		if err := r.validateBashExecution(args); err != nil {
+			return ToolExecutionResult{}, err
+		}
+	}
 	if def, ok := r.lookupDefinition(name); ok && def.Function != nil {
 		if err := agenttools.ValidateToolArgs(name, agenttools.RawSchemaFromParameters(def.Function.Parameters), args); err != nil {
 			return ToolExecutionResult{}, err
@@ -128,6 +142,17 @@ func (r *ToolRegistry) Execute(ctx context.Context, toolCtx ToolContext, name st
 		return ToolExecutionResult{}, err
 	}
 	return ToolExecutionResult{Output: execResult.Output, Todos: execResult.Todos}, nil
+}
+
+func (r *ToolRegistry) validateBashExecution(args map[string]any) error {
+	if r == nil || r.bashPolicy != bashPolicyExploreReadOnly {
+		return nil
+	}
+	command, _ := args["command"].(string)
+	if !isExploreReadOnlyBashCommand(command) {
+		return fmt.Errorf("bash command is not allowed for explore subagent; use only read-only operations: ls, git status, git log, git diff, find, cat, head, tail")
+	}
+	return nil
 }
 
 func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
@@ -166,6 +191,46 @@ func intersectTools(names []string, allowed []string) []string {
 		}
 	}
 	return filtered
+}
+
+func isExploreReadOnlyBashCommand(command string) bool {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return false
+	}
+	if strings.Contains(command, ">") || strings.Contains(command, ";") || strings.Contains(command, "&") || strings.Contains(command, "|") {
+		return false
+	}
+	switch filepath.Base(fields[0]) {
+	case "ls", "find", "cat", "head", "tail":
+		return !containsExploreBashDeniedArg(fields[1:])
+	case "git":
+		if len(fields) < 2 {
+			return false
+		}
+		switch fields[1] {
+		case "status", "log", "diff":
+			return !containsExploreBashDeniedArg(fields[2:])
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func containsExploreBashDeniedArg(args []string) bool {
+	for _, arg := range args {
+		switch {
+		case arg == "-delete" || arg == "-exec" || arg == "-execdir":
+			return true
+		case arg == "-o" || arg == "--output":
+			return true
+		case strings.HasPrefix(arg, "--output="):
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ToolRegistry) isAllowed(name string) bool {
