@@ -33,6 +33,7 @@ const (
 )
 
 const consolidationStateFile = ".consolidation_state.json"
+const injectedMemoriesStateFile = "injected_memories.json"
 
 type MarkdownMemoryStore struct {
 	mu          sync.Mutex
@@ -41,6 +42,8 @@ type MarkdownMemoryStore struct {
 	sessionsDir string
 	projectName string
 }
+
+type injectedMemoriesState map[string]time.Time
 
 func NewMarkdownMemoryStore(workspaceRoot string) (*MarkdownMemoryStore, error) {
 	projectName := sanitizeName(filepath.Base(filepath.Clean(workspaceRoot)))
@@ -236,6 +239,67 @@ func (m *MarkdownMemoryStore) ReadMemoryFile(path string) (storage.Memory, error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.readMemoryFileLocked(path)
+}
+
+// ShouldInjectMemory 实现文件级会话内去重：同一会话、同一记忆文件、同一 mtime
+// 已注入过则跳过；mtime 变化则更新持久状态并允许重新注入。
+func (m *MarkdownMemoryStore) ShouldInjectMemory(conversationID, path string, modTime time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if strings.TrimSpace(conversationID) == "" {
+		return true, nil
+	}
+	if !safeRelativeMemoryPath(path) {
+		return false, fmt.Errorf("unsafe memory path: %s", path)
+	}
+	state, err := m.readInjectedMemoriesStateLocked(conversationID)
+	if err != nil {
+		return false, err
+	}
+	prev, ok := state[path]
+	if ok && prev.Equal(modTime) {
+		return false, nil
+	}
+	state[path] = modTime
+	if err := m.writeInjectedMemoriesStateLocked(conversationID, state); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ForgetInjectedMemory 清除所有会话中指定记忆文件的注入记录。记忆内容被更新、删除
+// 或重命名后调用，确保后续轮次不被旧状态误去重。
+func (m *MarkdownMemoryStore) ForgetInjectedMemory(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !safeRelativeMemoryPath(path) {
+		return fmt.Errorf("unsafe memory path: %s", path)
+	}
+	entries, err := os.ReadDir(m.sessionsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		conversationID := entry.Name()
+		state, err := m.readInjectedMemoriesStateLocked(conversationID)
+		if err != nil {
+			return err
+		}
+		if _, ok := state[path]; !ok {
+			continue
+		}
+		delete(state, path)
+		if err := m.writeInjectedMemoriesStateLocked(conversationID, state); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdateMemoryFile 部分更新指定记忆文件，并同步刷新 memory.md。当记忆标题（name）
@@ -558,6 +622,37 @@ func (m *MarkdownMemoryStore) readMemoryFileLocked(path string) (storage.Memory,
 
 func (m *MarkdownMemoryStore) sessionPath(sessionID string) string {
 	return filepath.Join(m.sessionsDir, sanitizeName(sessionID)+".md")
+}
+
+func (m *MarkdownMemoryStore) injectedMemoriesStatePath(conversationID string) string {
+	return filepath.Join(m.sessionsDir, sanitizeName(conversationID), injectedMemoriesStateFile)
+}
+
+func (m *MarkdownMemoryStore) readInjectedMemoriesStateLocked(conversationID string) (injectedMemoriesState, error) {
+	data, err := os.ReadFile(m.injectedMemoriesStatePath(conversationID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return injectedMemoriesState{}, nil
+		}
+		return nil, err
+	}
+	var state injectedMemoriesState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return injectedMemoriesState{}, nil
+	}
+	if state == nil {
+		state = injectedMemoriesState{}
+	}
+	return state, nil
+}
+
+func (m *MarkdownMemoryStore) writeInjectedMemoriesStateLocked(conversationID string, state injectedMemoriesState) error {
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return atomicWriteFile(m.injectedMemoriesStatePath(conversationID), data, 0o644)
 }
 
 // readSessionMemoryLocked 读取会话记忆文件，返回条目列表与持久化断点 ID。文件缺失时

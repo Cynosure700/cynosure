@@ -37,6 +37,8 @@ type conversationStore interface {
 	LoadMemoryIndexForPrompt(ctx context.Context) (string, bool, int)
 	ScanRecentMemories(ctx context.Context) ([]storage.ScannedMemory, error)
 	ReadMemoryFile(ctx context.Context, path string) (storage.Memory, error)
+	ShouldInjectMemory(ctx context.Context, conversationID, path string, modTime time.Time) (bool, error)
+	ForgetInjectedMemory(ctx context.Context, path string) error
 	UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error)
 	DeleteMemoryFile(ctx context.Context, path string) error
 	LoadConsolidationState(ctx context.Context) (storage.ConsolidationState, error)
@@ -67,17 +69,8 @@ type Service struct {
 	MCP               *mcp.Manager
 	Approver          ApprovalDecider
 
-	injectedMu       sync.Mutex
-	injectedMemories map[string]map[string]injectedMemoryMeta
-
 	sessionMemoryMu       sync.Mutex
 	sessionMemoryProgress map[string]*sessionMemoryProgress // key=会话 ID
-}
-
-// injectedMemoryMeta 记录某条记忆在某会话中已注入时的文件修改时间，用于会话内去重
-// 与"文件更新后重读替换"判断。
-type injectedMemoryMeta struct {
-	ModTime time.Time
 }
 
 // sessionMemoryProgress 跟踪某会话的会话记忆触发进度：记录上次更新时的上下文基线与

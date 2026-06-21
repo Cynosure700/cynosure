@@ -236,7 +236,9 @@ func (s *Service) executeMemoryTool(ctx context.Context, name, rawArgs string) (
 		if err := s.Store.DeleteMemoryFile(ctx, path); err != nil {
 			return "", err
 		}
-		s.forgetInjectedMemory(path)
+		if err := s.Store.ForgetInjectedMemory(ctx, path); err != nil {
+			logger.Warn(fmt.Sprintf("memory: forget injected memory failed: %v", err))
+		}
 		return fmt.Sprintf("Deleted memory %s", path), nil
 	case "update_memory":
 		if args.Name == nil && args.Description == nil && args.Body == nil {
@@ -248,24 +250,18 @@ func (s *Service) executeMemoryTool(ctx context.Context, name, rawArgs string) (
 			return "", err
 		}
 		// 更新标题会重命名文件，需清除旧路径与新路径的注入记录，下一轮按最新文件重读。
-		s.forgetInjectedMemory(path)
+		if err := s.Store.ForgetInjectedMemory(ctx, path); err != nil {
+			logger.Warn(fmt.Sprintf("memory: forget injected memory failed: %v", err))
+		}
 		if newPath != "" && newPath != path {
-			s.forgetInjectedMemory(newPath)
+			if err := s.Store.ForgetInjectedMemory(ctx, newPath); err != nil {
+				logger.Warn(fmt.Sprintf("memory: forget injected memory failed: %v", err))
+			}
 			return fmt.Sprintf("Updated memory %s (renamed to %s)", path, newPath), nil
 		}
 		return fmt.Sprintf("Updated memory %s", path), nil
 	default:
 		return "", fmt.Errorf("unknown memory tool %s", name)
-	}
-}
-
-// forgetInjectedMemory 在记忆被更新/删除后，清除其在所有会话中的注入记录，确保下一
-// 轮按最新文件内容重新注入（或不再注入已删除的条目）。
-func (s *Service) forgetInjectedMemory(path string) {
-	s.injectedMu.Lock()
-	defer s.injectedMu.Unlock()
-	for _, conv := range s.injectedMemories {
-		delete(conv, path)
 	}
 }
 
@@ -360,7 +356,12 @@ func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationI
 	rendered := make([]renderedMemory, 0, len(selected))
 	hasStale := false
 	for _, cand := range selected {
-		if !s.shouldInjectMemory(conversationID, cand.Path, cand.ModTime) {
+		shouldInject, err := s.Store.ShouldInjectMemory(ctx, conversationID, cand.Path, cand.ModTime)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("memory: injection dedup failed: %v", err))
+			continue
+		}
+		if !shouldInject {
 			continue
 		}
 		mem, err := s.Store.ReadMemoryFile(ctx, cand.Path)
@@ -387,27 +388,6 @@ func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationI
 		b.WriteString(renderSelectedMemory(item.mem, humanizeRelativeTime(item.modTime, now)))
 	}
 	return b.String()
-}
-
-// shouldInjectMemory 实现会话内去重：未注入过则注入并记录 mtime；已注入且 mtime 未
-// 变则跳过；mtime 变化则更新记录并重新注入（重读替换）。
-func (s *Service) shouldInjectMemory(conversationID, path string, modTime time.Time) bool {
-	s.injectedMu.Lock()
-	defer s.injectedMu.Unlock()
-	if s.injectedMemories == nil {
-		s.injectedMemories = make(map[string]map[string]injectedMemoryMeta)
-	}
-	conv := s.injectedMemories[conversationID]
-	if conv == nil {
-		conv = make(map[string]injectedMemoryMeta)
-		s.injectedMemories[conversationID] = conv
-	}
-	prev, ok := conv[path]
-	if ok && prev.ModTime.Equal(modTime) {
-		return false
-	}
-	conv[path] = injectedMemoryMeta{ModTime: modTime}
-	return true
 }
 
 // renderSelectedMemory 渲染单条被选中记忆的完整内容，带类型与相对时间。

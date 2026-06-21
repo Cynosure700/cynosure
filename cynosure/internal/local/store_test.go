@@ -311,6 +311,84 @@ func TestMarkdownMemoryStoreWritesProjectScopedMemoryIndex(t *testing.T) {
 	}
 }
 
+func TestStorePersistsInjectedMemoryDedupAcrossRestart(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	ctx := context.Background()
+	modTime := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	first, err := store.ShouldInjectMemory(ctx, "conv_1", "pref.md", modTime)
+	if err != nil {
+		t.Fatalf("ShouldInjectMemory first returned error: %v", err)
+	}
+	if !first {
+		t.Fatal("expected first injection to be allowed")
+	}
+
+	freshStore, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory fresh returned error: %v", err)
+	}
+	second, err := freshStore.ShouldInjectMemory(ctx, "conv_1", "pref.md", modTime)
+	if err != nil {
+		t.Fatalf("ShouldInjectMemory second returned error: %v", err)
+	}
+	if second {
+		t.Fatal("expected same conversation/path/mtime to be deduped after restart")
+	}
+	third, err := freshStore.ShouldInjectMemory(ctx, "conv_1", "pref.md", modTime.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ShouldInjectMemory updated returned error: %v", err)
+	}
+	if !third {
+		t.Fatal("expected updated mtime to be reinjected")
+	}
+}
+
+func TestStoreForgetInjectedMemoryClearsPersistedDedupState(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	ctx := context.Background()
+	modTime := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	store, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory returned error: %v", err)
+	}
+	for _, conversationID := range []string{"conv_1", "conv_2"} {
+		allowed, err := store.ShouldInjectMemory(ctx, conversationID, "pref.md", modTime)
+		if err != nil {
+			t.Fatalf("ShouldInjectMemory setup returned error: %v", err)
+		}
+		if !allowed {
+			t.Fatalf("expected setup injection for %s to be allowed", conversationID)
+		}
+	}
+	if err := store.ForgetInjectedMemory(ctx, "pref.md"); err != nil {
+		t.Fatalf("ForgetInjectedMemory returned error: %v", err)
+	}
+
+	freshStore, err := NewStoreWithMemory(workspace)
+	if err != nil {
+		t.Fatalf("NewStoreWithMemory fresh returned error: %v", err)
+	}
+	for _, conversationID := range []string{"conv_1", "conv_2"} {
+		allowed, err := freshStore.ShouldInjectMemory(ctx, conversationID, "pref.md", modTime)
+		if err != nil {
+			t.Fatalf("ShouldInjectMemory after forget returned error: %v", err)
+		}
+		if !allowed {
+			t.Fatalf("expected %s to allow injection after persisted dedup state was cleared", conversationID)
+		}
+	}
+}
+
 func TestMarkdownMemoryStoreScanUpdateDeleteAndIndexLimits(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()

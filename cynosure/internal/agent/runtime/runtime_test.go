@@ -47,6 +47,8 @@ type fakeStore struct {
 	memoryFiles              map[string]storage.Memory
 	updatedMemoryFiles       []string
 	deletedMemoryFiles       []string
+	injectedMemories         map[string]map[string]time.Time
+	forgottenInjectedPaths   []string
 	consolidationState       storage.ConsolidationState
 	savedConsolidationStates []storage.ConsolidationState
 }
@@ -175,6 +177,31 @@ func (f *fakeStore) ReadMemoryFile(ctx context.Context, path string) (storage.Me
 		return m, nil
 	}
 	return storage.Memory{}, errors.New("memory file not found")
+}
+
+func (f *fakeStore) ShouldInjectMemory(ctx context.Context, conversationID, path string, modTime time.Time) (bool, error) {
+	if f.injectedMemories == nil {
+		f.injectedMemories = make(map[string]map[string]time.Time)
+	}
+	conv := f.injectedMemories[conversationID]
+	if conv == nil {
+		conv = make(map[string]time.Time)
+		f.injectedMemories[conversationID] = conv
+	}
+	prev, ok := conv[path]
+	if ok && prev.Equal(modTime) {
+		return false, nil
+	}
+	conv[path] = modTime
+	return true, nil
+}
+
+func (f *fakeStore) ForgetInjectedMemory(ctx context.Context, path string) error {
+	f.forgottenInjectedPaths = append(f.forgottenInjectedPaths, path)
+	for _, conv := range f.injectedMemories {
+		delete(conv, path)
+	}
+	return nil
 }
 
 func (f *fakeStore) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error) {

@@ -307,6 +307,9 @@ func TestExecuteMemoryTool_UpdateAndDeleteSyncStore(t *testing.T) {
 	if store.memoryFiles["foo.md"].Body != "new body" {
 		t.Fatalf("expected body updated, got %#v", store.memoryFiles["foo.md"])
 	}
+	if len(store.forgottenInjectedPaths) != 1 || store.forgottenInjectedPaths[0] != "foo.md" {
+		t.Fatalf("expected update to clear injected memory state, got %v", store.forgottenInjectedPaths)
+	}
 
 	if _, err := service.executeMemoryTool(context.Background(), "update_memory", `{"path":"foo.md"}`); err == nil {
 		t.Fatalf("expected error when no fields provided")
@@ -317,6 +320,9 @@ func TestExecuteMemoryTool_UpdateAndDeleteSyncStore(t *testing.T) {
 	}
 	if len(store.deletedMemoryFiles) != 1 || store.deletedMemoryFiles[0] != "foo.md" {
 		t.Fatalf("expected delete recorded, got %v", store.deletedMemoryFiles)
+	}
+	if len(store.forgottenInjectedPaths) != 2 || store.forgottenInjectedPaths[1] != "foo.md" {
+		t.Fatalf("expected delete to clear injected memory state, got %v", store.forgottenInjectedPaths)
 	}
 }
 

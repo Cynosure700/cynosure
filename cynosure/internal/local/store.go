@@ -319,6 +319,20 @@ func (s *Store) ReadMemoryFile(ctx context.Context, path string) (storage.Memory
 	return storage.Memory{}, sql.ErrNoRows
 }
 
+func (s *Store) ShouldInjectMemory(ctx context.Context, conversationID, path string, modTime time.Time) (bool, error) {
+	if s.memory != nil {
+		return s.memory.ShouldInjectMemory(conversationID, path, modTime)
+	}
+	return true, nil
+}
+
+func (s *Store) ForgetInjectedMemory(ctx context.Context, path string) error {
+	if s.memory != nil {
+		return s.memory.ForgetInjectedMemory(path)
+	}
+	return nil
+}
+
 func (s *Store) UpdateMemoryFile(ctx context.Context, path string, update storage.MemoryUpdate) (string, error) {
 	if s.memory != nil {
 		return s.memory.UpdateMemoryFile(path, update)
