@@ -1,0 +1,16 @@
+cynosure/internal/agent/runtime/subagent.go
+  h_3b65c6a993f880 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "27155488324902b201bcc8523118490b0d151e3c",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
