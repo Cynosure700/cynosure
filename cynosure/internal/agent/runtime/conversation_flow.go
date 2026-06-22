@@ -46,7 +46,7 @@ const (
 	// token 上限截断的内容。
 	truncationResumePrompt = `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.`
 
-	emptyFinalAnswerRetryPrompt = `请继续执行。若执行完成，请输出总结。`
+	emptyFinalAnswerRetryPrompt = `请继续执行用户的指令。若执行完成，请输出总结；若执行受阻，请输出原因。`
 )
 
 type bufferedModelDelta struct {
@@ -109,7 +109,6 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 	roundsSinceTodoWrite := 0
 	turnStart := time.Now()
 	var cumulativeReasoning strings.Builder
-	retriedEmptyFinalAnswer := false
 
 	for {
 		round++
@@ -157,8 +156,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		}
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
-			if finishReason != "tool_calls" && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" && !retriedEmptyFinalAnswer {
-				retriedEmptyFinalAnswer = true
+			if finishReason != "tool_calls" && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" {
 				appendInternalUserPrompt(state, emptyFinalAnswerRetryPrompt)
 				continue
 			}
