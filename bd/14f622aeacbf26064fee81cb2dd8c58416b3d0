@@ -1,0 +1,33 @@
+cynosure/assets/system_prompt.md
+  h_3b65c6a993f880 88 gitai:{"mixed_line_ranges":[{"Single":88}],"operations":[]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bd14f622aeacbf26064fee81cb2dd8c58416b3d0",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "cynosure/assets/system_prompt.md": [
+      {
+        "hash": "h_3b65c6a993f880",
+        "line_ranges": [
+          {
+            "Single": 88
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 88
+          }
+        ],
+        "operations": []
+      }
+    ]
+  },
+  "remote_transcripts": {}
+}
