@@ -93,14 +93,4 @@ cynosure help
 - `tools/`：内置工具定义、参数校验和执行。
 - `tui/`：Bubble Tea TUI 界面与事件处理。
 
-## 开发
-
-Go module 位于 `cynosure/` 子目录。执行构建和测试前先进入该目录：
-
-```bash
-cd cynosure
-go test ./...
-go build ./...
-```
-
 更多运行机制、工具清单、权限模型、记忆系统和上下文压缩细节见 [cynosure/README.md](./cynosure/README.md)。
