@@ -17,7 +17,23 @@ Cynosure 是一个面向本地代码工作的终端 TUI Agent。它以当前目�
 
 ## 安装
 
-执行以下命令安装 Cynosure：
+### 安装 Go
+
+Cynosure 使用 Go 构建和安装。请先安装 Go 1.26.1 或更高版本：
+
+- macOS 可使用 Homebrew：`brew install go`
+- 其他系统可从 [go.dev/dl](https://go.dev/dl/) 下载安装包
+
+安装完成后确认 Go 可用：
+
+```bash
+go version
+```
+
+### 安装 Cynosure
+
+执行以下命令安装：
+
 ```bash
 go install github.com/example/cynosure/cynosure@latest
 ```
