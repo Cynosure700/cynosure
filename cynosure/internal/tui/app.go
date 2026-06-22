@@ -176,14 +176,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			if m.approving {
-				m.resolveApproval(runtime.ApprovalNo)
-			}
-			if m.running && m.cancel != nil {
+			if m.running && !m.approving && m.cancel != nil {
 				m.cancel()
 				m.generation++
 				m.running = false
-				m.appendMessage("system", "已中断当前生成")
 				return m, nil
 			}
 			return m, tea.Quit
@@ -419,7 +415,7 @@ func renderSlashCommandHelp() string {
 
 func (m *Model) startNewSession() {
 	if m.running {
-		m.appendMessage("system", "当前正在生成，请先 Ctrl+C 中断后再执行 /clear")
+		m.appendMessage("system", "当前正在生成，请先 Esc 中断后再执行 /clear")
 		return
 	}
 	if m.session.Resumer == nil {
@@ -445,7 +441,7 @@ func (m *Model) startNewSession() {
 
 func (m *Model) startResumeSelection() {
 	if m.running {
-		m.appendMessage("system", "当前正在生成，请先 Ctrl+C 中断后再执行 /resume")
+		m.appendMessage("system", "当前正在生成，请先 Esc 中断后再执行 /resume")
 		return
 	}
 	if m.session.Resumer == nil {
@@ -1253,7 +1249,7 @@ func isTerminalProbeResponseInput(msg tea.KeyMsg) bool {
 
 func (m Model) renderLiveStatus() string {
 	if m.width > 0 && m.width < 70 {
-		parts := []string{"Enter", "Ctrl+C", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
+		parts := []string{"Enter", "Esc 中断", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
 		if m.contextBudget > 0 {
 			parts = append(parts, fmt.Sprintf("上下文 %d%%", min(100, m.contextTokens*100/m.contextBudget)))
 		} else {
@@ -1261,7 +1257,7 @@ func (m Model) renderLiveStatus() string {
 		}
 		return strings.Join(parts, " · ")
 	}
-	parts := []string{"Enter 发送", "Ctrl+C 中断/退出", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
+	parts := []string{"Enter 发送", "Esc 中断", "Ctrl+C 退出", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
 	if m.contextBudget > 0 {
 		parts = append(parts, fmt.Sprintf("上下文 %d%% · %s/%s", min(100, m.contextTokens*100/m.contextBudget), compactNumber(m.contextTokens), compactNumber(m.contextBudget)))
 	} else {
