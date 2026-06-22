@@ -94,28 +94,28 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"command"},
 	}),
-	toolSpec("read_file", "Read an existing regular file from the filesystem. Use it only after the target path has been confirmed; it is not for directories and not for speculative path checks.", map[string]any{
+	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a file that does not exist; an error will be returned.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":  strParam("Path to the confirmed existing regular file to read. Do not pass a directory, and do not use read_file to check whether a path exists."),
+			"path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing files are okay and will return an error."),
 			"limit": intParam("Maximum number of lines to read"),
 		},
 		"required": []string{"path"},
 	}),
-	toolSpec("write_file", "Write content to a file", map[string]any{
+	toolSpec("write_file", "Writes a file to the local filesystem. This tool will overwrite the existing file if there is one at the provided path. If this is an existing file, you MUST use read_file first to read the file's contents. Prefer edit_file for modifying existing files because it only sends the diff. Only use write_file to create new files or for complete rewrites. NEVER create documentation files (*.md) or README files unless explicitly requested by the user. Only use emojis if the user explicitly requests it; avoid writing emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":    strParam("Path to the file to write"),
-			"content": strParam("Content to write to the file"),
+			"path":    strParam("Path to the file to write. Existing files are overwritten; use read_file first before overwriting an existing file."),
+			"content": strParam("Complete file content to write. Avoid documentation files and emojis unless the user explicitly requested them."),
 		},
 		"required": []string{"path", "content"},
 	}),
-	toolSpec("edit_file", "Replace text in a file by exact match", map[string]any{
+	toolSpec("edit_file", "Performs exact string replacements in files. You MUST use read_file first in the conversation before editing. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_text or new_text. ALWAYS prefer editing existing files in the codebase. Prefer multi_edit when making several edits to the same file. NEVER write new files unless explicitly required. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked. The edit will fail if old_text is not unique in the file; provide a larger string with more surrounding context to make old_text must be unique.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"path":     strParam("Path to the file to edit"),
-			"old_text": strParam("Exact text to find and replace"),
-			"new_text": strParam("Text to replace it with"),
+			"old_text": strParam("Exact text to find and replace. Must match file contents exactly, preserve indentation, exclude read_file line number prefixes, and old_text must be unique unless the tool explicitly supports replacing all occurrences."),
+			"new_text": strParam("Text to replace old_text with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
@@ -149,12 +149,12 @@ var baseToolSpecs = []ToolSpec{
 		"properties":           map[string]any{},
 		"additionalProperties": false,
 	}),
-	toolSpec("grep", "A fast content search tool that works in any size codebase. Searches file contents using a Go regular expression. Always use this tool for search tasks; never invoke grep or rg via bash.", map[string]any{
+	toolSpec("grep", "A powerful search tool for content search in any size codebase. ALWAYS use grep for search tasks. NEVER invoke grep or rg as a bash command; this tool is optimized for Cynosure permissions and workspace access. Supports Go regular expression syntax, e.g. log.*Error or function\\s+\\w+. Filter files with the glob parameter, e.g. *.go or **/*.ts. Output modes: content shows matching lines, files_with_matches shows only file paths (default), and count shows match counts. Pattern syntax uses Go regular expression syntax in this project; literal braces and other regexp metacharacters need escaping when they should be matched literally.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"pattern":     strParam("The regular expression pattern to search for in file contents (Go regexp syntax)."),
 			"path":        strParam("File or directory to search in. Defaults to the workspace root."),
-			"glob":        strParam("Glob pattern to filter files by name, e.g. *.go."),
+			"glob":        strParam("Glob parameter to filter files by name, e.g. *.go or **/*.ts."),
 			"output_mode": map[string]any{"type": "string", "enum": []string{"content", "files_with_matches", "count"}, "description": "Output mode: content shows matching lines, files_with_matches shows file paths (default), count shows match counts."},
 			"-i":          boolParam("Case insensitive search."),
 			"-n":          boolParam("Show line numbers in content output mode."),
@@ -162,10 +162,10 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"pattern"},
 	}),
-	toolSpec("glob", "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like **/*.js or src/**/*.ts and returns matching file paths sorted by modification time.", map[string]any{
+	toolSpec("glob", "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like **/*.js or src/**/*.ts. Returns matching file paths sorted by modification time. Use this tool when you need to find files by name patterns. When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use an explore subagent instead.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"pattern":    strParam("The glob pattern to match files against."),
+			"pattern":    strParam("The glob pattern to match files against, such as **/*.go or src/**/*.ts."),
 			"path":       strParam("The directory to search in. Defaults to the workspace root."),
 			"head_limit": intParam("Limit output to the first N entries. Defaults to 100."),
 		},
@@ -179,7 +179,7 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"path"},
 	}),
-	toolSpec("multi_edit", "Make multiple edits to a single file in one operation, built on the edit_file tool. Prefer this over edit_file when making several edits to the same file. Edits are applied sequentially and atomically: if any edit fails, none are applied.", map[string]any{
+	toolSpec("multi_edit", "Performs multiple exact string replacements in one file. You MUST use read_file first in the conversation before editing. Prefer multi_edit over edit_file when making several edits to the same file. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_string or new_string. Each old_string must be unique unless replace_all is true. Edits are applied sequentially and atomically: if any edit fails, none are applied. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"file_path": strParam("The absolute path to the file to modify (must be absolute, not relative)."),
@@ -189,8 +189,8 @@ var baseToolSpecs = []ToolSpec{
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"old_string":  strParam("The text to replace (must match the file contents exactly, including whitespace and indentation)."),
-						"new_string":  strParam("The text to replace old_string with."),
+						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace and indentation, exclude read_file line number prefixes, and old_string must be unique unless replace_all is true."),
+						"new_string":  strParam("The text to replace old_string with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 						"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
 					},
 					"required": []string{"old_string", "new_string"},

@@ -446,8 +446,8 @@ func TestBuildSubagentSystemPromptUsesEmbeddedDefaultTemplate(t *testing.T) {
 		"- 只能依据当前任务和工作区文件来工作。",
 		"- 不要调用 `spawn_subagent`。",
 		"- 搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须交给 explore 子智能体，不应由 general 子智能体承担。",
-		"- `read_file` 只用于读取已确认存在的普通文件；不得用于读取目录，也不得用于试探路径是否存在。",
-		"- 目录浏览使用 `ls`；路径存在性或文件定位先使用 `glob`、`grep` 或 `ls` 确认。",
+		"- `read_file` 可直接读取本地文件系统中的文件；用户提供文件路径时，默认该路径有效；读取不存在的文件是允许的，工具会返回错误。",
+		"- 文件内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；文件名模式匹配使用 `glob`，目录浏览使用 `ls`。",
 		"- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。",
 		"</subagent>",
 	} {
@@ -495,9 +495,11 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"glob",
 		"ls",
 		"read_file",
-		"Use read_file only for confirmed existing regular files.",
-		"Never use read_file to read directories or to test whether a path exists.",
-		"Use ls for directory browsing; use glob, grep, or ls to confirm candidate paths before read_file.",
+		"read_file can directly read files from the local filesystem.",
+		"If the caller provides a file path, assume that path is valid.",
+		"It is okay to read a file that does not exist; the tool will return an error.",
+		"ALWAYS use grep for content search. NEVER invoke grep or rg as a Bash command.",
+		"Use glob when you need to find files by name patterns.",
 		"read_persisted_output",
 		"Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient",
 		"Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).",
@@ -507,6 +509,15 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected explore prompt to contain %q, got %q", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"Use read_file only for confirmed existing regular files.",
+		"Never use read_file to read directories or to test whether a path exists.",
+		"confirm candidate paths before read_file",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("expected explore prompt to drop stale read_file restriction %q, got %q", forbidden, prompt)
 		}
 	}
 	for _, repeated := range []string{

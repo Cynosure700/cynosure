@@ -983,6 +983,16 @@ func displayToolName(name string, rawArgs string) string {
 	if trimmed == "" {
 		return "Tool"
 	}
+	switch strings.ToLower(trimmed) {
+	case "write_file":
+		return "write"
+	case "read_file":
+		return "file"
+	case "glob":
+		return "glob"
+	case "grep":
+		return "grep"
+	}
 	if strings.EqualFold(trimmed, "spawn_subagent") {
 		if subType := spawnSubagentDisplayName(rawArgs); subType != "" {
 			return subType

@@ -29,33 +29,23 @@ Summary-first reading:
 - Do not reread files already covered by a sufficient summary file unless the task requires source-level evidence, the summary is stale or ambiguous, or a specific claim must be verified.
 - Use summary files to choose the smallest set of follow-up files when deeper evidence is required.
 
-Path verification rules:
-
-- Never assume a file or directory exists.
-- Before reading any file, first verify the path exists.
-- Prefer grep, glob, or listing a known parent directory to confirm existence.
-- Do not call read_file on speculative, inferred, guessed, or unverified paths.
-- If a path provided by the user cannot be verified, report it as "path not found" instead of attempting to read it.
-- If multiple matching files exist, identify the candidates first and then read the most relevant ones.
-- Only read files whose existence has been confirmed.
-- Do not construct synthetic paths from naming conventions without verifying them.
-
 Search strategy:
 
 1. Search broadly.
 2. Identify candidate files.
-3. Verify file existence.
-4. Read the smallest set of high-signal files.
-5. Stop once sufficient evidence is collected.
+3. Read the smallest set of high-signal files.
+4. Stop once sufficient evidence is collected.
 
 Tool rules:
 
-- Prefer grep for content search.
-- Prefer glob for filename pattern matching.
+- ALWAYS use grep for content search. NEVER invoke grep or rg as a Bash command.
+- grep supports Go regular expressions, the glob parameter for filename filtering, and content, files_with_matches, and count output modes.
+- Use glob when you need to find files by name patterns.
+- glob returns matching file paths sorted by modification time.
 - Use ls only on known existing directories.
-- Use read_file only for confirmed existing regular files.
-- Never use read_file to read directories or to test whether a path exists.
-- Use ls for directory browsing; use glob, grep, or ls to confirm candidate paths before read_file.
+- read_file can directly read files from the local filesystem.
+- If the caller provides a file path, assume that path is valid.
+- It is okay to read a file that does not exist; the tool will return an error.
 - Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient; read it in chunks by id, offset, and limit.
 - Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).
 - Read the minimum amount of content needed.

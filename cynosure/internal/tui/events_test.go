@@ -132,11 +132,39 @@ func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
 	rendered := app.renderMessage(msg)
 	plain := plainTerminalText(rendered)
 
-	if !strings.Contains(plain, "● ✓ Glob") {
+	if !strings.Contains(plain, "● ✓ glob") {
 		t.Fatalf("tool render = %q, want tool call line prefixed with a small bullet", rendered)
 	}
 	if !strings.Contains(rendered, ansiForeground(tuiPalette.blue)+"●") {
 		t.Fatalf("tool render = %q, want leading bullet rendered blue", rendered)
+	}
+}
+
+func TestToolMessageUsesLowercaseFileSearchDisplayNames(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	for _, tt := range []struct {
+		name string
+		want string
+	}{
+		{name: "write_file", want: "● ✓ write("},
+		{name: "read_file", want: "● ✓ file("},
+		{name: "Glob", want: "● ✓ glob("},
+		{name: "grep", want: "● ✓ grep("},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := Message{Role: "tool", ToolCall: &ToolCallView{
+				Name:        tt.name,
+				ArgsPreview: "path: README.md",
+				Status:      "success",
+			}}
+
+			rendered := plainTerminalText(app.renderMessage(msg))
+
+			if !strings.Contains(rendered, tt.want) {
+				t.Fatalf("tool render = %q, want %q", rendered, tt.want)
+			}
+		})
 	}
 }
 
@@ -640,7 +668,7 @@ func TestModelDisplaysSubagentToolStatusWithoutResultPreview(t *testing.T) {
 	model = updated.(Model)
 
 	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"✓ Grep", "pattern: TODO", "⎿ success"} {
+	for _, want := range []string{"✓ grep", "pattern: TODO", "⎿ success"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}
@@ -751,7 +779,7 @@ func TestModelClearsSubagentToolGroupWithoutBlankLines(t *testing.T) {
 		t.Fatalf("messages = %#v, want parent spawn_subagent preserved", model.messages)
 	}
 	rendered := plainTerminalText(model.renderMessages())
-	if strings.Contains(rendered, "Grep") || strings.Contains(rendered, "Read") {
+	if strings.Contains(rendered, "grep") || strings.Contains(rendered, "file") {
 		t.Fatalf("rendered = %q, should remove cleared subagent tools", rendered)
 	}
 	if strings.Contains(rendered, "\n\n\n\n") {
@@ -877,7 +905,7 @@ func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 		t.Fatalf("messages = %#v, want appended completed tool message", model.messages)
 	}
 	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"✗ Read", "⎿ rejected · Error: outside workspace"} {
+	for _, want := range []string{"✗ file", "⎿ rejected · Error: outside workspace"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}

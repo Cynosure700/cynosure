@@ -68,26 +68,104 @@ func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 	t.Fatalf("expected AllToolDefs to include load_skill")
 }
 
-func TestReadFileToolDescriptionRestrictsToExistingFiles(t *testing.T) {
+func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
+	toolsByName := map[string]string{}
+	schemasByName := map[string]string{}
 	for _, tool := range AllToolDefs {
-		if tool.Function == nil || tool.Function.Name != "read_file" {
+		if tool.Function == nil {
 			continue
 		}
-		description := tool.Function.Description
-		for _, want := range []string{"existing regular file", "not for directories", "not for speculative"} {
-			if !strings.Contains(description, want) {
-				t.Fatalf("expected read_file description to contain %q, got %q", want, description)
-			}
-		}
-		schema := string(RawSchemaFromParameters(tool.Function.Parameters))
-		for _, want := range []string{"confirmed existing regular file", "Do not pass a directory", "do not use read_file to check whether a path exists"} {
-			if !strings.Contains(schema, want) {
-				t.Fatalf("expected read_file schema to contain %q, got %q", want, schema)
-			}
-		}
-		return
+		toolsByName[tool.Function.Name] = tool.Function.Description
+		schemasByName[tool.Function.Name] = string(RawSchemaFromParameters(tool.Function.Parameters))
 	}
-	t.Fatalf("expected AllToolDefs to include read_file")
+	for name, wants := range map[string][]string{
+		"read_file": {
+			"Reads a file from the local filesystem",
+			"Assume this tool is able to read all files on the machine",
+			"If the user provides a path to a file, assume that path is valid",
+			"It is okay to read a file that does not exist",
+		},
+		"write_file": {
+			"Writes a file to the local filesystem",
+			"overwrite the existing file",
+			"MUST use read_file first",
+			"Prefer edit_file for modifying existing files",
+			"NEVER create documentation files",
+			"Only use emojis if the user explicitly requests it",
+		},
+		"edit_file": {
+			"Performs exact string replacements in files",
+			"MUST use read_file first",
+			"preserve the exact indentation",
+			"old_text must be unique",
+			"Prefer multi_edit",
+		},
+		"multi_edit": {
+			"Performs multiple exact string replacements in one file",
+			"MUST use read_file first",
+			"preserve the exact indentation",
+			"old_string must be unique",
+			"applied sequentially and atomically",
+		},
+	} {
+		description, ok := toolsByName[name]
+		if !ok {
+			t.Fatalf("expected AllToolDefs to include %s", name)
+		}
+		schema := schemasByName[name]
+		combined := description + "\n" + schema
+		for _, want := range wants {
+			if !strings.Contains(combined, want) {
+				t.Fatalf("expected %s guidance to contain %q, got description=%q schema=%q", name, want, description, schema)
+			}
+		}
+	}
+	if strings.Contains(toolsByName["read_file"], "confirmed existing regular file") ||
+		strings.Contains(schemasByName["read_file"], "do not use read_file to check whether a path exists") {
+		t.Fatalf("read_file guidance should allow direct reads and missing-file errors, got description=%q schema=%q", toolsByName["read_file"], schemasByName["read_file"])
+	}
+}
+
+func TestSearchToolDescriptionsMatchPromptStrategy(t *testing.T) {
+	toolsByName := map[string]string{}
+	schemasByName := map[string]string{}
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil {
+			continue
+		}
+		toolsByName[tool.Function.Name] = tool.Function.Description
+		schemasByName[tool.Function.Name] = string(RawSchemaFromParameters(tool.Function.Parameters))
+	}
+	for name, wants := range map[string][]string{
+		"grep": {
+			"A powerful search tool",
+			"NEVER invoke grep or rg as a bash command",
+			"Go regular expression",
+			"Output modes",
+			"files_with_matches",
+			"content",
+			"count",
+			"glob parameter",
+		},
+		"glob": {
+			"Fast file pattern matching tool",
+			"any codebase size",
+			"**/*.js",
+			"sorted by modification time",
+			"find files by name patterns",
+		},
+	} {
+		description, ok := toolsByName[name]
+		if !ok {
+			t.Fatalf("expected AllToolDefs to include %s", name)
+		}
+		combined := description + "\n" + schemasByName[name]
+		for _, want := range wants {
+			if !strings.Contains(combined, want) {
+				t.Fatalf("expected %s guidance to contain %q, got %q", name, want, combined)
+			}
+		}
+	}
 }
 
 func TestTodoListToolDefinitionIsNoArgumentReadOnlyQuery(t *testing.T) {
