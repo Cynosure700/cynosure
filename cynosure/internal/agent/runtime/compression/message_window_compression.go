@@ -8,6 +8,7 @@ import (
 )
 
 const messageWindowCompressionStrategyName = "message_window_compression"
+const enabled = false
 
 // MessageWindowCompressionStrategy 在请求副本超出窗口上限时裁剪中间历史，
 // 保留首部与尾部，随后修复因裁剪而产生的悬空 OpenAI tool_call / tool_result 配对。
@@ -18,6 +19,9 @@ func (s *MessageWindowCompressionStrategy) Name() string {
 }
 
 func (s *MessageWindowCompressionStrategy) Apply(ctx context.Context, req *Request) error {
+	if !enabled {
+		return nil
+	}
 	history := req.RequestHistory
 
 	// 定位最近一条用户消息（从尾部向前扫描）。
