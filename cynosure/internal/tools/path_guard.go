@@ -10,6 +10,8 @@ import (
 	"cynosure/internal/safety"
 )
 
+// validatedWorkspaceRootFromContext 返回工作区根目录，即 Agent 启动时的工作目录。
+// 它是所有工具进行路径解析的唯一基准。
 func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {
 	root := strings.TrimSpace(workspaceRootFromContext(ctx))
 	if root == "" {
@@ -29,43 +31,14 @@ func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
-func validatedCurrentWorkingDirFromContext(ctx context.Context) (string, error) {
-	workspaceRoot, err := validatedWorkspaceRootFromContext(ctx)
-	if err != nil {
-		return "", err
-	}
-	workingDir := strings.TrimSpace(currentWorkingDirFromContext(ctx))
-	if workingDir == "" {
-		return workspaceRoot, nil
-	}
-	resolved, err := filepath.Abs(workingDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve current working directory: %w", err)
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return "", fmt.Errorf("current working directory is unavailable: %w", err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("current working directory is not a directory")
-	}
-	return filepath.Clean(resolved), nil
-}
-
+// resolvePathFromContext 解析工具入参中的 path：相对路径基于工作区根目录拼接，
+// 绝对路径原样使用。返回工作区根目录与解析后的绝对路径。
 func resolvePathFromContext(ctx context.Context, path string) (string, string, error) {
 	workspaceRoot, err := validatedWorkspaceRootFromContext(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	workingDir, err := validatedCurrentWorkingDirFromContext(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	resolvedPath := path
-	if !filepath.IsAbs(resolvedPath) {
-		resolvedPath = filepath.Join(workingDir, resolvedPath)
-	}
-	resolvedPath, err = safety.SafePathFromRoot(workspaceRoot, resolvedPath)
+	resolvedPath, err := safety.SafePathFromRoot(workspaceRoot, path)
 	if err != nil {
 		return "", "", err
 	}

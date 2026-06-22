@@ -2,14 +2,12 @@ package tools
 
 import (
 	"context"
-	"strings"
 )
 
 type ToolHandler func(ctx context.Context, args map[string]any) (string, error)
 
 type RuntimeEnv struct {
-	WorkspaceRoot     string
-	CurrentWorkingDir string
+	WorkspaceRoot string
 }
 
 type contextKey string
@@ -42,17 +40,6 @@ func workspaceRootFromContext(ctx context.Context) string {
 	env, ok := RuntimeEnvFromContext(ctx)
 	if !ok {
 		return ""
-	}
-	return env.WorkspaceRoot
-}
-
-func currentWorkingDirFromContext(ctx context.Context) string {
-	env, ok := RuntimeEnvFromContext(ctx)
-	if !ok {
-		return ""
-	}
-	if strings.TrimSpace(env.CurrentWorkingDir) != "" {
-		return env.CurrentWorkingDir
 	}
 	return env.WorkspaceRoot
 }

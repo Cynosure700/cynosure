@@ -471,14 +471,17 @@ func TestParseSubagentTypeAcceptsDefinedTypesOnly(t *testing.T) {
 }
 
 func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T) {
-	service := &Service{Prompts: FunctionalPrompts{
-		ExploreSubagent: "custom explore template for {{current_working_directory}}",
-	}}
-	if prompt := service.buildExploreSubagentSystemPrompt("/workspace/project"); prompt != "custom explore template for /workspace/project" {
+	service := &Service{
+		Cfg: config.AppConfig{WorkspaceRoot: "/workspace/project"},
+		Prompts: FunctionalPrompts{
+			ExploreSubagent: "custom explore template for {{workspace_root}}",
+		},
+	}
+	if prompt := service.buildExploreSubagentSystemPrompt(); prompt != "custom explore template for /workspace/project" {
 		t.Fatalf("expected custom explore prompt template to be rendered, got %q", prompt)
 	}
 
-	prompt := (&Service{}).buildExploreSubagentSystemPrompt("/workspace/project")
+	prompt := (&Service{Cfg: config.AppConfig{WorkspaceRoot: "/workspace/project"}}).buildExploreSubagentSystemPrompt()
 	for _, want := range []string{
 		"You are Cynosure's explore subagent",
 		"READ-ONLY MODE",
@@ -498,7 +501,7 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"read_persisted_output",
 		"Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient",
 		"Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).",
-		"Current working directory: /workspace/project",
+		"Workspace root: /workspace/project",
 		"absolute path",
 		"Do not use write/edit/delete/move/copy/create tools, memory tools, task tools, subagent spawning, package managers, dependency installers, git mutation commands, network-side mutation, or any state-changing shell command.",
 	} {
@@ -541,12 +544,12 @@ func TestBuildSubagentProfileUsesExploreSpecificMaxRounds(t *testing.T) {
 	cfg := testAppConfig(t)
 	service := &Service{Cfg: cfg}
 
-	explore := service.buildSubagentProfile(subagentTypeExplore, storage.User{}, nil, cfg.WorkspaceRoot)
+	explore := service.buildSubagentProfile(subagentTypeExplore, storage.User{}, nil)
 	if explore.MaxRounds != 50 {
 		t.Fatalf("expected explore max rounds to be 50, got %d", explore.MaxRounds)
 	}
 
-	general := service.buildSubagentProfile(subagentTypeGeneral, storage.User{}, nil, cfg.WorkspaceRoot)
+	general := service.buildSubagentProfile(subagentTypeGeneral, storage.User{}, nil)
 	if general.MaxRounds != defaultSubagentMaxRounds {
 		t.Fatalf("expected general max rounds to keep default %d, got %d", defaultSubagentMaxRounds, general.MaxRounds)
 	}
@@ -571,7 +574,7 @@ func TestNewExploreToolRegistryAllowsOnlyReadOnlySearchTools(t *testing.T) {
 		"update_memory",
 		"delete_memory",
 	}
-	registry := NewExploreToolRegistry(cfg, cfg.WorkspaceRoot)
+	registry := NewExploreToolRegistry(cfg)
 	got := map[string]bool{}
 	for _, def := range registry.Definitions() {
 		if def.Function != nil {
@@ -604,7 +607,7 @@ func TestExploreToolRegistryBashOnlyAllowsPromptListedReadOnlyCommands(t *testin
 	registry := NewExploreToolRegistry(config.AppConfig{
 		WorkspaceRoot: workspace,
 		AllowedTools:  []string{"bash", "read_file", "grep", "glob", "ls"},
-	}, workspace)
+	})
 
 	for _, command := range []string{"ls", "git status", "git log --oneline", "git diff -- README.md", "find . -maxdepth 1", "cat README.md", "head -n 5 README.md", "tail -n 5 README.md"} {
 		if _, err := registry.Execute(context.Background(), ToolContext{}, "bash", `{"command":`+strconv.Quote(command)+`}`); err != nil {
@@ -1566,7 +1569,7 @@ func TestRunSubagentLoopSummarizesWhenMaxRoundsReached(t *testing.T) {
 	state.UserMessage = storage.Message{ID: state.NextMessageID(), ConversationID: state.Conversation.ID, UserID: state.User.ID, Role: "user", Content: "inspect once"}
 	state.History = []storage.Message{state.UserMessage}
 	state.ModelHistory = cloneMessages(state.History)
-	tools := NewChildToolRegistry(cfg, cfg.WorkspaceRoot)
+	tools := NewChildToolRegistry(cfg)
 
 	msg, err := service.runSubagentLoop(context.Background(), state, tools, ToolContext{Conversation: state.Conversation, User: state.User}, "subagent_test", 1)
 	if err != nil {
@@ -1633,7 +1636,7 @@ func TestRespondToConversation_ShellRequestsReachModelWithWorkspaceTools(t *test
 		t.Fatalf("expected shell request to expose bash tool plus read_persisted_output, got %#v", llm.lastReq.Tools)
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Working directory: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected system prompt to include workspace root, got %q", systemPrompt)
 	}
 	if !contains(systemPrompt, "而不是只能聊天的助手") {
@@ -1689,7 +1692,7 @@ func TestRespondToConversation_IncludesLocalSkillsInPrompt(t *testing.T) {
 		t.Fatalf("expected load_skill tool to be exposed, got %d tools", len(llm.lastReq.Tools))
 	}
 	systemPrompt := llm.lastReq.Messages[0].Content
-	if !contains(systemPrompt, "Working directory: "+cfg.WorkspaceRoot) {
+	if !contains(systemPrompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected workspace root in prompt, got %q", systemPrompt)
 	}
 	if !contains(systemPrompt, "本次会话可用的工具如下：\n\n- load_skill") {
@@ -1806,7 +1809,7 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 	})
 
 	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader), "")
-	if !contains(prompt, "Working directory: "+cfg.WorkspaceRoot) {
+	if !contains(prompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
 	if !contains(prompt, "而不是只能聊天的助手") {
@@ -2333,7 +2336,7 @@ func TestRespondToConversation_UsesWorkspaceRootAcrossMultiToolTurn(t *testing.T
 		if !ok {
 			return "", nil
 		}
-		return env.CurrentWorkingDir, nil
+		return env.WorkspaceRoot, nil
 	}
 
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
@@ -2426,7 +2429,7 @@ func TestRespondToConversation_LocalSkillUsesWorkspaceWithinMultiToolTurn(t *tes
 		if !ok {
 			return "", nil
 		}
-		return env.CurrentWorkingDir, nil
+		return env.WorkspaceRoot, nil
 	}
 
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
@@ -2589,7 +2592,7 @@ func TestToolRegistryExecute_BashUsesWorkspaceRootEvenWhenSkillDirWasPreviouslyL
 		if !ok {
 			return "", nil
 		}
-		return env.CurrentWorkingDir, nil
+		return env.WorkspaceRoot, nil
 	}
 
 	workspace := t.TempDir()
@@ -2612,7 +2615,7 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 		if !ok {
 			return "", nil
 		}
-		return env.WorkspaceRoot + "|" + env.CurrentWorkingDir, nil
+		return env.WorkspaceRoot, nil
 	}
 
 	workspace := t.TempDir()
@@ -2626,7 +2629,7 @@ func TestToolRegistryExecute_WorkspaceRootPreservesConfiguredWorkspacePaths(t *t
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Clean(workspace) + "|" + filepath.Clean(workspace)
+	expected := filepath.Clean(workspace)
 	if result.Output != expected {
 		t.Fatalf("expected workspace-derived paths to remain stable, got %q", result.Output)
 	}

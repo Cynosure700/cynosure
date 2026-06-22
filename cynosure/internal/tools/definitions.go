@@ -87,7 +87,7 @@ func stringArrayParam(desc string) map[string]any {
 }
 
 var baseToolSpecs = []ToolSpec{
-	toolSpec("bash", "Execute a shell command via bash -c. Relative path arguments are interpreted under the current working directory.", map[string]any{
+	toolSpec("bash", "Execute a shell command via bash -c. The command runs in the workspace root, and relative path arguments are interpreted under it.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"command": strParam("The shell command to execute"),
@@ -153,7 +153,7 @@ var baseToolSpecs = []ToolSpec{
 		"type": "object",
 		"properties": map[string]any{
 			"pattern":     strParam("The regular expression pattern to search for in file contents (Go regexp syntax)."),
-			"path":        strParam("File or directory to search in. Defaults to the current working directory."),
+			"path":        strParam("File or directory to search in. Defaults to the workspace root."),
 			"glob":        strParam("Glob pattern to filter files by name, e.g. *.go."),
 			"output_mode": map[string]any{"type": "string", "enum": []string{"content", "files_with_matches", "count"}, "description": "Output mode: content shows matching lines, files_with_matches shows file paths (default), count shows match counts."},
 			"-i":          boolParam("Case insensitive search."),
@@ -166,7 +166,7 @@ var baseToolSpecs = []ToolSpec{
 		"type": "object",
 		"properties": map[string]any{
 			"pattern":    strParam("The glob pattern to match files against."),
-			"path":       strParam("The directory to search in. Defaults to the current working directory."),
+			"path":       strParam("The directory to search in. Defaults to the workspace root."),
 			"head_limit": intParam("Limit output to the first N entries. Defaults to 100."),
 		},
 		"required": []string{"pattern"},
@@ -230,7 +230,6 @@ var spawnSubagentToolSpec = toolSpec("spawn_subagent", "Spawn a typed child agen
 	"properties": map[string]any{
 		"sub_type": map[string]any{"type": "string", "enum": []string{"general", "explore"}, "description": "Type of child agent to spawn. Use explore for read-only codebase search and file exploration. Use general for non-search isolated analysis or execution tasks."},
 		"task":     strParam("The task for the child agent to complete. Include all context it needs because parent conversation history is not shared."),
-		"cwd":      strParam("Optional working directory for the child agent. Relative paths are resolved under the workspace root; absolute paths must remain inside the workspace."),
 	},
 	"required": []string{"sub_type", "task"},
 })

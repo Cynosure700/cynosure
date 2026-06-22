@@ -14,7 +14,7 @@ func TestDispatchNewToolsEndToEnd(t *testing.T) {
 	writeFile(t, filepath.Join(root, "main.go"), "package main\n// TODO fix\n")
 	writeFile(t, filepath.Join(root, "notes.txt"), "alpha beta\n")
 
-	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root, CurrentWorkingDir: root})
+	ctx := WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root})
 
 	// grep
 	res, err := Dispatch(ctx, "grep", map[string]any{"pattern": "TODO", "output_mode": "files_with_matches"})

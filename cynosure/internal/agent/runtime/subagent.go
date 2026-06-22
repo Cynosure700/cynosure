@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,7 +30,6 @@ const subAgentTurnTimeout = 1 * time.Hour
 type spawnSubagentArgs struct {
 	SubType string `json:"sub_type"`
 	Task    string `json:"task"`
-	CWD     string `json:"cwd"`
 }
 
 type subagentType string
@@ -65,12 +62,8 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	if err != nil {
 		return "", err
 	}
-	resolvedCWD, err := resolveSubagentCWD(s.Cfg.WorkspaceRoot, args.CWD)
-	if err != nil {
-		return "", err
-	}
 	runID := idgen.New("subagent")
-	profile := s.buildSubagentProfile(kind, parent.User, parent.Skills, resolvedCWD)
+	profile := s.buildSubagentProfile(kind, parent.User, parent.Skills)
 	childTools := profile.ToolRegistry
 	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, newSubagentEventWriter(parent, runID))
 	childState.SkillSnapshot = parent.Skills
@@ -100,20 +93,20 @@ func parseSubagentType(value string) (subagentType, error) {
 	}
 }
 
-func (s *Service) buildSubagentProfile(kind subagentType, user storage.User, snapshot *agenttools.SkillSnapshot, cwd string) subagentProfile {
+func (s *Service) buildSubagentProfile(kind subagentType, user storage.User, snapshot *agenttools.SkillSnapshot) subagentProfile {
 	switch kind {
 	case subagentTypeExplore:
 		return subagentProfile{
 			Type:         kind,
-			SystemPrompt: s.buildExploreSubagentSystemPrompt(cwd),
-			ToolRegistry: NewExploreToolRegistry(s.Cfg, cwd),
+			SystemPrompt: s.buildExploreSubagentSystemPrompt(),
+			ToolRegistry: NewExploreToolRegistry(s.Cfg),
 			MaxRounds:    exploreSubagentMaxRounds,
 		}
 	default:
 		return subagentProfile{
 			Type:         subagentTypeGeneral,
 			SystemPrompt: s.buildSubagentSystemPrompt(user, snapshot),
-			ToolRegistry: NewChildToolRegistry(s.Cfg, cwd),
+			ToolRegistry: NewChildToolRegistry(s.Cfg),
 			MaxRounds:    defaultSubagentMaxRounds,
 		}
 	}
@@ -124,13 +117,13 @@ func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agentto
 	return strings.TrimSpace(base) + "\n\n" + strings.TrimSpace(s.Prompts.withDefaults().GeneralSubagent)
 }
 
-func (s *Service) buildExploreSubagentSystemPrompt(cwd string) string {
-	currentWorkingDir := strings.TrimSpace(cwd)
-	if currentWorkingDir == "" {
-		currentWorkingDir = "."
+func (s *Service) buildExploreSubagentSystemPrompt() string {
+	workspaceRoot := strings.TrimSpace(s.Cfg.WorkspaceRoot)
+	if workspaceRoot == "" {
+		workspaceRoot = "."
 	}
 	prompt := s.Prompts.withDefaults().ExploreSubagent
-	return strings.TrimSpace(strings.ReplaceAll(prompt, "{{current_working_directory}}", currentWorkingDir))
+	return strings.TrimSpace(strings.ReplaceAll(prompt, "{{workspace_root}}", workspaceRoot))
 }
 
 func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *ToolRegistry, parent ToolContext, runID string, maxRounds int) (openai.ChatCompletionMessage, error) {
@@ -274,32 +267,4 @@ func emitToolCallGroupClear(parent ToolContext, groupID string) {
 		return
 	}
 	_ = parent.Writer.Event(toolCallGroupClearEvent, map[string]any{"ephemeral_group_id": groupID})
-}
-
-func resolveSubagentCWD(workspaceRoot, cwd string) (string, error) {
-	root, err := filepath.Abs(strings.TrimSpace(workspaceRoot))
-	if err != nil || strings.TrimSpace(workspaceRoot) == "" {
-		return "", fmt.Errorf("workspace root is required")
-	}
-	root = filepath.Clean(root)
-	resolved := root
-	if strings.TrimSpace(cwd) != "" {
-		resolved = strings.TrimSpace(cwd)
-		if !filepath.IsAbs(resolved) {
-			resolved = filepath.Join(root, resolved)
-		}
-		resolved, err = filepath.Abs(resolved)
-		if err != nil {
-			return "", fmt.Errorf("resolve subagent cwd: %w", err)
-		}
-		resolved = filepath.Clean(resolved)
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return "", fmt.Errorf("subagent cwd is unavailable: %w", err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("subagent cwd is not a directory: %s", cwd)
-	}
-	return resolved, nil
 }

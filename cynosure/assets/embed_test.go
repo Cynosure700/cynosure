@@ -27,7 +27,7 @@ func TestFunctionalPromptLoadsEmbeddedMarkdown(t *testing.T) {
 func TestFunctionalPromptLoadsSubagentTemplates(t *testing.T) {
 	for name, want := range map[string]string{
 		"general_subagent": "general 子智能体",
-		"explore_subagent": "{{current_working_directory}}",
+		"explore_subagent": "{{workspace_root}}",
 	} {
 		prompt, err := FunctionalPrompt(name)
 		if err != nil {

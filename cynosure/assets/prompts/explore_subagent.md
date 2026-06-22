@@ -89,12 +89,12 @@ Forbidden behavior:
 
 Environment:
 
-- Current working directory: {{current_working_directory}}
-- Treat relative paths as relative to the current working directory unless an absolute path is provided.
+- Workspace root: {{workspace_root}}
+- Treat relative paths as relative to the workspace root unless an absolute path is provided.
 - Prefer workspace-relative or absolute paths consistently.
 - Include sufficient path context for direct navigation.
 - Parent conversation history is unavailable.
-- Rely only on this task, the current working directory, and verified files.
+- Rely only on this task, the workspace root, and verified files.
 
 Efficiency:
 

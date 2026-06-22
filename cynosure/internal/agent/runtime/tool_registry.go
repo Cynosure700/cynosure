@@ -70,20 +70,16 @@ func appendPersistedOutputTool(defs []openai.Tool) []openai.Tool {
 	return append(defs, agenttools.ReadPersistedOutputToolDef)
 }
 
-func NewChildToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
+func NewChildToolRegistry(cfg config.AppConfig) *ToolRegistry {
 	allowed := withoutTool(loadAllowedToolNames(cfg), "spawn_subagent")
-	env := runtimeEnvFromConfig(cfg)
-	env.CurrentWorkingDir = strings.TrimSpace(cwd)
 	definitions := buildToolDefinitions(allowed)
-	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env}
+	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: runtimeEnvFromConfig(cfg)}
 }
 
-func NewExploreToolRegistry(cfg config.AppConfig, cwd string) *ToolRegistry {
+func NewExploreToolRegistry(cfg config.AppConfig) *ToolRegistry {
 	allowed := intersectTools(loadAllowedToolNames(cfg), []string{"bash", "read_file", "grep", "glob", "ls"})
-	env := runtimeEnvFromConfig(cfg)
-	env.CurrentWorkingDir = strings.TrimSpace(cwd)
 	definitions := appendPersistedOutputTool(buildToolDefinitions(allowed))
-	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: env, bashPolicy: bashPolicyExploreReadOnly}
+	return &ToolRegistry{definitions: definitions, maxResultSizeChars: buildMaxResultSizeMap(definitions), baseEnv: runtimeEnvFromConfig(cfg), bashPolicy: bashPolicyExploreReadOnly}
 }
 
 func (r *ToolRegistry) Definitions() []openai.Tool {
@@ -157,15 +153,8 @@ func (r *ToolRegistry) validateBashExecution(args map[string]any) error {
 }
 
 func (r *ToolRegistry) runtimeEnv() agenttools.RuntimeEnv {
-	env := r.baseEnv
-	workspaceRoot := strings.TrimSpace(env.WorkspaceRoot)
-	currentWorkingDir := strings.TrimSpace(env.CurrentWorkingDir)
-	if currentWorkingDir == "" {
-		currentWorkingDir = workspaceRoot
-	}
 	return agenttools.RuntimeEnv{
-		WorkspaceRoot:     workspaceRoot,
-		CurrentWorkingDir: currentWorkingDir,
+		WorkspaceRoot: strings.TrimSpace(r.baseEnv.WorkspaceRoot),
 	}
 }
 

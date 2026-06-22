@@ -18,7 +18,7 @@ import (
 
 func toolAuditPreHook(ctx context.Context, h *ToolUseContext) error {
 	runtimeEnv := h.State.RuntimeEnv()
-	h.Outcome.Audit.ResolvedCWD = runtimeEnv.CurrentWorkingDir
+	h.Outcome.Audit.ResolvedCWD = runtimeEnv.WorkspaceRoot
 	h.Outcome.Audit.ResolvedCommandPath = resolveCommandPath(h.Name, h.RawArgs)
 	return nil
 }

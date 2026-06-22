@@ -101,7 +101,7 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 	if cmd == "" {
 		return "", fmt.Errorf("command is required")
 	}
-	workingDir, err := validatedCurrentWorkingDirFromContext(ctx)
+	workingDir, err := validatedWorkspaceRootFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +248,7 @@ func handleWebSearch(ctx context.Context, args map[string]any) (string, error) {
 }
 
 // resolveSearchPathFromContext 解析 grep 和 glob 的可选 path 参数，
-// 默认使用当前工作目录，并将结果限制在工作区内。
+// 默认使用工作区根目录，并将结果限制在工作区内。
 func resolveSearchPathFromContext(ctx context.Context, args map[string]any) (string, string, error) {
 	path, _ := args["path"].(string)
 	if strings.TrimSpace(path) == "" {
