@@ -25,6 +25,7 @@ type ToolContext struct {
 	Skills                *agenttools.SkillSnapshot
 	PersistedOutputReader agenttools.PersistedOutputReader
 	Todos                 []agenttools.TodoItem
+	Writer                EventWriter
 }
 
 type ToolExecutionResult struct {

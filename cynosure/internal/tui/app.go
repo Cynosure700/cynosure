@@ -50,12 +50,15 @@ type Message struct {
 }
 
 type ToolCallView struct {
-	ID            string
-	Name          string
-	RawArgs       string
-	ArgsPreview   string
-	Status        string
-	ResultPreview string
+	ID               string
+	Name             string
+	RawArgs          string
+	ArgsPreview      string
+	Status           string
+	ResultPreview    string
+	Scope            string
+	EphemeralGroupID string
+	SuppressResult   bool
 }
 
 type palette struct {
@@ -281,6 +284,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendToolCallStart(msg.Data)
 		case "tool_call_done":
 			m.updateToolCallDone(msg.Data)
+		case "tool_call_group_clear":
+			m.clearToolCallGroup(msg.Data)
 		case "error":
 			m.appendMessage("error", msg.Content)
 			m.running = false
@@ -626,20 +631,41 @@ func (m *Model) updateToolCallDone(data any) {
 			m.messages[i].ToolCall.ArgsPreview = firstNonEmpty(tool.ArgsPreview, m.messages[i].ToolCall.ArgsPreview)
 			m.messages[i].ToolCall.Status = firstNonEmpty(tool.Status, m.messages[i].ToolCall.Status)
 			m.messages[i].ToolCall.ResultPreview = tool.ResultPreview
+			m.messages[i].ToolCall.Scope = firstNonEmpty(tool.Scope, m.messages[i].ToolCall.Scope)
+			m.messages[i].ToolCall.EphemeralGroupID = firstNonEmpty(tool.EphemeralGroupID, m.messages[i].ToolCall.EphemeralGroupID)
+			m.messages[i].ToolCall.SuppressResult = tool.SuppressResult || m.messages[i].ToolCall.SuppressResult
 			return
 		}
 	}
 	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
 }
 
+func (m *Model) clearToolCallGroup(data any) {
+	groupID := eventString(data, "ephemeral_group_id")
+	if strings.TrimSpace(groupID) == "" {
+		return
+	}
+	filtered := m.messages[:0]
+	for _, msg := range m.messages {
+		if msg.Role == "tool" && msg.ToolCall != nil && msg.ToolCall.EphemeralGroupID == groupID {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	m.messages = filtered
+}
+
 func toolCallViewFromEvent(data any) ToolCallView {
 	return ToolCallView{
-		ID:            eventString(data, "tool_call_id"),
-		Name:          eventString(data, "tool_name"),
-		RawArgs:       eventString(data, "raw_args"),
-		ArgsPreview:   eventString(data, "args_preview"),
-		Status:        eventString(data, "status"),
-		ResultPreview: eventString(data, "result_preview"),
+		ID:               eventString(data, "tool_call_id"),
+		Name:             eventString(data, "tool_name"),
+		RawArgs:          eventString(data, "raw_args"),
+		ArgsPreview:      eventString(data, "args_preview"),
+		Status:           eventString(data, "status"),
+		ResultPreview:    eventString(data, "result_preview"),
+		Scope:            eventString(data, "scope"),
+		EphemeralGroupID: eventString(data, "ephemeral_group_id"),
+		SuppressResult:   eventBool(data, "suppress_result"),
 	}
 }
 
@@ -823,12 +849,32 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 		line += "(" + tool.ArgsPreview + ")"
 	}
 	result := status
-	if !hideResult && strings.TrimSpace(tool.ResultPreview) != "" {
+	if !hideResult && !tool.SuppressResult && strings.TrimSpace(tool.ResultPreview) != "" {
 		resultPrefix := result + " · "
 		result += " · " + alignToolResultPreview(tool.ResultPreview, lipgloss.Width("  ⎿ "+resultPrefix))
 	}
 	body := line + "\n  ⎿ " + result
+	if tool.Scope == "subagent" {
+		return ansiForeground(tuiPalette.muted) + renderSubagentToolStatus(body, m.messageWidth()) + "\x1b[0m"
+	}
 	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
+}
+
+func renderSubagentToolStatus(body string, width int) string {
+	width = max(1, width)
+	lines := strings.Split(body, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	wrapped := wrapText(lines[0], width)
+	wrappedLines := strings.Split(wrapped, "\n")
+	for i := range wrappedLines {
+		wrappedLines[i] = "  " + strings.TrimLeft(wrappedLines[i], " ")
+	}
+	if len(lines) > 1 {
+		wrappedLines = append(wrappedLines, lines[1:]...)
+	}
+	return strings.Join(wrappedLines, "\n")
 }
 
 func alignToolResultPreview(preview string, continuationIndent int) string {
@@ -1230,6 +1276,15 @@ func eventInt(data any, key string) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func eventBool(data any, key string) bool {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return false
+	}
+	value, _ := m[key].(bool)
+	return value
 }
 
 func roleLabel(label string, color lipgloss.Color) string {

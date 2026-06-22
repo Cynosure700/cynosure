@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1373,6 +1374,86 @@ func TestRespondToConversation_SpawnSubagentUsesFreshMessagesStoresTraceAndDoesN
 	}
 }
 
+func TestRespondToConversation_SubagentForwardsToolStatusWithoutResultAndClearsGroup(t *testing.T) {
+	originalHandler := agenttools.Handlers["subagent_status_probe"]
+	defer func() {
+		if originalHandler == nil {
+			delete(agenttools.Handlers, "subagent_status_probe")
+		} else {
+			agenttools.Handlers["subagent_status_probe"] = originalHandler
+		}
+	}()
+	agenttools.Handlers["subagent_status_probe"] = func(ctx context.Context, args map[string]any) (string, error) {
+		return "secret subagent tool result", nil
+	}
+
+	spawnArgs := `{"sub_type":"general","task":"inspect with a tool","cwd":"."}`
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "spawn_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "spawn_subagent", Arguments: spawnArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "child_tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "subagent_status_probe", Arguments: `{}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "sub summary"}, FinishReason: openai.FinishReasonStop}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "final answer"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"spawn_subagent", "subagent_status_probe"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_subagent_status", Title: "已有标题"}, storage.User{ID: "usr_1", Username: "alice"}, "parent request", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+
+	var childStart, childDone, clearEvent, parentDone int = -1, -1, -1, -1
+	var childGroup string
+	for i, event := range writer.events {
+		payload, _ := event.data.(map[string]any)
+		if event.name == toolCallStartEvent && payload["tool_name"] == "subagent_status_probe" {
+			childStart = i
+			childGroup = stringValue(payload["ephemeral_group_id"])
+			if payload["scope"] != "subagent" || payload["suppress_result"] != true {
+				t.Fatalf("child start payload = %#v, want subagent suppressed event", payload)
+			}
+		}
+		if event.name == toolCallDoneEvent && payload["tool_name"] == "subagent_status_probe" {
+			childDone = i
+			if payload["scope"] != "subagent" || payload["suppress_result"] != true {
+				t.Fatalf("child done payload = %#v, want subagent suppressed event", payload)
+			}
+			if strings.Contains(stringValue(payload["result_preview"]), "secret subagent tool result") {
+				t.Fatalf("child done leaked result preview: %#v", payload)
+			}
+		}
+		if event.name == "tool_call_group_clear" {
+			clearEvent = i
+			if childGroup != "" && payload["ephemeral_group_id"] != childGroup {
+				t.Fatalf("clear payload = %#v, want group %q", payload, childGroup)
+			}
+		}
+		if event.name == toolCallDoneEvent && payload["tool_name"] == "spawn_subagent" {
+			parentDone = i
+		}
+	}
+	if childStart < 0 || childDone < 0 || clearEvent < 0 || parentDone < 0 {
+		t.Fatalf("missing expected events childStart=%d childDone=%d clear=%d parentDone=%d events=%#v", childStart, childDone, clearEvent, parentDone, writer.events)
+	}
+	if !(childStart < childDone && childDone < clearEvent && clearEvent < parentDone) {
+		t.Fatalf("unexpected subagent event order childStart=%d childDone=%d clear=%d parentDone=%d events=%#v", childStart, childDone, clearEvent, parentDone, writer.events)
+	}
+}
+
 func TestRespondToConversation_SpawnExploreSubagentUsesFreshMessagesAndExploreTools(t *testing.T) {
 	spawnArgs := `{"sub_type":"explore","task":"find runtime files","cwd":"."}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
@@ -1978,6 +2059,91 @@ func TestRespondToConversation_EmitsToolLifecycleEvents(t *testing.T) {
 	}
 	if !strings.Contains(stringValue(done["result_preview"]), "builtin-skill") {
 		t.Fatalf("done result_preview = %#v, want loaded skill preview", done["result_preview"])
+	}
+}
+
+func TestRespondToConversation_ExecutesSameRoundToolsConcurrentlyAndStoresResultsInOrder(t *testing.T) {
+	originalHandlers := map[string]agenttools.ToolHandler{
+		"grep": agenttools.Handlers["grep"],
+		"glob": agenttools.Handlers["glob"],
+	}
+	defer func() {
+		for name, handler := range originalHandlers {
+			agenttools.Handlers[name] = handler
+		}
+	}()
+
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	release := make(chan struct{})
+	var closeFirstOnce sync.Once
+	var closeSecondOnce sync.Once
+	agenttools.Handlers["grep"] = func(ctx context.Context, args map[string]any) (string, error) {
+		closeFirstOnce.Do(func() { close(firstStarted) })
+		select {
+		case <-secondStarted:
+		case <-time.After(300 * time.Millisecond):
+			return "", errors.New("second tool did not start while first was running")
+		}
+		<-release
+		return "first result", nil
+	}
+	agenttools.Handlers["glob"] = func(ctx context.Context, args map[string]any) (string, error) {
+		closeSecondOnce.Do(func() { close(secondStarted) })
+		select {
+		case <-firstStarted:
+		case <-time.After(300 * time.Millisecond):
+			return "", errors.New("first tool did not start")
+		}
+		close(release)
+		return "second result", nil
+	}
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{
+					{ID: "tool_first", Type: "function", Function: openai.FunctionCall{Name: "grep", Arguments: `{"pattern":"x"}`}},
+					{ID: "tool_second", Type: "function", Function: openai.FunctionCall{Name: "glob", Arguments: `{"pattern":"*"}`}},
+				}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"grep", "glob"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_parallel", Title: "新对话"}, storage.User{ID: "usr_parallel", Username: "parallel-user"}, "run tools", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", message.Content)
+	}
+	if len(store.historyUpdates) != 1 {
+		t.Fatalf("expected one history update, got %d", len(store.historyUpdates))
+	}
+	storedHistory := store.historyUpdates[0]
+	if len(storedHistory) < 4 || storedHistory[2].ToolCallID != "tool_first" || storedHistory[3].ToolCallID != "tool_second" {
+		t.Fatalf("tool results should be stored in model order, got %#v", storedHistory)
+	}
+	events := writer.nonMetaEvents()
+	if len(events) < 4 {
+		t.Fatalf("expected tool lifecycle events, got %#v", events)
+	}
+	for i, want := range []string{toolCallStartEvent, toolCallStartEvent, toolCallDoneEvent, toolCallDoneEvent} {
+		if events[i].name != want {
+			t.Fatalf("event %d = %s, want %s; events=%#v", i, events[i].name, want, events)
+		}
 	}
 }
 

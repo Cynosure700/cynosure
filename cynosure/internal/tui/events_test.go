@@ -572,6 +572,153 @@ func TestModelDisplaysToolCallLifecycle(t *testing.T) {
 	}
 }
 
+func TestModelDisplaysSubagentToolStatusWithoutResultPreview(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id":       "subagent_1:tool_1",
+		"tool_name":          "grep",
+		"args_preview":       "pattern: TODO",
+		"status":             "running",
+		"scope":              "subagent",
+		"ephemeral_group_id": "subagent_1",
+		"suppress_result":    true,
+	}})
+	model := updated.(Model)
+	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id":       "subagent_1:tool_1",
+		"tool_name":          "grep",
+		"args_preview":       "pattern: TODO",
+		"status":             "success",
+		"result_preview":     "secret internal result",
+		"scope":              "subagent",
+		"ephemeral_group_id": "subagent_1",
+		"suppress_result":    true,
+	}})
+	model = updated.(Model)
+
+	rendered := plainTerminalText(model.renderMessages())
+	for _, want := range []string{"✓ Grep", "pattern: TODO", "⎿ success"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	for i, line := range strings.Split(strings.TrimRight(rendered, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "  ") {
+			t.Fatalf("line %d = %q, subagent tool block should align with status column", i, line)
+		}
+	}
+	if strings.Contains(rendered, "●") {
+		t.Fatalf("rendered = %q, subagent tool status should not show the leading blue bullet", rendered)
+	}
+	if !strings.Contains(rendered, "\n  ⎿ success") {
+		t.Fatalf("rendered = %q, subagent status line should align with generic running indentation", rendered)
+	}
+	if strings.Contains(rendered, "secret internal result") {
+		t.Fatalf("rendered = %q, should hide subagent internal result", rendered)
+	}
+	rawRendered := model.renderMessages()
+	if strings.Contains(rawRendered, ansiForeground(tuiPalette.mint)) {
+		t.Fatalf("rendered = %q, subagent tool status should not use success green", rawRendered)
+	}
+	if !strings.Contains(rawRendered, ansiForeground(tuiPalette.muted)) {
+		t.Fatalf("rendered = %q, subagent tool status should use muted gray", rawRendered)
+	}
+}
+
+func TestSubagentToolStatusWrapsContinuationAtStatusColumn(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 36
+	app.generation = 1
+	app.running = true
+	longArgs := "task: 探索 /Users/bytedance/golang_pro/nano_cc/cynosure 当前项目结构和技术栈"
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id":       "subagent_1:tool_1",
+		"tool_name":          "grep",
+		"args_preview":       longArgs,
+		"status":             "running",
+		"scope":              "subagent",
+		"ephemeral_group_id": "subagent_1",
+		"suppress_result":    true,
+	}})
+	model := updated.(Model)
+
+	lines := strings.Split(strings.TrimRight(plainTerminalText(model.renderMessages()), "\n"), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("rendered lines = %#v, want wrapped tool line plus status line", lines)
+	}
+	for i, line := range lines[:len(lines)-1] {
+		if !strings.HasPrefix(line, "  ") {
+			t.Fatalf("wrapped line %d = %q, want continuation aligned with status column", i, line)
+		}
+	}
+	statusLine := lines[len(lines)-1]
+	if !strings.HasPrefix(statusLine, "  ⎿ running") {
+		t.Fatalf("status line = %q, want status aligned at continuation column", statusLine)
+	}
+}
+
+func TestModelClearsSubagentToolGroupWithoutBlankLines(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id": "parent_spawn",
+		"tool_name":    "spawn_subagent",
+		"args_preview": "task: inspect",
+		"status":       "running",
+	}})
+	model := updated.(Model)
+	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id":       "subagent_1:tool_1",
+		"tool_name":          "grep",
+		"args_preview":       "pattern: TODO",
+		"status":             "running",
+		"scope":              "subagent",
+		"ephemeral_group_id": "subagent_1",
+		"suppress_result":    true,
+	}})
+	model = updated.(Model)
+	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id":       "subagent_1:tool_2",
+		"tool_name":          "read_file",
+		"args_preview":       "path: README.md",
+		"status":             "running",
+		"scope":              "subagent",
+		"ephemeral_group_id": "subagent_1",
+		"suppress_result":    true,
+	}})
+	model = updated.(Model)
+	if len(model.messages) != 3 {
+		t.Fatalf("messages = %#v, want parent plus two child tools", model.messages)
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_group_clear", Data: map[string]any{
+		"ephemeral_group_id": "subagent_1",
+	}})
+	model = updated.(Model)
+	if len(model.messages) != 1 {
+		t.Fatalf("messages = %#v, want only parent spawn_subagent after clear", model.messages)
+	}
+	if model.messages[0].ToolCall == nil || model.messages[0].ToolCall.Name != "spawn_subagent" {
+		t.Fatalf("messages = %#v, want parent spawn_subagent preserved", model.messages)
+	}
+	rendered := plainTerminalText(model.renderMessages())
+	if strings.Contains(rendered, "Grep") || strings.Contains(rendered, "Read") {
+		t.Fatalf("rendered = %q, should remove cleared subagent tools", rendered)
+	}
+	if strings.Contains(rendered, "\n\n\n\n") {
+		t.Fatalf("rendered = %q, should not contain blank cleared tool gaps", rendered)
+	}
+}
+
 func TestModelDisplaysMultilineToolResultPreview(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1

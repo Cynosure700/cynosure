@@ -72,7 +72,7 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	runID := idgen.New("subagent")
 	profile := s.buildSubagentProfile(kind, parent.User, parent.Skills, resolvedCWD)
 	childTools := profile.ToolRegistry
-	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, nil)
+	childState := s.newLoopState(parent.Conversation, parent.User, task, nil, nil, newSubagentEventWriter(parent, runID))
 	childState.SkillSnapshot = parent.Skills
 	childState.SystemPrompt = profile.SystemPrompt
 	childState.UserMessage = storage.Message{ID: childState.NextMessageID(), ConversationID: parent.Conversation.ID, UserID: parent.User.ID, Role: "user", Content: task}
@@ -82,6 +82,7 @@ func (s *Service) runSubagent(ctx context.Context, parent ToolContext, args spaw
 	childState.ToolRuntimeEnv = childTools.runtimeEnv
 	childCtx := context.WithValue(ctx, subagentDepthKey, 1)
 	msg, err := s.runSubagentLoop(childCtx, childState, childTools, parent, runID, profile.MaxRounds)
+	emitToolCallGroupClear(parent, runID)
 	if err != nil {
 		return "", err
 	}
@@ -165,23 +166,20 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 		}
 		state.History = append(state.History, storedAssistant)
 		state.ModelHistory = append(state.ModelHistory, storedAssistant)
-		for _, tc := range msg.ToolCalls {
-			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}
-			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
-				return openai.ChatCompletionMessage{}, err
-			}
-			if approved, _ := s.approveToolCall(ctx, tc); !approved {
-				return openai.ChatCompletionMessage{}, fmt.Errorf("subagent tool %s rejected by user", tc.Function.Name)
-			}
-			childToolContext := parent
-			childToolContext.Todos = state.Todos
-			toolCtx.Outcome = s.executeChildToolCall(ctx, tools, childToolContext, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
-			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
-				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
-			}
-			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
-				return openai.ChatCompletionMessage{}, err
-			}
+		childToolContext := parent
+		childToolContext.Todos = state.Todos
+		batch, err := s.executeToolCallBatch(ctx, state, msg.ToolCalls, toolBatchOptions{
+			ToolContext:      childToolContext,
+			Registry:         tools,
+			UseChildRegistry: true,
+			SuppressResultUI: true,
+			EphemeralGroupID: runID,
+		})
+		if err != nil {
+			return openai.ChatCompletionMessage{}, err
+		}
+		if batch.Rejected {
+			return openai.ChatCompletionMessage{}, fmt.Errorf("subagent tool rejected by user")
 		}
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, tools, roundsSinceTodoWrite)
 	}
@@ -220,6 +218,62 @@ func (s *Service) executeChildToolCall(ctx context.Context, tools *ToolRegistry,
 		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
 	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
+}
+
+type subagentEventWriter struct {
+	parent EventWriter
+	runID  string
+}
+
+func newSubagentEventWriter(parent ToolContext, runID string) EventWriter {
+	if parent.Writer == nil {
+		return nil
+	}
+	return subagentEventWriter{parent: parent.Writer, runID: runID}
+}
+
+func (w subagentEventWriter) Event(name string, data any) error {
+	if w.parent == nil {
+		return nil
+	}
+	if name != toolCallStartEvent && name != toolCallDoneEvent && name != "meta" {
+		return nil
+	}
+	payload, ok := cloneEventMap(data)
+	if !ok {
+		return nil
+	}
+	if name == "meta" {
+		return w.parent.Event(name, payload)
+	}
+	if id, _ := payload["tool_call_id"].(string); id != "" {
+		payload["tool_call_id"] = w.runID + ":" + id
+	}
+	payload["scope"] = "subagent"
+	payload["subagent_run_id"] = w.runID
+	payload["ephemeral_group_id"] = w.runID
+	payload["suppress_result"] = true
+	delete(payload, "result_preview")
+	return w.parent.Event(name, payload)
+}
+
+func cloneEventMap(data any) (map[string]any, bool) {
+	src, ok := data.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst, true
+}
+
+func emitToolCallGroupClear(parent ToolContext, groupID string) {
+	if parent.Writer == nil || strings.TrimSpace(groupID) == "" {
+		return
+	}
+	_ = parent.Writer.Event(toolCallGroupClearEvent, map[string]any{"ephemeral_group_id": groupID})
 }
 
 func resolveSubagentCWD(workspaceRoot, cwd string) (string, error) {

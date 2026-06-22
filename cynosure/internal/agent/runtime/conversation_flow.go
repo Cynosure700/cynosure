@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -24,6 +25,7 @@ const (
 	reasoningDeltaEvent       = "reasoning_delta"
 	toolCallStartEvent        = "tool_call_start"
 	toolCallDoneEvent         = "tool_call_done"
+	toolCallGroupClearEvent   = "tool_call_group_clear"
 	maxRound                  = 1000
 	toolArgsPreviewMax        = 160
 	toolResultPreviewMaxLines = 3
@@ -189,29 +191,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		state.History = append(state.History, assistantMessage)
 		state.ModelHistory = append(state.ModelHistory, assistantMessage)
 
-		for _, tc := range msg.ToolCalls {
-			toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}
-			if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
-				return storage.Message{}, err
-			}
-			if approved, _ := s.approveToolCall(ctx, tc); !approved {
-				// 用户拒绝：展示被拒状态后立即结束本轮，且不进行收尾（记忆/历史落库）。
-				toolCtx.Outcome = toolExecutionOutcome{Status: "rejected", Result: "Error: user rejected this operation", Audit: toolCtx.Outcome.Audit}
-				emitToolCallStart(state, toolCtx)
-				emitToolCallDone(state, toolCtx)
-				return storage.Message{Role: "assistant", Content: "操作已被拒绝，已结束本轮。"}, nil
-			}
-			emitToolCallStart(state, toolCtx)
-			toolCtx.Outcome = s.executeToolCall(ctx, ToolContext{User: user, Conversation: conversation, Skills: snapshot, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID), Todos: state.Todos}, tc.Function.Name, tc.Function.Arguments, toolCtx.Outcome.Audit)
-			if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
-				state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
-			}
-			if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
-				return storage.Message{}, err
-			}
-			emitToolCallDone(state, toolCtx)
-			state.ToolCallCount++
-			emitMeta(state)
+		batch, err := s.executeToolCallBatch(ctx, state, msg.ToolCalls, toolBatchOptions{
+			ToolContext: ToolContext{User: user, Conversation: conversation, Skills: snapshot, PersistedOutputReader: s.newPersistedOutputReader(conversation.ID, user.ID), Todos: state.Todos, Writer: writer},
+		})
+		if err != nil {
+			return storage.Message{}, err
+		}
+		if batch.Rejected {
+			return storage.Message{Role: "assistant", Content: "操作已被拒绝，已结束本轮。"}, nil
 		}
 		// 需求2 条件(1)/初次提取：每个 tool_calls round 结束后评估并按需异步刷新会话记忆。
 		// 提取数据源用【真实模型线】state.ModelHistory（lockstep 追加，含工具调用与结果）。
@@ -219,6 +206,70 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			s.maybeUpdateSessionMemoryMidLoop(conversation, user, state.ModelHistory, state.LastContextTokens, len(msg.ToolCalls))
 		}
 	}
+}
+
+type toolBatchOptions struct {
+	ToolContext      ToolContext
+	Registry         *ToolRegistry
+	UseChildRegistry bool
+	SuppressResultUI bool
+	EphemeralGroupID string
+}
+
+type toolBatchResult struct {
+	Contexts []*ToolUseContext
+	Rejected bool
+}
+
+func (s *Service) executeToolCallBatch(ctx context.Context, state *LoopState, calls []openai.ToolCall, opts toolBatchOptions) (toolBatchResult, error) {
+	contexts := make([]*ToolUseContext, 0, len(calls))
+	for _, tc := range calls {
+		toolCtx := &ToolUseContext{State: state, ToolCall: tc, Name: tc.Function.Name, RawArgs: tc.Function.Arguments}
+		if err := s.hookManager().RunPreToolUse(ctx, toolCtx); err != nil {
+			return toolBatchResult{}, err
+		}
+		if approved, _ := s.approveToolCall(ctx, tc); !approved {
+			toolCtx.Outcome = toolExecutionOutcome{Status: "rejected", Result: "Error: user rejected this operation", Audit: toolCtx.Outcome.Audit}
+			emitToolCallStartWithOptions(state, toolCtx, opts)
+			emitToolCallDoneWithOptions(state, toolCtx, opts)
+			return toolBatchResult{Contexts: append(contexts, toolCtx), Rejected: true}, nil
+		}
+		contexts = append(contexts, toolCtx)
+	}
+	for _, toolCtx := range contexts {
+		emitToolCallStartWithOptions(state, toolCtx, opts)
+	}
+
+	todosSnapshot := append([]agenttools.TodoItem(nil), opts.ToolContext.Todos...)
+	var wg sync.WaitGroup
+	for _, toolCtx := range contexts {
+		toolCtx := toolCtx
+		execCtx := opts.ToolContext
+		execCtx.Todos = append([]agenttools.TodoItem(nil), todosSnapshot...)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if opts.UseChildRegistry {
+				toolCtx.Outcome = s.executeChildToolCall(ctx, opts.Registry, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
+				return
+			}
+			toolCtx.Outcome = s.executeToolCall(ctx, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
+		}()
+	}
+	wg.Wait()
+
+	for _, toolCtx := range contexts {
+		if toolCtx.Name == agenttools.TodoWriteToolName && toolCtx.Outcome.Status == "success" {
+			state.Todos = append([]agenttools.TodoItem(nil), toolCtx.Outcome.Todos...)
+		}
+		if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
+			return toolBatchResult{}, err
+		}
+		emitToolCallDoneWithOptions(state, toolCtx, opts)
+		state.ToolCallCount++
+		emitMeta(state)
+	}
+	return toolBatchResult{Contexts: contexts}, nil
 }
 
 // emitMeta 实时下发当前累计的回复元信息。
@@ -234,23 +285,33 @@ func emitMeta(state *LoopState) {
 }
 
 func emitToolCallStart(state *LoopState, toolCtx *ToolUseContext) {
+	emitToolCallStartWithOptions(state, toolCtx, toolBatchOptions{})
+}
+
+func emitToolCallStartWithOptions(state *LoopState, toolCtx *ToolUseContext, opts toolBatchOptions) {
 	if state == nil || state.Writer == nil || toolCtx == nil {
 		return
 	}
-	_ = state.Writer.Event(toolCallStartEvent, map[string]any{
+	payload := map[string]any{
 		"tool_call_id": toolCtx.ToolCall.ID,
 		"tool_name":    toolCtx.Name,
 		"raw_args":     toolCtx.RawArgs,
 		"args_preview": previewToolArgs(toolCtx.Name, toolCtx.RawArgs),
 		"status":       "running",
-	})
+	}
+	applyToolEventOptions(payload, opts)
+	_ = state.Writer.Event(toolCallStartEvent, payload)
 }
 
 func emitToolCallDone(state *LoopState, toolCtx *ToolUseContext) {
+	emitToolCallDoneWithOptions(state, toolCtx, toolBatchOptions{})
+}
+
+func emitToolCallDoneWithOptions(state *LoopState, toolCtx *ToolUseContext, opts toolBatchOptions) {
 	if state == nil || state.Writer == nil || toolCtx == nil {
 		return
 	}
-	_ = state.Writer.Event(toolCallDoneEvent, map[string]any{
+	payload := map[string]any{
 		"tool_call_id":   toolCtx.ToolCall.ID,
 		"tool_name":      toolCtx.Name,
 		"raw_args":       toolCtx.RawArgs,
@@ -258,7 +319,25 @@ func emitToolCallDone(state *LoopState, toolCtx *ToolUseContext) {
 		"status":         toolCtx.Outcome.Status,
 		"result_preview": previewToolResult(toolCtx.Outcome),
 		"audit_summary":  toolCtx.Outcome.AuditSummary(),
-	})
+	}
+	applyToolEventOptions(payload, opts)
+	if opts.SuppressResultUI {
+		delete(payload, "result_preview")
+	}
+	_ = state.Writer.Event(toolCallDoneEvent, payload)
+}
+
+func applyToolEventOptions(payload map[string]any, opts toolBatchOptions) {
+	if opts.EphemeralGroupID == "" && !opts.SuppressResultUI {
+		return
+	}
+	payload["scope"] = "subagent"
+	if opts.EphemeralGroupID != "" {
+		payload["ephemeral_group_id"] = opts.EphemeralGroupID
+	}
+	if opts.SuppressResultUI {
+		payload["suppress_result"] = true
+	}
 }
 
 func previewToolArgs(toolName, rawArgs string) string {
