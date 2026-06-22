@@ -2152,7 +2152,7 @@ func TestRespondToConversation_ExecutesSameRoundToolsConcurrentlyAndStoresResult
 	}
 }
 
-func TestRespondToConversation_EmitsRejectedToolLifecycleEvent(t *testing.T) {
+func TestRespondToConversation_EmitsFailedToolLifecycleEvent(t *testing.T) {
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{
 			Choices: []openai.ChatCompletionChoice{{
@@ -2188,8 +2188,8 @@ func TestRespondToConversation_EmitsRejectedToolLifecycleEvent(t *testing.T) {
 		t.Fatalf("events = %#v, want tool lifecycle events", events)
 	}
 	done := eventMap(t, events[1].data)
-	if done["status"] != "rejected" {
-		t.Fatalf("done event status = %#v, want rejected", done["status"])
+	if done["status"] != "failed" {
+		t.Fatalf("done event status = %#v, want failed", done["status"])
 	}
 	if !strings.Contains(stringValue(done["result_preview"]), "missing-skill") {
 		t.Fatalf("done result_preview = %#v, want rejection reason", done["result_preview"])
@@ -2234,7 +2234,7 @@ func TestPreviewToolResultFallsBackToAuditSummaryWhenResultEmpty(t *testing.T) {
 	}
 }
 
-func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
+func TestRespondToConversation_ReturnsFailedToolResultIntoLoop(t *testing.T) {
 	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
 		{
 			Choices: []openai.ChatCompletionChoice{{
@@ -2280,8 +2280,8 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	if len(store.toolCalls) != 1 {
 		t.Fatalf("expected one stored tool call, got %d", len(store.toolCalls))
 	}
-	if store.toolCalls[0].Status != "rejected" {
-		t.Fatalf("expected tool call status rejected, got %q", store.toolCalls[0].Status)
+	if store.toolCalls[0].Status != "failed" {
+		t.Fatalf("expected tool call status failed, got %q", store.toolCalls[0].Status)
 	}
 	var audit toolExecutionAudit
 	if err := json.Unmarshal([]byte(store.toolCalls[0].Summary), &audit); err != nil {
@@ -2301,8 +2301,8 @@ func TestRespondToConversation_ReturnsRejectedToolResultIntoLoop(t *testing.T) {
 	if err := json.Unmarshal([]byte(toolMessage.Content), &outcome); err != nil {
 		t.Fatalf("expected JSON tool message content, got error: %v, content: %q", err, toolMessage.Content)
 	}
-	if outcome.Status != "rejected" {
-		t.Fatalf("expected tool loop status rejected, got %q", outcome.Status)
+	if outcome.Status != "failed" {
+		t.Fatalf("expected tool loop status failed, got %q", outcome.Status)
 	}
 	if !contains(outcome.Result, "Error: unknown skill \"missing-skill\"") {
 		t.Fatalf("expected rejection result to include tool error, got %q", outcome.Result)

@@ -215,7 +215,7 @@ func (s *Service) executeChildToolCall(ctx context.Context, tools *ToolRegistry,
 	}
 	execResult, err := tools.Execute(ctx, toolCtx, name, rawArgs)
 	if err != nil {
-		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+		return toolExecutionOutcome{Status: "failed", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
 	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
 }

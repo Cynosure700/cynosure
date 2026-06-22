@@ -324,7 +324,7 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		output, err := s.MCP.CallTool(ctx, toolCtx.User.ID, name, rawArgs)
 		if err != nil {
-			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+			return toolExecutionOutcome{Status: "failed", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 		}
 		return toolExecutionOutcome{Status: "success", Result: output, Audit: audit}
 	}
@@ -347,7 +347,7 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		result, err := s.runSubagent(ctx, toolCtx, args, audit)
 		if err != nil {
-			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Subagent failed: %v", err), Audit: audit}
+			return toolExecutionOutcome{Status: "failed", Result: fmt.Sprintf("Subagent failed: %v", err), Audit: audit}
 		}
 		return toolExecutionOutcome{Status: "success", Result: result, Audit: audit}
 	}
@@ -366,13 +366,13 @@ func (s *Service) executeToolCall(ctx context.Context, toolCtx ToolContext, name
 		}
 		output, err := s.executeMemoryTool(ctx, name, rawArgs)
 		if err != nil {
-			return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+			return toolExecutionOutcome{Status: "failed", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 		}
 		return toolExecutionOutcome{Status: "success", Result: output, Audit: audit}
 	}
 	execResult, err := s.Tools.Execute(s.withWebProcessor(ctx), toolCtx, name, rawArgs)
 	if err != nil {
-		return toolExecutionOutcome{Status: "rejected", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
+		return toolExecutionOutcome{Status: "failed", Result: fmt.Sprintf("Error: %v", err), Audit: audit}
 	}
 	return toolExecutionOutcome{Status: "success", Result: execResult.Output, Audit: audit, Todos: execResult.Todos}
 }
