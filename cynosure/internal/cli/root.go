@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"nano_cc/internal/local"
-	"nano_cc/internal/tui"
+	"cynosure/internal/local"
+	"cynosure/internal/tui"
 )
 
 type Options struct {

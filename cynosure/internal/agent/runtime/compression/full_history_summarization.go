@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 const fullHistorySummarizationStrategyName = "full_history_summarization"

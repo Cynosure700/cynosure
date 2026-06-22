@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 func TestSessionMemoryProgress_ShouldUpdate(t *testing.T) {

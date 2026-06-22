@@ -6,10 +6,10 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/runtime/compression"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/logger"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/agent/runtime/compression"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/logger"
+	agenttools "cynosure/internal/tools"
 )
 
 // loadModelHistory 返回从上一回合压缩后的请求历史中持久化下来、可复用的

@@ -3,7 +3,7 @@ package compression
 import (
 	"context"
 
-	"nano_cc/internal/textutil"
+	"cynosure/internal/textutil"
 )
 
 const recentToolResultRetentionStrategyName = "recent_tool_result_retention"

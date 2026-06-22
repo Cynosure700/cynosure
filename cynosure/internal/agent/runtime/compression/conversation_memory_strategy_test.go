@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 // conversationMemoryItems builds count memories sized so the rendered text lands

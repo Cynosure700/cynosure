@@ -10,9 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"nano_cc/internal/agent/mcp"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/sessions"
+	"cynosure/internal/agent/mcp"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/sessions"
 )
 
 var ansiEscapePattern = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -124,7 +124,7 @@ func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
 	app.width = 120
 	msg := Message{Role: "tool", ToolCall: &ToolCallView{
 		Name:          "Glob",
-		ArgsPreview:   `path="/Users/bytedance/golang_pro/nano_cc", pattern="**/README*"`,
+		ArgsPreview:   `path="/Users/bytedance/golang_pro/cynosure", pattern="**/README*"`,
 		Status:        "success",
 		ResultPreview: "Found 1 file(s).",
 	}}
@@ -598,14 +598,14 @@ func TestModelDisplaysToolCallLifecycle(t *testing.T) {
 		"tool_name":      "bash",
 		"args_preview":   "command: go test ./...",
 		"status":         "success",
-		"result_preview": "ok nano_cc/internal/tui 0.42s",
+		"result_preview": "ok cynosure/internal/tui 0.42s",
 	}})
 	model = updated.(Model)
 	if len(model.messages) != 1 {
 		t.Fatalf("messages = %#v, want tool done to update existing message", model.messages)
 	}
 	rendered = plainTerminalText(model.renderMessages())
-	for _, want := range []string{"✓ Bash", "⎿ success · ok nano_cc/internal/tui 0.42s"} {
+	for _, want := range []string{"✓ Bash", "⎿ success · ok cynosure/internal/tui 0.42s"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}
@@ -676,7 +676,7 @@ func TestSubagentToolStatusWrapsContinuationAtStatusColumn(t *testing.T) {
 	app.width = 36
 	app.generation = 1
 	app.running = true
-	longArgs := "task: 探索 /Users/bytedance/golang_pro/nano_cc/cynosure 当前项目结构和技术栈"
+	longArgs := "task: 探索 /Users/bytedance/golang_pro/cynosure/cynosure 当前项目结构和技术栈"
 
 	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_1",
@@ -902,12 +902,12 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 		"tool_name":      "bash",
 		"args_preview":   "command: go test ./...",
 		"status":         "success",
-		"result_preview": "ok nano_cc/internal/tui 0.42s",
+		"result_preview": "ok cynosure/internal/tui 0.42s",
 	}})
 	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "reasoning_delta", Content: "再检查结果"})
 	model := updated.(Model)
 	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok nano_cc/internal/tui 0.42s"} {
+	for _, want := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok cynosure/internal/tui 0.42s"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q visible before assistant reply starts", rendered, want)
 		}
@@ -921,7 +921,7 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}
 	}
-	for _, forbidden := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok nano_cc/internal/tui 0.42s"} {
+	for _, forbidden := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok cynosure/internal/tui 0.42s"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("rendered = %q, should hide %q once assistant reply starts", rendered, forbidden)
 		}
@@ -1113,7 +1113,7 @@ func TestHeaderUsesGreenAccentAndCompactCenteredLinkVersionMascot(t *testing.T) 
 }
 
 func TestHeaderBoxClosesWithinTerminalWidth(t *testing.T) {
-	app := NewModel(nil, SessionInfo{CWD: "/Users/bytedance/golang_pro/nano_cc/cynosure", ModelID: "deepseek-v4-flash"})
+	app := NewModel(nil, SessionInfo{CWD: "/Users/bytedance/golang_pro/cynosure/cynosure", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model := updated.(Model)
 

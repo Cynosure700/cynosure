@@ -1,9 +1,9 @@
 package runtime
 
 import (
-	runtimehooks "nano_cc/internal/agent/runtime/hooks"
-	"nano_cc/internal/agent/storage"
-	agenttools "nano_cc/internal/tools"
+	runtimehooks "cynosure/internal/agent/runtime/hooks"
+	"cynosure/internal/agent/storage"
+	agenttools "cynosure/internal/tools"
 )
 
 type UserPromptSubmitHook = runtimehooks.UserPromptSubmitHook

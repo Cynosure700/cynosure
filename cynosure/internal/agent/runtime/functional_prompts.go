@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"nano_cc/assets"
+	"cynosure/assets"
 )
 
 type FunctionalPrompts struct {

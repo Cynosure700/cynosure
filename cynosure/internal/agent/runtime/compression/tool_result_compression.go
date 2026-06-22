@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
-	"nano_cc/internal/textutil"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/idgen"
+	"cynosure/internal/textutil"
+	agenttools "cynosure/internal/tools"
 )
 
 const toolResultCompressionStrategyName = "tool_result_compression"

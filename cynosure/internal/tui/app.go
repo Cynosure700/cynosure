@@ -17,11 +17,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"nano_cc/internal/agent/mcp"
-	"nano_cc/internal/agent/runtime"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/logger"
-	"nano_cc/internal/sessions"
+	"cynosure/internal/agent/mcp"
+	"cynosure/internal/agent/runtime"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/logger"
+	"cynosure/internal/sessions"
 )
 
 type SessionInfo struct {

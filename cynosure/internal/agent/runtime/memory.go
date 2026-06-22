@@ -9,10 +9,10 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
-	"nano_cc/internal/logger"
-	"nano_cc/internal/textutil"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/idgen"
+	"cynosure/internal/logger"
+	"cynosure/internal/textutil"
 )
 
 const (

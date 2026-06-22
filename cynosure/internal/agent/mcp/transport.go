@@ -10,7 +10,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 // headerRoundTripper 在每个 HTTP 请求上附加自定义请求头，用于 sse/streamable 传输鉴权。

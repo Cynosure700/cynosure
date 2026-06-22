@@ -5,12 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"nano_cc/internal/agent/mcp"
-	"nano_cc/internal/agent/runtime/compression"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/config"
-	"nano_cc/internal/llm"
-	"nano_cc/internal/sessions"
+	"cynosure/internal/agent/mcp"
+	"cynosure/internal/agent/runtime/compression"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/config"
+	"cynosure/internal/llm"
+	"cynosure/internal/sessions"
 )
 
 type EventWriter interface {

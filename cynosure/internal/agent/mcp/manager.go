@@ -12,8 +12,8 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/logger"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/logger"
 )
 
 const (
@@ -215,7 +215,7 @@ func connectAndDiscover(ctx context.Context, server storage.MCPServer) (*serverS
 	connCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "nano_cc", Version: "1.0.0"}, nil)
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "cynosure", Version: "1.0.0"}, nil)
 	session, err := client.Connect(connCtx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -248,7 +248,7 @@ func connectWithTransport(ctx context.Context, server storage.MCPServer, transpo
 	connCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "nano_cc", Version: "1.0.0"}, nil)
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "cynosure", Version: "1.0.0"}, nil)
 	session, err := client.Connect(connCtx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)

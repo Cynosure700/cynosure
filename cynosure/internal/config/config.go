@@ -29,16 +29,16 @@ type fileConfig struct {
 }
 
 type AppConfig struct {
-	LLM                         Config
-	AppHome                     string
-	SystemPromptPath            string
-	WorkspaceRoot               string
-	LogsDir                     string
-	AllowedTools                []string
-	ConversationLockTTL         time.Duration
-	MemoryWorkTimeout           time.Duration
-	ConversationLockWaitTimeout time.Duration
-	MemoryConsolidationInterval time.Duration
+	LLM                            Config
+	AppHome                        string
+	SystemPromptPath               string
+	WorkspaceRoot                  string
+	LogsDir                        string
+	AllowedTools                   []string
+	ConversationLockTTL            time.Duration
+	MemoryWorkTimeout              time.Duration
+	ConversationLockWaitTimeout    time.Duration
+	MemoryConsolidationInterval    time.Duration
 	MemoryConsolidationMinSessions int
 }
 

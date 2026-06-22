@@ -1,4 +1,4 @@
-# cynosure / nano_cc
+# cynosure
 
 `cynosure` 是面向本地代码工作的纯本地 TUI Agent。它默认在终端中启动，不依赖 Web 服务、数据库、Redis 或 Elasticsearch；能够读取当前项目文件、执行 shell 命令、修改代码、加载 `cynosure` Skills，并自动连接工作区 MCP 工具。
 
@@ -151,7 +151,7 @@ TUI 会在用户目录维护 `~/.cynosure/task_outputs/`，用于保存工具执
 ### 安装（推荐）
 
 ```bash
-go install nano_cc@latest    # 上传 GitHub 后用对应 module 路径
+go install cynosure@latest    # 上传 GitHub 后用对应 module 路径
 # 或在源码目录：
 cd cynosure && go install .
 ```

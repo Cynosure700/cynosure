@@ -1,4 +1,4 @@
-module nano_cc
+module cynosure
 
 go 1.26.1
 

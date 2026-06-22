@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/textutil"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/textutil"
 )
 
 type fakeStore struct {

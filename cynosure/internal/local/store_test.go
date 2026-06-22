@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"nano_cc/internal/agent/runtime"
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/runtime"
+	"cynosure/internal/agent/storage"
 )
 
 func TestStoreMaintainsConversationHistory(t *testing.T) {

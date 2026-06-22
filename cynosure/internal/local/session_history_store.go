@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/config"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/config"
 )
 
 type SessionHistoryStore struct {

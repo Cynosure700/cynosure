@@ -1,6 +1,6 @@
-# Cynosure (nano_cc) Python 迁移设计文档
+# Cynosure (cynosure) Python 迁移设计文档
 
-> **项目**：Cynosure — 纯本地、终端原生的通用 AI Agent（原名 nano_cc）
+> **项目**：Cynosure — 纯本地、终端原生的通用 AI Agent（原名 cynosure）
 > **当前实现**：Go 1.26.1，约 21,000 行（16,727 行 Go + 4,503 行 Markdown 文档）
 > **目标**：完整迁移至 Python，保留全部功能与架构设计
 

@@ -7,8 +7,8 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/storage"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/agent/storage"
+	agenttools "cynosure/internal/tools"
 )
 
 type Store interface {

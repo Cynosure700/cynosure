@@ -12,12 +12,12 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/runtime/compression"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
-	"nano_cc/internal/llm"
-	"nano_cc/internal/logger"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/agent/runtime/compression"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/idgen"
+	"cynosure/internal/llm"
+	"cynosure/internal/logger"
+	agenttools "cynosure/internal/tools"
 )
 
 const (

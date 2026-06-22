@@ -7,9 +7,9 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/config"
-	"nano_cc/internal/logger"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/config"
+	"cynosure/internal/logger"
+	agenttools "cynosure/internal/tools"
 )
 
 // ApprovalDecision 表示用户对一次需审批工具调用的决定。

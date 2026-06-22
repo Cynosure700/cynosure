@@ -3,7 +3,7 @@ package hooks
 import (
 	"context"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 func appendUserMessageHook(ctx context.Context, h *UserPromptSubmitContext) error {

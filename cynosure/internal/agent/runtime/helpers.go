@@ -3,8 +3,8 @@ package runtime
 import (
 	"strings"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/idgen"
 )
 
 func newMessageID() string { return idgen.New("msg") }

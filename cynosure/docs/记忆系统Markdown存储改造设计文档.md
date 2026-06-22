@@ -50,11 +50,11 @@ description: 用户语言偏好：项目必须使用 Go 语言
 metadata:
   node_type: memory
   type: user_preference
-  project: nano_cc
+  project: cynosure
   originSessionId: 041581e7-c3e7-46c8-afe7-7cdcc671e80e
 ---
 
-用户在 nano_cc 项目中只使用 Go 语言，不能使用其他编程语言。
+用户在 cynosure 项目中只使用 Go 语言，不能使用其他编程语言。
 
 **Why:** 用户的技术栈和偏好明确限定为 Go。
 
@@ -85,7 +85,7 @@ name: current-session
 description: 当前会话主干信息
 metadata:
   node_type: session_memory
-  project: nano_cc
+  project: cynosure
   session_id: 041581e7-c3e7-46c8-afe7-7cdcc671e80e
   originSessionId: 041581e7-c3e7-46c8-afe7-7cdcc671e80e
 ---
@@ -193,7 +193,7 @@ metadata:
 为降低改动量，可以先把 `ListRelevantMemories` 返回的 `Body` 填成 Markdown 正文，再调整 `renderMemorySection` 允许注入 body。注入格式建议：
 
 ```markdown
-### 当前项目记忆（仅适用于 nano_cc 项目）
+### 当前项目记忆（仅适用于 cynosure 项目）
 
 以下记忆只能用于当前项目；不要迁移到其他项目会话。
 
@@ -201,13 +201,13 @@ metadata:
 
 项目必须使用 Go 语言，不能用其他语言。
 
-用户在 nano_cc 项目中只使用 Go 语言，不能使用 Python、Node.js、Rust 等其他语言。
+用户在 cynosure 项目中只使用 Go 语言，不能使用 Python、Node.js、Rust 等其他语言。
 
 #### 项目事实：TUI 本地记忆目录
 
 本项目记忆存储在当前工作目录的 memory/ 下。
 
-启动其他项目时不能读取 nano_cc/memory 下的记忆。
+启动其他项目时不能读取 cynosure/memory 下的记忆。
 ```
 
 ### 5.3 记忆抽取/选择提示词调整
@@ -281,7 +281,7 @@ You are a project-scoped memory retrieval engine. Given the current project, cur
 
 其中：
 
-- `project_name` 来自当前工作目录名，例如 `/Users/bytedance/golang_pro/nano_cc` 对应 `nano_cc`；若目录名为空，则使用清洗后的 workspace root 兜底。
+- `project_name` 来自当前工作目录名，例如 `/Users/bytedance/golang_pro/cynosure` 对应 `cynosure`；若目录名为空，则使用清洗后的 workspace root 兜底。
 - `session_id` 为上述随机 UUID。
 - key 中的项目名和 session_id 均做安全清洗，仅保留 `[A-Za-z0-9._-]`，其他字符替换为 `-`。
 

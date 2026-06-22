@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/logger"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/logger"
 )
 
 type builtinConfig struct {

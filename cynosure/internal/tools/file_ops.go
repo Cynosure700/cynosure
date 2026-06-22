@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"nano_cc/internal/safety"
+	"cynosure/internal/safety"
 )
 
 const maxReadLen = 50000

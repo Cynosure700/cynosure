@@ -8,7 +8,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/config"
+	"cynosure/internal/config"
 )
 
 type stubApprover struct {

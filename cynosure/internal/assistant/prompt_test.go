@@ -76,7 +76,7 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, "你是 nano_cc") {
+	if strings.Contains(prompt, "你是 cynosure") {
 		t.Fatalf("expected custom base prompt to replace compiled default, got %q", prompt)
 	}
 	workspaceEnd := strings.Index(prompt, "</workspace>")

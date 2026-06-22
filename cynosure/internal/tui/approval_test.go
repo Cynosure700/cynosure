@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"nano_cc/internal/agent/runtime"
+	"cynosure/internal/agent/runtime"
 )
 
 func TestApprovalRequestEntersSelectingAndRendersPanel(t *testing.T) {

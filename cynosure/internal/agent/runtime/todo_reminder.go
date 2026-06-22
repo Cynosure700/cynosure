@@ -3,7 +3,7 @@ package runtime
 import (
 	openai "github.com/sashabaranov/go-openai"
 
-	agenttools "nano_cc/internal/tools"
+	agenttools "cynosure/internal/tools"
 )
 
 const (

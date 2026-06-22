@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"nano_cc/internal/agent/runtime"
+	"cynosure/internal/agent/runtime"
 )
 
 // approvalRequestMsg 由 Decide 在 respond goroutine 中通过 events 通道发给主循环，

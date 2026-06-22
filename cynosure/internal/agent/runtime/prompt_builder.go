@@ -7,11 +7,11 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/runtime/compression"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/assistant"
-	"nano_cc/internal/sessions"
-	agenttools "nano_cc/internal/tools"
+	"cynosure/internal/agent/runtime/compression"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/assistant"
+	"cynosure/internal/sessions"
+	agenttools "cynosure/internal/tools"
 )
 
 func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message, memoryOn bool) string {

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/idgen"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/idgen"
 )
 
 type Store struct {

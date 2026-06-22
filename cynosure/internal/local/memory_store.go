@@ -14,9 +14,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/config"
-	"nano_cc/internal/idgen"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/config"
+	"cynosure/internal/idgen"
 )
 
 const memoryIndexHeader = "# Memory Index\n"

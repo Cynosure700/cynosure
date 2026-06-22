@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"nano_cc/internal/sessions"
+	"cynosure/internal/sessions"
 )
 
 type SkillSnapshot struct {

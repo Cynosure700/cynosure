@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"nano_cc/internal/cli"
+	"cynosure/internal/cli"
 )
 
 func main() {

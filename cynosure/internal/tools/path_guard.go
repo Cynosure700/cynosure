@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"nano_cc/internal/safety"
+	"cynosure/internal/safety"
 )
 
 func validatedWorkspaceRootFromContext(ctx context.Context) (string, error) {

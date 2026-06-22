@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"nano_cc/internal/agent/runtime/compression"
-	"nano_cc/internal/agent/storage"
-	"nano_cc/internal/config"
-	"nano_cc/internal/textutil"
+	"cynosure/internal/agent/runtime/compression"
+	"cynosure/internal/agent/storage"
+	"cynosure/internal/config"
+	"cynosure/internal/textutil"
 )
 
 func compToolMsg(id, status, result string) storage.Message {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 const reactiveCompactStrategyName = "reactive_compact"

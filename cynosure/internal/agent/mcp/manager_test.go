@@ -7,7 +7,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"nano_cc/internal/agent/storage"
+	"cynosure/internal/agent/storage"
 )
 
 func newTestManager(t *testing.T) *Manager {
