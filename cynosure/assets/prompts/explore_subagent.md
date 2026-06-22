@@ -53,7 +53,9 @@ Tool rules:
 - Prefer grep for content search.
 - Prefer glob for filename pattern matching.
 - Use ls only on known existing directories.
-- Use read_file only after the target file has been verified to exist.
+- Use read_file only for confirmed existing regular files.
+- Never use read_file to read directories or to test whether a path exists.
+- Use ls for directory browsing; use glob, grep, or ls to confirm candidate paths before read_file.
 - Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient; read it in chunks by id, offset, and limit.
 - Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).
 - Read the minimum amount of content needed.

@@ -68,6 +68,28 @@ func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 	t.Fatalf("expected AllToolDefs to include load_skill")
 }
 
+func TestReadFileToolDescriptionRestrictsToExistingFiles(t *testing.T) {
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil || tool.Function.Name != "read_file" {
+			continue
+		}
+		description := tool.Function.Description
+		for _, want := range []string{"existing regular file", "not for directories", "not for speculative"} {
+			if !strings.Contains(description, want) {
+				t.Fatalf("expected read_file description to contain %q, got %q", want, description)
+			}
+		}
+		schema := string(RawSchemaFromParameters(tool.Function.Parameters))
+		for _, want := range []string{"confirmed existing regular file", "Do not pass a directory", "do not use read_file to check whether a path exists"} {
+			if !strings.Contains(schema, want) {
+				t.Fatalf("expected read_file schema to contain %q, got %q", want, schema)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected AllToolDefs to include read_file")
+}
+
 func TestTodoListToolDefinitionIsNoArgumentReadOnlyQuery(t *testing.T) {
 	for _, tool := range AllToolDefs {
 		if tool.Function == nil || tool.Function.Name != "todo_list" {

@@ -131,6 +131,20 @@ func TestDefaultBaseSystemPromptRequiresExploreForSearchSubagents(t *testing.T) 
 	}
 }
 
+func TestDefaultBaseSystemPromptRestrictsReadFileToExistingFiles(t *testing.T) {
+	for _, want := range []string{
+		"read_file 只用于读取已确认存在的普通文件",
+		"不得用于读取目录",
+		"不得用于试探路径是否存在",
+		"目录浏览使用 ls",
+		"路径存在性或文件定位先使用 glob、grep 或 ls 确认",
+	} {
+		if !strings.Contains(DefaultBaseSystemPrompt, want) {
+			t.Fatalf("expected default base prompt to contain %q", want)
+		}
+	}
+}
+
 func TestBuildSystemPromptOmitsMemoryGuidanceWhenMemorySectionIsEmpty(t *testing.T) {
 	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
 	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）段可能同时包含过往记忆索引") {

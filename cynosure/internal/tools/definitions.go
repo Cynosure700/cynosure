@@ -94,10 +94,10 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"command"},
 	}),
-	toolSpec("read_file", "Read a file from the filesystem", map[string]any{
+	toolSpec("read_file", "Read an existing regular file from the filesystem. Use it only after the target path has been confirmed; it is not for directories and not for speculative path checks.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":  strParam("Path to the file to read"),
+			"path":  strParam("Path to the confirmed existing regular file to read. Do not pass a directory, and do not use read_file to check whether a path exists."),
 			"limit": intParam("Maximum number of lines to read"),
 		},
 		"required": []string{"path"},

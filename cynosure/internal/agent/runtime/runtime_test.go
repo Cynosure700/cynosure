@@ -446,6 +446,8 @@ func TestBuildSubagentSystemPromptUsesEmbeddedDefaultTemplate(t *testing.T) {
 		"- 只能依据当前任务和工作区文件来工作。",
 		"- 不要调用 `spawn_subagent`。",
 		"- 搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须交给 explore 子智能体，不应由 general 子智能体承担。",
+		"- `read_file` 只用于读取已确认存在的普通文件；不得用于读取目录，也不得用于试探路径是否存在。",
+		"- 目录浏览使用 `ls`；路径存在性或文件定位先使用 `glob`、`grep` 或 `ls` 确认。",
 		"- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。",
 		"</subagent>",
 	} {
@@ -490,6 +492,9 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"glob",
 		"ls",
 		"read_file",
+		"Use read_file only for confirmed existing regular files.",
+		"Never use read_file to read directories or to test whether a path exists.",
+		"Use ls for directory browsing; use glob, grep, or ls to confirm candidate paths before read_file.",
 		"read_persisted_output",
 		"Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient",
 		"Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).",
