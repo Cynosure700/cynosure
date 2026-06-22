@@ -203,7 +203,7 @@ func isExploreReadOnlyBashCommand(command string) bool {
 		return false
 	}
 	switch filepath.Base(fields[0]) {
-	case "ls", "find", "cat", "head", "tail":
+	case "ls", "find", "cat", "head", "tail", "sed":
 		return !containsExploreBashDeniedArg(fields[1:])
 	case "git":
 		if len(fields) < 2 {
