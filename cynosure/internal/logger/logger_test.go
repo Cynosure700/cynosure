@@ -52,6 +52,23 @@ func TestInfoWritesDebugLogIntoWorkspaceLogs(t *testing.T) {
 	}
 }
 
+func TestLogLLMRoundWritesFinishReason(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	if err := InitFileLoggerUnderWorkspaceRoot(workspaceRoot); err != nil {
+		t.Fatalf("init file logger under workspace root: %v", err)
+	}
+
+	LogLLMRound(3, "test-source", []byte(`{"request":true}`), []byte(`{"role":"assistant"}`), "stop", nil)
+
+	content, err := os.ReadFile(LogFilePath())
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
+	if !strings.Contains(string(content), "FinishReason: stop") {
+		t.Fatalf("expected finish reason in LLM round log, got %q", string(content))
+	}
+}
+
 func TestConsoleDisabledSuppressesTerminalOutputButKeepsFileLog(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	if err := InitFileLoggerUnderWorkspaceRoot(workspaceRoot); err != nil {

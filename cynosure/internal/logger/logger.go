@@ -93,7 +93,7 @@ func writeDebugLog(level, msg string) {
 	_ = logFile.Sync()
 }
 
-func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err error) {
+func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, finishReason string, err error) {
 	logMu.Lock()
 	defer logMu.Unlock()
 
@@ -105,6 +105,7 @@ func LogLLMRound(round int, source string, reqBody []byte, respBody []byte, err 
 
 	fmt.Fprintf(logFile, "\n%s\n", strings.Repeat("=", 80))
 	fmt.Fprintf(logFile, "[%s] Round %d | Source: %s\n", now, round, source)
+	fmt.Fprintf(logFile, "FinishReason: %s\n", finishReason)
 	fmt.Fprintf(logFile, "%s\n", strings.Repeat("-", 80))
 
 	// 请求

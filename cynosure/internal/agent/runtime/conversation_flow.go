@@ -140,7 +140,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
 		respBody, _ := json.Marshal(msg)
-		logger.LogLLMRound(round, fmt.Sprintf("main-agent conversation=%s", conversation.ID), reqBody, respBody, err)
+		logger.LogLLMRound(round, fmt.Sprintf("main-agent conversation=%s", conversation.ID), reqBody, respBody, string(finishReason), err)
 		if err != nil {
 			return storage.Message{}, err
 		}

@@ -150,7 +150,7 @@ func (s *Service) runSubagentLoop(ctx context.Context, state *LoopState, tools *
 		reqBody, _ := json.Marshal(req)
 		msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
 		respBody, _ := json.Marshal(msg)
-		logger.LogLLMRound(round, fmt.Sprintf("subagent run=%s conversation=%s", runID, parent.Conversation.ID), reqBody, respBody, err)
+		logger.LogLLMRound(round, fmt.Sprintf("subagent run=%s conversation=%s", runID, parent.Conversation.ID), reqBody, respBody, string(finishReason), err)
 		if err != nil {
 			return openai.ChatCompletionMessage{}, err
 		}
@@ -200,9 +200,9 @@ func (s *Service) summarizeSubagentAtMaxRounds(ctx context.Context, state *LoopS
 	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
 	req := openai.ChatCompletionRequest{Model: s.Cfg.LLM.ModelID, Messages: state.Messages, MaxTokens: defaultMaxTokens}
 	reqBody, _ := json.Marshal(req)
-	msg, _, err := s.runModelRoundWithRecovery(ctx, state, req)
+	msg, finishReason, err := s.runModelRoundWithRecovery(ctx, state, req)
 	respBody, _ := json.Marshal(msg)
-	logger.LogLLMRound(subagentSummaryRound, fmt.Sprintf("subagent run=%s conversation=%s max-round-summary", runID, parent.Conversation.ID), reqBody, respBody, err)
+	logger.LogLLMRound(subagentSummaryRound, fmt.Sprintf("subagent run=%s conversation=%s max-round-summary", runID, parent.Conversation.ID), reqBody, respBody, string(finishReason), err)
 	if err != nil {
 		return openai.ChatCompletionMessage{}, err
 	}
