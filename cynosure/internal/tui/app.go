@@ -217,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshViewport()
 				return m, nil
 			}
-			if strings.HasPrefix(text, "/") && m.handleSlashCommand(text) {
+			if isSlashCommandInput(text) && m.handleSlashCommand(text) {
 				m.refreshViewport()
 				return m, nil
 			}
@@ -363,9 +363,12 @@ func (m Model) thinkingTick(generation int64) tea.Cmd {
 }
 
 func (m *Model) handleSlashCommand(text string) bool {
+	if !isSlashCommandInput(text) {
+		return false
+	}
 	switch strings.TrimSpace(text) {
 	case "/help":
-		m.appendMessage("system", "命令：/help /clear /cwd /skills /mcp /resume。Enter 发送，Ctrl+C 中断或退出。")
+		m.appendMessage("system", renderSlashCommandHelp())
 		return true
 	case "/clear":
 		m.startNewSession()
@@ -385,6 +388,33 @@ func (m *Model) handleSlashCommand(text string) bool {
 	}
 	m.appendMessage("system", "未知命令："+text)
 	return true
+}
+
+func isSlashCommandInput(text string) bool {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "/") {
+		return false
+	}
+	if strings.ContainsAny(text, " \t\r\n") {
+		return false
+	}
+	for _, r := range text {
+		if r > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+func renderSlashCommandHelp() string {
+	return strings.Join([]string{
+		"/clear：开启全新对话并清空当前上下文。",
+		"  /cwd：显示当前工作区。",
+		"  /skills：显示已加载的 Skill 列表。",
+		"  /mcp：显示 MCP server 状态和工具数量。",
+		"  /resume：查看并恢复当前工作区的历史会话。",
+		"  /cancel：在恢复历史会话选择中取消当前选择。",
+	}, "\n")
 }
 
 func (m *Model) startNewSession() {

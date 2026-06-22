@@ -319,6 +319,46 @@ func TestHandleSlashCommand(t *testing.T) {
 	}
 }
 
+func TestHandleHelpCommandListsAvailableSlashCommands(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+
+	if handled := app.handleSlashCommand("/help"); !handled {
+		t.Fatal("/help was not handled")
+	}
+	content := app.messages[len(app.messages)-1].Content
+	for _, want := range []string{
+		"/help：显示所有可用的斜杠命令。",
+		"/clear：开启全新对话并清空当前上下文。",
+		"/cwd：显示当前工作区。",
+		"/skills：显示已加载的 Skill 列表。",
+		"/mcp：显示 MCP server 状态和工具数量。",
+		"/resume：查看并恢复当前工作区的历史会话。",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("/help output = %q, want it to contain %q", content, want)
+		}
+	}
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "/") {
+			t.Fatalf("/help line = %q, want each non-empty line to start with a slash command", line)
+		}
+	}
+}
+
+func TestSlashLikeNaturalQuestionIsNotHandledAsCommand(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+
+	if handled := app.handleSlashCommand("/help会输出哪些内容"); handled {
+		t.Fatalf("natural question starting with /help should not be handled as a slash command: %#v", app.messages)
+	}
+	if len(app.messages) != 0 {
+		t.Fatalf("messages = %#v, want no system command output", app.messages)
+	}
+}
+
 func TestHandleSkillsCommandShowsSkillDetails(t *testing.T) {
 	app := NewModel(nil, SessionInfo{Skills: []sessions.SkillSummary{{Name: "project-helper", Source: "workspace", Description: "Project helper", Path: "/project/.cynosure/skills/project-helper/skill.md"}}})
 
