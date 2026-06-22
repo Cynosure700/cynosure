@@ -171,10 +171,10 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"pattern"},
 	}),
-	toolSpec("ls", "List files and directories in a given path. The path must be an absolute path. You can optionally provide an array of glob patterns to ignore. Prefer glob and grep when you know which directories to search.", map[string]any{
+	toolSpec("ls", "List files and directories in a given path. You can optionally provide an array of glob patterns to ignore. Prefer glob and grep when you know which directories to search.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":   strParam("The absolute path to the directory to list (must be absolute, not relative)."),
+			"path":   strParam("The absolute path to the directory to list."),
 			"ignore": stringArrayParam("List of glob patterns to ignore."),
 		},
 		"required": []string{"path"},
