@@ -987,7 +987,7 @@ func displayToolName(name string, rawArgs string) string {
 	case "write_file":
 		return "write"
 	case "read_file":
-		return "file"
+		return "read"
 	case "glob":
 		return "glob"
 	case "grep":
