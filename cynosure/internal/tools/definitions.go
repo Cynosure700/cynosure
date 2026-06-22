@@ -94,10 +94,10 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"command"},
 	}),
-	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a file that does not exist; an error will be returned.", map[string]any{
+	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a user-provided file path that does not exist; an error will be returned. For paths inferred by you rather than provided by the user, confirm the file exists before reading.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing files are okay and will return an error."),
+			"path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
 			"limit": intParam("Maximum number of lines to read"),
 		},
 		"required": []string{"path"},

@@ -135,7 +135,8 @@ func TestDefaultBaseSystemPromptGuidesFileAndSearchTools(t *testing.T) {
 	for _, want := range []string{
 		"read_file 可直接读取本地文件系统中的文件",
 		"用户提供文件路径时，默认该路径有效",
-		"读取不存在的文件是允许的",
+		"读取不存在的用户提供路径是允许的",
+		"除非路径由用户直接提供，否则必须先确认文件存在再读取",
 		"write_file 会覆盖目标路径的既有文件",
 		"写入既有文件前必须先使用 read_file 读取当前内容",
 		"修改既有文件优先使用 edit_file 或 multi_edit",
@@ -150,8 +151,8 @@ func TestDefaultBaseSystemPromptGuidesFileAndSearchTools(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"read_file 只用于读取已确认存在的普通文件",
-		"不得用于试探路径是否存在",
+		"read_file 只能读取已确认存在的普通文件",
+		"用户提供文件路径时也必须先确认存在",
 	} {
 		if strings.Contains(DefaultBaseSystemPrompt, forbidden) {
 			t.Fatalf("expected default base prompt to drop stale read_file restriction %q", forbidden)

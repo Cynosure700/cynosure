@@ -446,7 +446,7 @@ func TestBuildSubagentSystemPromptUsesEmbeddedDefaultTemplate(t *testing.T) {
 		"- 只能依据当前任务和工作区文件来工作。",
 		"- 不要调用 `spawn_subagent`。",
 		"- 搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须交给 explore 子智能体，不应由 general 子智能体承担。",
-		"- `read_file` 可直接读取本地文件系统中的文件；用户提供文件路径时，默认该路径有效；读取不存在的文件是允许的，工具会返回错误。",
+		"- `read_file` 可直接读取本地文件系统中的文件；用户提供文件路径时，默认该路径有效；读取不存在的用户提供路径是允许的，工具会返回错误。除非路径由用户直接提供，否则必须先确认文件存在再读取。",
 		"- 文件内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；文件名模式匹配使用 `glob`，目录浏览使用 `ls`。",
 		"- 完成后，只输出一段简洁的摘要，说明你做了什么、关键发现以及尚未解决的问题。",
 		"</subagent>",
@@ -497,7 +497,8 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"read_file",
 		"read_file can directly read files from the local filesystem.",
 		"If the caller provides a file path, assume that path is valid.",
-		"It is okay to read a file that does not exist; the tool will return an error.",
+		"It is okay to read a caller-provided file path that does not exist; the tool will return an error.",
+		"For paths you infer rather than paths provided by the caller, confirm the file exists before reading it.",
 		"ALWAYS use grep for content search. NEVER invoke grep or rg as a Bash command.",
 		"Use glob when you need to find files by name patterns.",
 		"read_persisted_output",
@@ -514,7 +515,7 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 	for _, forbidden := range []string{
 		"Use read_file only for confirmed existing regular files.",
 		"Never use read_file to read directories or to test whether a path exists.",
-		"confirm candidate paths before read_file",
+		"even if the caller provided the path",
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("expected explore prompt to drop stale read_file restriction %q, got %q", forbidden, prompt)

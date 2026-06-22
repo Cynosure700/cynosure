@@ -83,7 +83,8 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 			"Reads a file from the local filesystem",
 			"Assume this tool is able to read all files on the machine",
 			"If the user provides a path to a file, assume that path is valid",
-			"It is okay to read a file that does not exist",
+			"It is okay to read a user-provided file path that does not exist",
+			"For paths inferred by you rather than provided by the user, confirm the file exists before reading",
 		},
 		"write_file": {
 			"Writes a file to the local filesystem",
@@ -120,9 +121,9 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 			}
 		}
 	}
-	if strings.Contains(toolsByName["read_file"], "confirmed existing regular file") ||
-		strings.Contains(schemasByName["read_file"], "do not use read_file to check whether a path exists") {
-		t.Fatalf("read_file guidance should allow direct reads and missing-file errors, got description=%q schema=%q", toolsByName["read_file"], schemasByName["read_file"])
+	if strings.Contains(toolsByName["read_file"], "Only read confirmed existing files") ||
+		strings.Contains(schemasByName["read_file"], "do not read user-provided missing files") {
+		t.Fatalf("read_file guidance should allow direct reads of user-provided paths and missing-file errors, got description=%q schema=%q", toolsByName["read_file"], schemasByName["read_file"])
 	}
 }
 
