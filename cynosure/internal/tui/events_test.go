@@ -916,6 +916,35 @@ func TestToolMessageRendersAllRawArgs(t *testing.T) {
 	}
 }
 
+func TestToolMessageTruncatesLongArgsToTwoLines(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 60
+	longTask := "探索这个 Go 项目（工作区根目录 /Users/bytedance/golang_pro/cynosure/cynosure）的 internal/tools 包。这是 agent 的工具系统。请阅读该目录下所有文件并总结：1. 工具是如何定义和注册的 2. 有哪些内置工具 3. 工具执行的流程 4. 是否支持 MCP 工具 5. 工具结果如何反馈给 LLM。请用中文返回结构化总结。"
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:        "spawn_subagent",
+		RawArgs:     `{"sub_type":"explore","task":"` + longTask + `"}`,
+		ArgsPreview: "task: " + longTask,
+		Status:      "running",
+	}}
+
+	rendered := plainTerminalText(app.renderMessage(msg))
+	lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	// ⎿ 之前的行都属于工具参数行，最多保留两行。
+	toolLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "⎿") {
+			break
+		}
+		toolLines++
+	}
+	if toolLines > 2 {
+		t.Fatalf("tool arg lines = %d (%q), want at most 2 wrapped lines", toolLines, lines)
+	}
+	if !strings.Contains(rendered, "…") {
+		t.Fatalf("rendered = %q, want ellipsis marking truncated args", rendered)
+	}
+}
+
 func TestSubagentToolStatusWrapsContinuationAtStatusColumn(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 36

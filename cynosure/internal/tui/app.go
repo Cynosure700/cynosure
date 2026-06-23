@@ -874,7 +874,7 @@ func (m Model) renderToolMessage(msg Message) string {
 		return ansiForeground(tuiPalette.muted) + renderSubagentToolStatus(line, m.messageWidth()) + "\x1b[0m"
 	}
 	icon := toolIcon(status)
-	line = icon + " " + line
+	line = limitToWrappedLines(icon+" "+line, m.messageWidth()-3, 2)
 	result := status
 	if !tool.SuppressResult && strings.TrimSpace(tool.ResultPreview) != "" {
 		resultPrefix := result + " · "
@@ -890,9 +890,9 @@ func renderSubagentToolStatus(body string, width int) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	wrapped := wrapText(lines[0], width)
-	wrappedLines := strings.Split(wrapped, "\n")
 	prefix := strings.Repeat(" ", lipgloss.Width("   ⎿ "))
+	wrapped := limitToWrappedLines(lines[0], max(1, width-lipgloss.Width(prefix)), 2)
+	wrappedLines := strings.Split(wrapped, "\n")
 	for i := range wrappedLines {
 		wrappedLines[i] = prefix + strings.TrimLeft(wrappedLines[i], " ")
 	}
@@ -1171,6 +1171,24 @@ func truncateToWidth(text string, width int) string {
 		b.WriteRune(r)
 	}
 	return b.String() + "…"
+}
+
+// limitToWrappedLines 将文本按 width 折行后，最多保留 maxLines 行，
+// 超出部分以省略号结尾，用于截断过长的工具参数展示。
+func limitToWrappedLines(text string, width, maxLines int) string {
+	width = max(1, width)
+	wrapped := wrapText(text, width)
+	if maxLines <= 0 {
+		return wrapped
+	}
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) <= maxLines {
+		return wrapped
+	}
+	kept := lines[:maxLines]
+	last := strings.TrimRight(kept[maxLines-1], " ")
+	kept[maxLines-1] = truncateToWidth(last+"…", width)
+	return strings.Join(kept, "\n")
 }
 
 func (m Model) renderWelcome() string {
