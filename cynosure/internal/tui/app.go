@@ -116,7 +116,7 @@ type Model struct {
 	autoFollow        bool
 	thinkingStartedAt time.Time
 	thinkingNow       time.Time
-	answerStarted     bool
+	workingStarted    bool
 	renderCache       *messageRenderCache
 }
 
@@ -235,7 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.running = true
 			m.thinkingStartedAt = time.Now()
 			m.thinkingNow = m.thinkingStartedAt
-			m.answerStarted = false
+			m.workingStarted = false
 			m.toolCallCount = 0
 			m.generation++
 			generation := m.generation
@@ -304,12 +304,12 @@ func (m *Model) applyEvent(msg Event) {
 			m.beginApproval(req)
 		}
 	case "assistant_delta":
-		m.answerStarted = true
+		m.workingStarted = true
 		m.appendAssistantDelta(msg.Content)
 	case "assistant_stream_reset":
 		m.resetLiveAssistant()
 	case "assistant":
-		m.answerStarted = true
+		m.workingStarted = true
 		m.updateMetaFromData(msg.Data)
 		content := msg.Content
 		if content == "" && msg.Data != nil {
@@ -321,6 +321,7 @@ func (m *Model) applyEvent(msg Event) {
 	case "meta":
 		m.updateMetaFromData(msg.Data)
 	case "tool_call_start":
+		m.workingStarted = true
 		m.appendToolCallStart(msg.Data)
 	case "tool_call_done":
 		m.updateToolCallDone(msg.Data)
@@ -649,7 +650,7 @@ func (m *Model) resetLiveAssistant() {
 		m.messages = m.messages[:len(m.messages)-1]
 	}
 	// 重新进入“等待输出”状态：恢复 Thinking 提示，直到重试产生新的增量。
-	m.answerStarted = false
+	m.workingStarted = false
 }
 
 func (m *Model) replaceLastAssistant(content, reasoning string) {
@@ -917,7 +918,7 @@ func isSubagentToolMessage(msg Message) bool {
 }
 
 func (m Model) renderThinkingIndicator() string {
-	if !m.running || m.answerStarted || m.thinkingStartedAt.IsZero() {
+	if !m.running || m.thinkingStartedAt.IsZero() {
 		return ""
 	}
 	now := m.thinkingNow
@@ -928,7 +929,11 @@ func (m Model) renderThinkingIndicator() string {
 	if elapsedSeconds < 1 {
 		elapsedSeconds = 1
 	}
-	return thinkingIndicatorStyle().Render(fmt.Sprintf("* Thinking... (%ds)", elapsedSeconds))
+	label := "Thinking"
+	if m.workingStarted {
+		label = "Working"
+	}
+	return thinkingIndicatorStyle().Render(fmt.Sprintf("* %s... (%ds)", label, elapsedSeconds))
 }
 
 func (m Model) renderMessage(msg Message) string {

@@ -1326,7 +1326,7 @@ func TestRunningModelShowsThinkingIndicatorAtTranscriptBottom(t *testing.T) {
 	}
 }
 
-func TestThinkingIndicatorHidesWhenAssistantReplyStarts(t *testing.T) {
+func TestThinkingIndicatorSwitchesToWorkingWhenAssistantContentStarts(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.messages = []Message{{Role: "user", Content: "hello"}}
 	app.generation = 1
@@ -1334,18 +1334,45 @@ func TestThinkingIndicatorHidesWhenAssistantReplyStarts(t *testing.T) {
 	app.thinkingStartedAt = time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
 	app.thinkingNow = app.thinkingStartedAt.Add(3 * time.Second)
 
-	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "最终回答"})
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "我先查一下"})
 	model := updated.(Model)
 	rendered := plainTerminalText(model.renderMessages())
 
-	if !strings.Contains(rendered, "最终回答") {
+	if !strings.Contains(rendered, "我先查一下") {
 		t.Fatalf("rendered messages = %q, want assistant reply content", rendered)
 	}
-	if strings.Contains(rendered, "Thinking...") {
-		t.Fatalf("rendered messages = %q, should hide Thinking indicator once assistant reply starts", rendered)
+	if !strings.Contains(rendered, "* Working... (3s)") {
+		t.Fatalf("rendered messages = %q, should switch to Working once assistant content starts", rendered)
 	}
-	if !model.running {
-		t.Fatal("model should keep running while the final answer is streaming")
+	if strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("rendered messages = %q, should stop showing Thinking once assistant content starts", rendered)
+	}
+}
+
+func TestThinkingIndicatorSwitchesToWorkingWhenToolCallStarts(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.messages = []Message{{Role: "user", Content: "hello"}}
+	app.generation = 1
+	app.running = true
+	app.thinkingStartedAt = time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	app.thinkingNow = app.thinkingStartedAt.Add(4 * time.Second)
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
+		"tool_call_id": "tool_1",
+		"tool_name":    "bash",
+		"args_preview": "command: pwd",
+		"status":       "running",
+	}})
+	model := updated.(Model)
+	rendered := plainTerminalText(model.renderMessages())
+
+	for _, want := range []string{"Bash", "command: pwd", "* Working... (4s)"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered messages = %q, want %q visible", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("rendered messages = %q, should stop showing Thinking once tool call starts", rendered)
 	}
 }
 
@@ -1365,7 +1392,7 @@ func TestThinkingIndicatorUpdatesElapsedSecondsAndHidesWhenDone(t *testing.T) {
 
 	updated, _ = model.Update(Event{Generation: 1, Name: "done"})
 	model = updated.(Model)
-	if rendered := plainTerminalText(model.renderMessages()); strings.Contains(rendered, "Thinking...") {
+	if rendered := plainTerminalText(model.renderMessages()); strings.Contains(rendered, "Thinking...") || strings.Contains(rendered, "Working...") {
 		t.Fatalf("rendered messages = %q, should hide Thinking indicator after done", rendered)
 	}
 }
@@ -1869,8 +1896,8 @@ func TestStreamResetDiscardsPartialLiveAssistantContent(t *testing.T) {
 	if len(model.messages) != 1 || model.messages[len(model.messages)-1].Content != "半截被截断的内容" {
 		t.Fatalf("messages = %#v, want partial assistant content streamed", model.messages)
 	}
-	if !model.answerStarted {
-		t.Fatal("answerStarted should be true once a delta has streamed")
+	if !model.workingStarted {
+		t.Fatal("workingStarted should be true once a delta has streamed")
 	}
 
 	// 运行时丢弃这段输出并重试，发出 reset，UI 应移除半截内容并恢复等待态。
@@ -1879,8 +1906,8 @@ func TestStreamResetDiscardsPartialLiveAssistantContent(t *testing.T) {
 	if len(model.messages) != 0 {
 		t.Fatalf("messages = %#v, want partial assistant content discarded on reset", model.messages)
 	}
-	if model.answerStarted {
-		t.Fatal("answerStarted should reset so the Thinking indicator returns until retry streams")
+	if model.workingStarted {
+		t.Fatal("workingStarted should reset so the Thinking indicator returns until retry streams")
 	}
 
 	// 重试产生完整内容，应作为一条全新的 assistant 消息呈现。
