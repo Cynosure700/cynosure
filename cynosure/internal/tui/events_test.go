@@ -506,7 +506,7 @@ func TestRespondSendsTerminalEventThroughEventQueue(t *testing.T) {
 	}
 }
 
-func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
+func TestModelDoesNotStreamReasoningContent(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
 	app.running = true
@@ -515,51 +515,15 @@ func TestModelDisplaysReasoningDeltasAsMutedAssistantThinking(t *testing.T) {
 	model := updated.(Model)
 	rendered := plainTerminalText(model.renderMessages())
 
-	for _, want := range []string{"思考", "先判断是否需要工具"} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("rendered messages = %q, want it to contain %q", rendered, want)
-		}
+	if strings.Contains(rendered, "先判断是否需要工具") {
+		t.Fatalf("rendered messages = %q, reasoning_content must not be displayed", rendered)
+	}
+	if strings.Contains(rendered, "思考中") {
+		t.Fatalf("rendered messages = %q, should not render reasoning thinking block", rendered)
 	}
 }
 
-func TestModelDisplaysOnlyCurrentAssistantReasoningWhileRunning(t *testing.T) {
-	app := NewModel(nil, SessionInfo{})
-	app.messages = []Message{
-		{Role: "assistant", Content: "历史答案", ReasoningContent: "历史思考"},
-		{Role: "user", Content: "继续"},
-	}
-	app.generation = 1
-	app.running = true
-
-	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "当前思考"})
-	model := updated.(Model)
-	rendered := plainTerminalText(model.renderMessages())
-
-	if !strings.Contains(rendered, "当前思考") {
-		t.Fatalf("rendered messages = %q, want current reasoning", rendered)
-	}
-	if strings.Contains(rendered, "历史思考") {
-		t.Fatalf("rendered messages = %q, should keep historical reasoning collapsed while current reasoning streams", rendered)
-	}
-}
-
-func TestModelDoesNotExpandHistoricalReasoningBeforeCurrentReasoningStarts(t *testing.T) {
-	app := NewModel(nil, SessionInfo{})
-	app.messages = []Message{
-		{Role: "user", Content: "上一问"},
-		{Role: "assistant", Content: "历史答案", ReasoningContent: "历史思考"},
-		{Role: "user", Content: "新问题"},
-	}
-	app.running = true
-
-	rendered := app.renderMessages()
-
-	if strings.Contains(rendered, "历史思考") {
-		t.Fatalf("rendered messages = %q, should keep historical reasoning collapsed before current reasoning starts", rendered)
-	}
-}
-
-func TestModelAssistantFinalEventHidesReasoningAfterDoneAndKeepsMeta(t *testing.T) {
+func TestModelAssistantFinalEventKeepsContentAndMeta(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
 	app.running = true
@@ -574,7 +538,7 @@ func TestModelAssistantFinalEventHidesReasoningAfterDoneAndKeepsMeta(t *testing.
 		t.Fatalf("rendered messages = %q, want final answer", rendered)
 	}
 	if strings.Contains(rendered, "分析路径") {
-		t.Fatalf("rendered messages = %q, should hide reasoning after done", rendered)
+		t.Fatalf("rendered messages = %q, reasoning_content must never be displayed", rendered)
 	}
 	view := plainTerminalText(model.View())
 	for _, want := range []string{"工具 2", "上下文 45%"} {
@@ -1171,13 +1135,15 @@ func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 	}
 }
 
-func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T) {
+func TestModelKeepsToolResultsAndContentVisibleAfterAssistantReply(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.appendMessage("user", "新问题")
 	app.generation = 1
 	app.running = true
 
-	updated, _ := app.Update(Event{Generation: 1, Name: "reasoning_delta", Content: "需要先跑测试"})
+	// 第一轮的 content 实时输出（工具轮也输出 content）。
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "我先跑个测试"})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "reasoning_delta", Content: "需要先跑测试"})
 	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id": "tool_1",
 		"tool_name":    "bash",
@@ -1191,27 +1157,28 @@ func TestModelShowsThinkingAndToolResultsUntilAssistantReplyStarts(t *testing.T)
 		"status":         "success",
 		"result_preview": "ok cynosure/internal/tui 0.42s",
 	}})
-	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "reasoning_delta", Content: "再检查结果"})
 	model := updated.(Model)
 	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok cynosure/internal/tui 0.42s"} {
+	for _, want := range []string{"我先跑个测试", "✓ Bash", "ok cynosure/internal/tui 0.42s"} {
 		if !strings.Contains(rendered, want) {
-			t.Fatalf("rendered = %q, want %q visible before assistant reply starts", rendered, want)
+			t.Fatalf("rendered = %q, want %q visible", rendered, want)
 		}
 	}
+	if strings.Contains(rendered, "需要先跑测试") {
+		t.Fatalf("rendered = %q, reasoning_content must not be displayed", rendered)
+	}
 
+	// 第二轮最终答案开始后，前面的内容（content 与工具调用）依然保留可见。
 	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_delta", Content: "完成"})
 	model = updated.(Model)
 	rendered = plainTerminalText(model.renderMessages())
-	for _, want := range []string{"新问题", "完成"} {
+	for _, want := range []string{"新问题", "我先跑个测试", "✓ Bash", "ok cynosure/internal/tui 0.42s", "完成"} {
 		if !strings.Contains(rendered, want) {
-			t.Fatalf("rendered = %q, want %q", rendered, want)
+			t.Fatalf("rendered = %q, want %q to stay visible after assistant reply starts", rendered, want)
 		}
 	}
-	for _, forbidden := range []string{"需要先跑测试", "再检查结果", "✓ Bash", "ok cynosure/internal/tui 0.42s"} {
-		if strings.Contains(rendered, forbidden) {
-			t.Fatalf("rendered = %q, should hide %q once assistant reply starts", rendered, forbidden)
-		}
+	if strings.Contains(rendered, "需要先跑测试") {
+		t.Fatalf("rendered = %q, reasoning_content must not be displayed", rendered)
 	}
 }
 

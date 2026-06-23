@@ -264,8 +264,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "assistant_delta":
 			m.answerStarted = true
 			m.appendAssistantDelta(msg.Content)
-		case "reasoning_delta":
-			m.appendThinkingDelta(msg.Content)
 		case "assistant":
 			m.answerStarted = true
 			m.updateMetaFromData(msg.Data)
@@ -606,21 +604,7 @@ func (m *Model) appendAssistantDelta(delta string) {
 		m.appendMessage("assistant", delta)
 		return
 	}
-	if m.messages[len(m.messages)-1].Role == "thinking" {
-		m.messages[len(m.messages)-1].Role = "assistant"
-	}
 	m.messages[len(m.messages)-1].Content += delta
-}
-
-func (m *Model) appendThinkingDelta(delta string) {
-	if delta == "" {
-		return
-	}
-	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
-		m.messages = append(m.messages, Message{Role: "assistant", ReasoningContent: delta})
-		return
-	}
-	m.messages[len(m.messages)-1].ReasoningContent += delta
 }
 
 func (m *Model) replaceLastAssistant(content, reasoning string) {
@@ -748,7 +732,7 @@ func firstNonEmpty(primary, fallback string) string {
 }
 
 func isLiveAssistantRole(role string) bool {
-	return role == "assistant" || role == "thinking"
+	return role == "assistant"
 }
 
 func (m *Model) refreshViewport() {
@@ -800,21 +784,13 @@ func (m Model) renderTranscript() string {
 
 func (m Model) renderMessages() string {
 	var b strings.Builder
-	lastUserIndex := m.lastUserMessageIndex()
-	for i, msg := range m.messages {
-		if m.shouldHideMessageAt(i, msg) {
-			continue
-		}
+	for _, msg := range m.messages {
 		if b.Len() > 0 && isSubagentToolMessage(msg) {
 			trimTrailingBlankLines(&b)
 			b.WriteString("\n")
 		}
-		b.WriteString(m.renderMessageAt(i, msg, m.shouldShowReasoningAt(i, msg, lastUserIndex)))
-		if isSubagentToolMessage(msg) {
-			b.WriteString("\n\n")
-		} else {
-			b.WriteString("\n\n")
-		}
+		b.WriteString(m.renderMessageAt(msg))
+		b.WriteString("\n\n")
 	}
 	if indicator := m.renderThinkingIndicator(); indicator != "" {
 		b.WriteString(indicator)
@@ -848,48 +824,11 @@ func (m Model) renderThinkingIndicator() string {
 	return thinkingIndicatorStyle().Render(fmt.Sprintf("* Thinking... (%ds)", elapsedSeconds))
 }
 
-func (m Model) lastUserMessageIndex() int {
-	for i := len(m.messages) - 1; i >= 0; i-- {
-		if m.messages[i].Role == "user" {
-			return i
-		}
-	}
-	return -1
-}
-
-func (m Model) shouldShowReasoningAt(index int, msg Message, lastUserIndex int) bool {
-	return m.running &&
-		index > lastUserIndex &&
-		isLiveAssistantRole(msg.Role) &&
-		strings.TrimSpace(msg.Content) == "" &&
-		strings.TrimSpace(msg.ReasoningContent) != "" &&
-		!m.hasAssistantContentAfter(index)
-}
-
-func (m Model) shouldHideMessageAt(index int, msg Message) bool {
-	if index < 0 || !m.hasAssistantContentAfter(index) {
-		return false
-	}
-	if msg.Role == "tool" || msg.Role == "thinking" {
-		return true
-	}
-	return msg.Role == "assistant" && strings.TrimSpace(msg.Content) == "" && strings.TrimSpace(msg.ReasoningContent) != ""
-}
-
-func (m Model) hasAssistantContentAfter(index int) bool {
-	for i := index + 1; i < len(m.messages); i++ {
-		if isLiveAssistantRole(m.messages[i].Role) && strings.TrimSpace(m.messages[i].Content) != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func (m Model) renderMessage(msg Message) string {
-	return m.renderMessageAt(-1, msg, m.running && strings.TrimSpace(msg.ReasoningContent) != "")
+	return m.renderMessageAt(msg)
 }
 
-func (m Model) renderMessageAt(index int, msg Message, showReasoning bool) string {
+func (m Model) renderMessageAt(msg Message) string {
 	switch msg.Role {
 	case "user":
 		return renderSelectedUserMessage(msg.Content, m.messageWidth())
@@ -902,24 +841,19 @@ func (m Model) renderMessageAt(index int, msg Message, showReasoning bool) strin
 		} else {
 			content = wrapText(colorizeFileReferencesWithRestore(content, ansiForeground(tuiPalette.ink)), m.messageWidth())
 		}
-		if showReasoning {
-			content = thinkingStyle().Render("✽ 思考中\n"+wrapText(colorizeFileReferencesWithRestore(strings.TrimSpace(msg.ReasoningContent), ansiThinking()), m.messageWidth()-2)) + "\n" + content
-		}
 		return content
-	case "thinking":
-		return thinkingStyle().Render("✽ 思考中\n" + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiThinking()), m.messageWidth()-2))
 	case "system":
 		return systemStyle().Render("• " + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiForeground(tuiPalette.butter)), m.messageWidth()-2))
 	case "error":
 		return errorStyle().Render("✗ " + wrapText(colorizeFileReferencesWithRestore(msg.Content, ansiForeground(tuiPalette.coral)), m.messageWidth()-2))
 	case "tool":
-		return m.renderToolMessage(msg, index >= 0 && m.hasAssistantContentAfter(index))
+		return m.renderToolMessage(msg)
 	default:
 		return roleLabel(msg.Role, lipgloss.Color("245")) + "\n" + wrapText(colorizeFileReferences(msg.Content), m.messageWidth())
 	}
 }
 
-func (m Model) renderToolMessage(msg Message, hideResult bool) string {
+func (m Model) renderToolMessage(msg Message) string {
 	if msg.ToolCall == nil {
 		return renderToolBullet() + toolStyleForStatus("").Render("⏺ Tool")
 	}
@@ -942,7 +876,7 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	icon := toolIcon(status)
 	line = icon + " " + line
 	result := status
-	if !hideResult && !tool.SuppressResult && strings.TrimSpace(tool.ResultPreview) != "" {
+	if !tool.SuppressResult && strings.TrimSpace(tool.ResultPreview) != "" {
 		resultPrefix := result + " · "
 		result += " · " + alignToolResultPreview(tool.ResultPreview, lipgloss.Width("  ⎿ "+resultPrefix))
 	}
@@ -1202,10 +1136,6 @@ func userInputTextStart() string {
 
 func ansiForeground(color lipgloss.Color) string {
 	return "\x1b[0;38;5;" + string(color) + "m"
-}
-
-func ansiThinking() string {
-	return "\x1b[0;3;38;5;242m"
 }
 
 func renderSelectedUserMessage(content string, width int) string {
@@ -1478,10 +1408,6 @@ func sectionDividerStyle() lipgloss.Style {
 
 func userStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(tuiPalette.muted)
-}
-
-func thinkingStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Italic(true).PaddingLeft(2)
 }
 
 func thinkingIndicatorStyle() lipgloss.Style {

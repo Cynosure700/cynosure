@@ -22,7 +22,6 @@ import (
 
 const (
 	assistantDeltaEvent       = "assistant_delta"
-	reasoningDeltaEvent       = "reasoning_delta"
 	toolCallStartEvent        = "tool_call_start"
 	toolCallDoneEvent         = "tool_call_done"
 	toolCallGroupClearEvent   = "tool_call_group_clear"
@@ -250,9 +249,12 @@ func (s *Service) executeToolCallBatch(ctx context.Context, state *LoopState, ca
 			defer wg.Done()
 			if opts.UseChildRegistry {
 				toolCtx.Outcome = s.executeChildToolCall(ctx, opts.Registry, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
-				return
+			} else {
+				toolCtx.Outcome = s.executeToolCall(ctx, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
 			}
-			toolCtx.Outcome = s.executeToolCall(ctx, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
+			// 并行执行时谁先完成谁先更新展示信息，无需等待整批完成。
+			// 落库/历史追加仍在 wg.Wait() 之后串行进行，避免数据竞争。
+			emitToolCallDoneWithOptions(state, toolCtx, opts)
 		}()
 	}
 	wg.Wait()
@@ -264,7 +266,6 @@ func (s *Service) executeToolCallBatch(ctx context.Context, state *LoopState, ca
 		if err := s.hookManager().RunPostToolUse(ctx, toolCtx); err != nil {
 			return toolBatchResult{}, err
 		}
-		emitToolCallDoneWithOptions(state, toolCtx, opts)
 		state.ToolCallCount++
 		emitMeta(state)
 	}
@@ -471,7 +472,7 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 					ToolCalls:        msg.ToolCalls,
 				}, finishReason, nil
 			}
-			if state.Writer != nil && shouldEmitAssistantContentDeltas(finishReason, msg.ToolCalls) {
+			if state.Writer != nil {
 				flushContentDeltas(state, deltas)
 			}
 			return msg, finishReason, nil
@@ -550,10 +551,8 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		}
 		if choice.Delta.ReasoningContent != "" {
 			seenOutput = true
+			// reasoning_content 仍累加并随消息落库/参与记忆，但不再向 UI 流式输出。
 			reasoningContent.WriteString(choice.Delta.ReasoningContent)
-			if state.Writer != nil {
-				_ = state.Writer.Event(reasoningDeltaEvent, map[string]any{"content": choice.Delta.ReasoningContent})
-			}
 		}
 		if len(choice.Delta.ToolCalls) > 0 {
 			seenOutput = true
@@ -569,10 +568,6 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 	calls := toolCalls.Calls()
 
 	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, bufferedContentDeltas, nil
-}
-
-func shouldEmitAssistantContentDeltas(finishReason openai.FinishReason, toolCalls []openai.ToolCall) bool {
-	return finishReason != openai.FinishReasonToolCalls && len(toolCalls) == 0
 }
 
 type streamedToolCallAccumulator struct {

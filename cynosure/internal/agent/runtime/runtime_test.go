@@ -1054,16 +1054,21 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 		t.Fatalf("expected history reasoning content, got %q", got)
 	}
 	events := writer.nonMetaEvents()
-	if len(events) != 3 || events[2].name != "assistant" {
-		t.Fatalf("expected streamed deltas and final assistant event, got %#v", events)
+	if len(events) != 2 || events[0].name != "assistant_delta" || events[1].name != "assistant" {
+		t.Fatalf("expected streamed content delta and final assistant event, got %#v", events)
 	}
-	payload, ok := events[2].data.(map[string]any)
+	for _, event := range events {
+		if event.name == "reasoning_delta" {
+			t.Fatalf("reasoning_content must not be streamed to UI, got %#v", events)
+		}
+	}
+	payload, ok := events[1].data.(map[string]any)
 	if !ok || payload["reasoning_content"] != "内部推理过程" {
-		t.Fatalf("expected assistant event to include reasoning_content, got %#v", events[2].data)
+		t.Fatalf("expected assistant event to include reasoning_content, got %#v", events[1].data)
 	}
 }
 
-func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
+func TestRespondToConversation_StreamsContentButNotReasoning(t *testing.T) {
 	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考"}}}},
 		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "答案"}, FinishReason: openai.FinishReasonStop}}},
@@ -1078,18 +1083,23 @@ func TestRespondToConversation_StreamsReasoningContentDeltas(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if message.Content != "答案" || message.ReasoningContent != "先思考" {
-		t.Fatalf("expected streamed reasoning and content, got %#v", message)
+		t.Fatalf("expected streamed reasoning persisted and content, got %#v", message)
 	}
 	events := writer.nonMetaEvents()
-	if len(events) != 3 {
-		t.Fatalf("expected reasoning delta, content delta and final assistant, got %#v", events)
+	if len(events) != 2 {
+		t.Fatalf("expected content delta and final assistant, got %#v", events)
 	}
-	if events[0].name != "reasoning_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
+	if events[0].name != "assistant_delta" || events[1].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
 	}
-	payload, ok := events[2].data.(map[string]any)
+	for _, event := range events {
+		if event.name == "reasoning_delta" {
+			t.Fatalf("reasoning_content must not be streamed to UI, got %#v", events)
+		}
+	}
+	payload, ok := events[1].data.(map[string]any)
 	if !ok || payload["message_id"] == "" || payload["final"] != true || payload["reasoning_content"] != "先思考" {
-		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", events[2].data)
+		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", events[1].data)
 	}
 }
 
@@ -1300,7 +1310,7 @@ func TestRespondToConversation_DoesNotInjectTodoWriteReminderWhenToolDisabled(t 
 	}
 }
 
-func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *testing.T) {
+func TestRespondToConversation_StreamsContentForToolRoundsButNotReasoning(t *testing.T) {
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ReasoningContent: "先思考要不要调用工具"}}}},
@@ -1331,21 +1341,17 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 		t.Fatalf("expected final content and reasoning, got %#v", message)
 	}
 
-	var sawToolRoundReasoningDelta bool
-	var sawFinalReasoningDelta bool
+	var sawToolRoundContentDelta bool
 	var sawFinalAssistantDelta bool
 	var sawFinalAssistantWithFullReasoning bool
 	for _, event := range writer.events {
 		payload, _ := event.data.(map[string]any)
 		content, _ := payload["content"].(string)
-		if event.name == "reasoning_delta" && content == "先思考要不要调用工具" {
-			sawToolRoundReasoningDelta = true
+		if event.name == "reasoning_delta" {
+			t.Fatalf("reasoning_content must not be streamed to UI: %#v", writer.events)
 		}
 		if event.name == "assistant_delta" && content == "我先查一下" {
-			t.Fatalf("tool round assistant delta should not be streamed: %#v", writer.events)
-		}
-		if event.name == "reasoning_delta" && content == "工具已返回，组织最终答案" {
-			sawFinalReasoningDelta = true
+			sawToolRoundContentDelta = true
 		}
 		if event.name == "assistant_delta" && content == "最终答案" {
 			sawFinalAssistantDelta = true
@@ -1354,30 +1360,8 @@ func TestRespondToConversation_StreamsReasoningForToolRoundsButNotContent(t *tes
 			sawFinalAssistantWithFullReasoning = true
 		}
 	}
-	if !sawToolRoundReasoningDelta || !sawFinalReasoningDelta || !sawFinalAssistantDelta || !sawFinalAssistantWithFullReasoning {
-		t.Fatalf("expected tool round reasoning, final round reasoning, final assistant delta and full final reasoning, got %#v", writer.events)
-	}
-}
-
-func TestShouldEmitAssistantContentDeltas(t *testing.T) {
-	tests := []struct {
-		name         string
-		finishReason openai.FinishReason
-		toolCalls    []openai.ToolCall
-		expected     bool
-	}{
-		{name: "stop without tool calls", finishReason: openai.FinishReasonStop, expected: true},
-		{name: "tool calls finish reason", finishReason: openai.FinishReasonToolCalls, toolCalls: []openai.ToolCall{{ID: "tool_1"}}, expected: false},
-		{name: "tool calls with stop finish reason", finishReason: openai.FinishReasonStop, toolCalls: []openai.ToolCall{{ID: "tool_1"}}, expected: false},
-		{name: "empty finish reason without tool calls", expected: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldEmitAssistantContentDeltas(tt.finishReason, tt.toolCalls); got != tt.expected {
-				t.Fatalf("expected %v, got %v", tt.expected, got)
-			}
-		})
+	if !sawToolRoundContentDelta || !sawFinalAssistantDelta || !sawFinalAssistantWithFullReasoning {
+		t.Fatalf("expected tool round content delta, final assistant delta and full final reasoning, got %#v", writer.events)
 	}
 }
 
@@ -2861,4 +2845,117 @@ func toolNamesInclude(tools []openai.Tool, name string) bool {
 		}
 	}
 	return false
+}
+
+func TestRespondToConversation_EmitsToolDoneAsEachParallelToolFinishes(t *testing.T) {
+	originalHandlers := map[string]agenttools.ToolHandler{
+		"grep": agenttools.Handlers["grep"],
+		"glob": agenttools.Handlers["glob"],
+	}
+	defer func() {
+		for name, handler := range originalHandlers {
+			agenttools.Handlers[name] = handler
+		}
+	}()
+
+	slowStarted := make(chan struct{})
+	fastDone := make(chan struct{})
+	// grep（模型顺序里的第一个工具）阻塞直到 fast 工具的 done 事件被观察到，
+	// 证明 done 事件是各自完成即时下发，而非等待整批完成后再统一下发。
+	agenttools.Handlers["grep"] = func(ctx context.Context, args map[string]any) (string, error) {
+		close(slowStarted)
+		select {
+		case <-fastDone:
+		case <-time.After(time.Second):
+			return "", errors.New("fast tool done event not observed before slow tool finished")
+		}
+		return "slow result", nil
+	}
+	agenttools.Handlers["glob"] = func(ctx context.Context, args map[string]any) (string, error) {
+		<-slowStarted
+		return "fast result", nil
+	}
+
+	llm := &fakeLLMClient{responses: []openai.ChatCompletionResponse{
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonToolCalls,
+				Message: openai.ChatCompletionMessage{Role: "assistant", ToolCalls: []openai.ToolCall{
+					{ID: "tool_slow", Type: "function", Function: openai.FunctionCall{Name: "grep", Arguments: `{"pattern":"x"}`}},
+					{ID: "tool_fast", Type: "function", Function: openai.FunctionCall{Name: "glob", Arguments: `{"pattern":"*"}`}},
+				}},
+			}},
+		},
+		{
+			Choices: []openai.ChatCompletionChoice{{
+				FinishReason: openai.FinishReasonStop,
+				Message:      openai.ChatCompletionMessage{Role: "assistant", Content: "final answer"},
+			}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"grep", "glob"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &doneSignalingEventWriter{fastToolCallID: "tool_fast", signal: fastDone}
+
+	if _, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_parallel_done", Title: "新对话"}, storage.User{ID: "usr_parallel_done", Username: "parallel-user"}, "run tools", writer); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var fastDoneIdx, slowDoneIdx = -1, -1
+	for i, event := range writer.nonMetaEvents() {
+		if event.name != toolCallDoneEvent {
+			continue
+		}
+		payload, _ := event.data.(map[string]any)
+		switch payload["tool_call_id"] {
+		case "tool_fast":
+			fastDoneIdx = i
+		case "tool_slow":
+			slowDoneIdx = i
+		}
+	}
+	if fastDoneIdx < 0 || slowDoneIdx < 0 {
+		t.Fatalf("missing done events fast=%d slow=%d", fastDoneIdx, slowDoneIdx)
+	}
+	if fastDoneIdx > slowDoneIdx {
+		t.Fatalf("expected fast tool done event before slow tool done event, got fast=%d slow=%d", fastDoneIdx, slowDoneIdx)
+	}
+}
+
+// doneSignalingEventWriter 在观察到指定工具的 done 事件时关闭 signal，用于断言
+// 并行工具的 done 事件在各自完成时即时下发，而非等待整批完成。
+type doneSignalingEventWriter struct {
+	mu             sync.Mutex
+	events         []capturedEvent
+	fastToolCallID string
+	signal         chan struct{}
+	signaled       bool
+}
+
+func (w *doneSignalingEventWriter) Event(name string, data any) error {
+	w.mu.Lock()
+	w.events = append(w.events, capturedEvent{name: name, data: data})
+	w.mu.Unlock()
+	if name == toolCallDoneEvent {
+		if payload, ok := data.(map[string]any); ok && payload["tool_call_id"] == w.fastToolCallID && !w.signaled {
+			w.signaled = true
+			close(w.signal)
+		}
+	}
+	return nil
+}
+
+func (w *doneSignalingEventWriter) nonMetaEvents() []capturedEvent {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]capturedEvent, 0, len(w.events))
+	for _, e := range w.events {
+		if e.name == "meta" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
