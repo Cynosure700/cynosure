@@ -1,0 +1,16 @@
+cynosure/internal/agent/runtime/todo_reminder.go
+  h_3b65c6a993f880 10,27-40,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "db5ef44f89e571657de16034fc148d35adb52418",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
