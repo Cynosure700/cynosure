@@ -22,6 +22,7 @@ import (
 
 const (
 	assistantDeltaEvent       = "assistant_delta"
+	assistantStreamResetEvent = "assistant_stream_reset"
 	toolCallStartEvent        = "tool_call_start"
 	toolCallDoneEvent         = "tool_call_done"
 	toolCallGroupClearEvent   = "tool_call_group_clear"
@@ -47,11 +48,6 @@ const (
 
 	emptyFinalAnswerRetryPrompt = `请继续执行用户的指令。若执行完成，请输出总结；若执行受阻，请输出原因。`
 )
-
-type bufferedModelDelta struct {
-	Event   string
-	Content string
-}
 
 func (s *Service) RespondToConversation(ctx context.Context, conversation storage.Conversation, user storage.User, userMessage string, writer EventWriter) (storage.Message, error) {
 	// 记忆业务开关：系统级能力开启 默认开启
@@ -442,9 +438,14 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 	var accumulatedReasoning strings.Builder
 
 	for {
-		msg, finishReason, deltas, err := s.runModelRoundStream(ctx, state, cur)
+		msg, finishReason, streamedContent, err := s.runModelRoundStream(ctx, state, cur)
 		if err != nil {
 			if llm.IsContextOverflow(err) && !compacted {
+				// 上下文溢出会丢弃这一轮（可能已流式输出的）部分内容并从压缩后的
+				// 历史重试，因此先让 UI 清空已显示的半截输出。
+				if streamedContent {
+					emitStreamReset(state)
+				}
 				if compactErr := s.reactiveCompact(ctx, state); compactErr != nil {
 					logger.Warn(fmt.Sprintf("reactive compact failed conversation=%s: %v", state.Conversation.ID, compactErr))
 					return openai.ChatCompletionMessage{}, "", err
@@ -463,8 +464,9 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 
 		resuming := accumulated.Len() > 0
 		if finishReason != openai.FinishReasonLength {
+			// 内容已在 runModelRoundStream 中边收边发；这里只负责把分段续写
+			// 的结果拼接成一条完整 assistant 消息返回。
 			if resuming {
-				flushContentDeltas(state, deltas)
 				return openai.ChatCompletionMessage{
 					Role:             "assistant",
 					Content:          accumulated.String() + msg.Content,
@@ -472,22 +474,22 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 					ToolCalls:        msg.ToolCalls,
 				}, finishReason, nil
 			}
-			if state.Writer != nil {
-				flushContentDeltas(state, deltas)
-			}
 			return msg, finishReason, nil
 		}
 
 		// 输出被截断。
 		if !upgraded {
-			// 丢弃部分输出，升级预算，原样重试。
+			// 丢弃部分输出，升级预算，原样重试。已流式输出的半截内容需要让
+			// UI 先清空，避免与升级后重试得到的完整内容叠加。
+			if streamedContent {
+				emitStreamReset(state)
+			}
 			upgraded = true
 			cur.MaxTokens = truncationMaxTokens
 			continue
 		}
 		if resumeAttempts >= maxResumeAttempts {
-			// 尽力而为：输出并返回目前已获得的内容。
-			flushContentDeltas(state, deltas)
+			// 尽力而为：返回目前已获得的内容（已流式输出，无需重发）。
 			logger.Warn(fmt.Sprintf("truncation resume exhausted conversation=%s after %d attempts", state.Conversation.ID, resumeAttempts))
 			return openai.ChatCompletionMessage{
 				Role:             "assistant",
@@ -495,8 +497,7 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 				ReasoningContent: accumulatedReasoning.String() + msg.ReasoningContent,
 			}, finishReason, nil
 		}
-		// 保留这一段部分输出，并要求模型继续。
-		flushContentDeltas(state, deltas)
+		// 保留这一段部分输出（已流式输出），并要求模型继续。
 		accumulated.WriteString(msg.Content)
 		accumulatedReasoning.WriteString(msg.ReasoningContent)
 		resumeAttempts++
@@ -507,19 +508,20 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 	}
 }
 
-func flushContentDeltas(state *LoopState, deltas []bufferedModelDelta) {
-	if state.Writer == nil {
+// emitStreamReset 通知 UI 丢弃本轮已流式显示的半截 assistant 内容。用于输出被
+// 截断升级重试、或上下文溢出压缩重试这类「已发出的增量会被废弃并重新生成」的
+// 场景，避免被废弃的半截输出残留在界面上与重试结果叠加。
+func emitStreamReset(state *LoopState) {
+	if state == nil || state.Writer == nil {
 		return
 	}
-	for _, delta := range deltas {
-		_ = state.Writer.Event(delta.Event, map[string]any{"content": delta.Content})
-	}
+	_ = state.Writer.Event(assistantStreamResetEvent, map[string]any{})
 }
 
-func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, []bufferedModelDelta, error) {
+func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, bool, error) {
 	stream, err := s.LLM.CreateChatCompletionStream(ctx, req)
 	if err != nil {
-		return openai.ChatCompletionMessage{}, "", nil, err
+		return openai.ChatCompletionMessage{}, "", false, err
 	}
 	defer stream.Close()
 
@@ -527,7 +529,7 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 	var reasoningContent strings.Builder
 	var finishReason openai.FinishReason
 	toolCalls := &streamedToolCallAccumulator{}
-	var bufferedContentDeltas []bufferedModelDelta
+	streamedContent := false
 	seenChoice := false
 	seenOutput := false
 
@@ -537,7 +539,7 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 			if err == io.EOF {
 				break
 			}
-			return openai.ChatCompletionMessage{}, "", nil, err
+			return openai.ChatCompletionMessage{}, "", streamedContent, err
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -547,7 +549,12 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		if choice.Delta.Content != "" {
 			seenOutput = true
 			content.WriteString(choice.Delta.Content)
-			bufferedContentDeltas = append(bufferedContentDeltas, bufferedModelDelta{Event: assistantDeltaEvent, Content: choice.Delta.Content})
+			// 边收边发：每个内容增量都立刻下发给 UI，让回复随生成逐字呈现，
+			// 而不是在整段流结束后一次性补发，避免长时间空白后瞬间刷屏。
+			if state.Writer != nil {
+				_ = state.Writer.Event(assistantDeltaEvent, map[string]any{"content": choice.Delta.Content})
+				streamedContent = true
+			}
 		}
 		if choice.Delta.ReasoningContent != "" {
 			seenOutput = true
@@ -563,11 +570,11 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		}
 	}
 	if !seenChoice || (!seenOutput && finishReason == "") {
-		return openai.ChatCompletionMessage{}, "", nil, fmt.Errorf("model stream returned no choices")
+		return openai.ChatCompletionMessage{}, "", streamedContent, fmt.Errorf("model stream returned no choices")
 	}
 	calls := toolCalls.Calls()
 
-	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, bufferedContentDeltas, nil
+	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, streamedContent, nil
 }
 
 type streamedToolCallAccumulator struct {

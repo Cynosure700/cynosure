@@ -1857,3 +1857,49 @@ func maxRenderedLineWidth(s string) int {
 	}
 	return maxWidth
 }
+
+func TestStreamResetDiscardsPartialLiveAssistantContent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	// 流式输出半截内容。
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "半截被截断的内容"})
+	model := updated.(Model)
+	if len(model.messages) != 1 || model.messages[len(model.messages)-1].Content != "半截被截断的内容" {
+		t.Fatalf("messages = %#v, want partial assistant content streamed", model.messages)
+	}
+	if !model.answerStarted {
+		t.Fatal("answerStarted should be true once a delta has streamed")
+	}
+
+	// 运行时丢弃这段输出并重试，发出 reset，UI 应移除半截内容并恢复等待态。
+	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_stream_reset"})
+	model = updated.(Model)
+	if len(model.messages) != 0 {
+		t.Fatalf("messages = %#v, want partial assistant content discarded on reset", model.messages)
+	}
+	if model.answerStarted {
+		t.Fatal("answerStarted should reset so the Thinking indicator returns until retry streams")
+	}
+
+	// 重试产生完整内容，应作为一条全新的 assistant 消息呈现。
+	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_delta", Content: "完整答案"})
+	model = updated.(Model)
+	if len(model.messages) != 1 || model.messages[0].Content != "完整答案" {
+		t.Fatalf("messages = %#v, want only the retried full answer after reset", model.messages)
+	}
+}
+
+func TestStreamResetWithoutLiveAssistantIsNoop(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+	app.messages = []Message{{Role: "user", Content: "问题"}}
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_stream_reset"})
+	model := updated.(Model)
+	if len(model.messages) != 1 || model.messages[0].Role != "user" {
+		t.Fatalf("messages = %#v, want non-assistant tail preserved on reset", model.messages)
+	}
+}

@@ -310,15 +310,22 @@ type fakeLLMClient struct {
 	calls           int
 	lastReq         openai.ChatCompletionRequest
 	reqs            []openai.ChatCompletionRequest
+	// streamRecvHook 在每次 stream.Recv() 取到数据块之前被调用，便于测试观测
+	// 增量是否在流式过程中边收边发，而不是在流结束后一次性补发。
+	streamRecvHook func()
 }
 
 type fakeChatStream struct {
-	chunks []openai.ChatCompletionStreamResponse
-	errAt  int
-	index  int
+	chunks   []openai.ChatCompletionStreamResponse
+	errAt    int
+	index    int
+	recvHook func()
 }
 
 func (s *fakeChatStream) Recv() (openai.ChatCompletionStreamResponse, error) {
+	if s.recvHook != nil {
+		s.recvHook()
+	}
 	if s.errAt > 0 && s.index == s.errAt {
 		return openai.ChatCompletionStreamResponse{}, errors.New("stream failed")
 	}
@@ -346,6 +353,17 @@ type capturedEvent struct {
 func (w *captureEventWriter) Event(name string, data any) error {
 	w.events = append(w.events, capturedEvent{name: name, data: data})
 	return nil
+}
+
+// countDeltas 返回当前已发出的 assistant_delta 事件数量，用于断言增量是否边收边发。
+func (w *captureEventWriter) countDeltas() int {
+	n := 0
+	for _, e := range w.events {
+		if e.name == "assistant_delta" {
+			n++
+		}
+	}
+	return n
 }
 
 // nonMetaEvents 返回除去 meta 事件的事件序列，便于断言主流事件顺序。
@@ -691,10 +709,10 @@ func (f *fakeLLMClient) CreateChatCompletionStream(ctx context.Context, req open
 	if len(f.streamChunkSets) > 0 {
 		chunks := f.streamChunkSets[0]
 		f.streamChunkSets = f.streamChunkSets[1:]
-		return &fakeChatStream{chunks: chunks}, nil
+		return &fakeChatStream{chunks: chunks, recvHook: f.streamRecvHook}, nil
 	}
 	if len(f.streamChunks) > 0 {
-		stream := &fakeChatStream{chunks: f.streamChunks}
+		stream := &fakeChatStream{chunks: f.streamChunks, recvHook: f.streamRecvHook}
 		f.streamChunks = nil
 		return stream, nil
 	}
@@ -705,9 +723,9 @@ func (f *fakeLLMClient) CreateChatCompletionStream(ctx context.Context, req open
 		for _, choice := range resp.Choices {
 			chunks = append(chunks, openai.ChatCompletionStreamResponse{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: choice.Message.Content, ReasoningContent: choice.Message.ReasoningContent, ToolCalls: choice.Message.ToolCalls}, FinishReason: choice.FinishReason}}})
 		}
-		return &fakeChatStream{chunks: chunks}, nil
+		return &fakeChatStream{chunks: chunks, recvHook: f.streamRecvHook}, nil
 	}
-	stream := &fakeChatStream{}
+	stream := &fakeChatStream{recvHook: f.streamRecvHook}
 	return stream, nil
 }
 
@@ -991,6 +1009,93 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 	}
 	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
+	}
+}
+
+// TestRespondToConversation_EmitsDeltasWhileStreaming 断言增量是在流式接收过程中
+// 边收边发，而不是在整段流结束后才一次性补发——后者会让 TUI 长时间空白、最后
+// 一瞬间全部刷出，体感很差。
+func TestRespondToConversation_EmitsDeltasWhileStreaming(t *testing.T) {
+	writer := &captureEventWriter{}
+	// deltaCountsAtRecv 记录每次 Recv() 调用前，writer 中已积累的 assistant_delta
+	// 数量。如果增量是边收边发，这个序列会随接收推进而递增；如果是结束后补发，
+	// 则在流结束前一直为 0。
+	var deltaCountsAtRecv []int
+	llm := &fakeLLMClient{streamChunks: []openai.ChatCompletionStreamResponse{
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "你"}}}},
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "好"}}}},
+		{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "世界"}, FinishReason: openai.FinishReasonStop}}},
+	}}
+	llm.streamRecvHook = func() {
+		deltaCountsAtRecv = append(deltaCountsAtRecv, writer.countDeltas())
+	}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_live_stream", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "打招呼", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "你好世界" {
+		t.Fatalf("expected streamed content to be persisted, got %q", message.Content)
+	}
+	// 第一次 Recv 之前没有增量是正常的；但在接收最后一个数据块之前，应当已经
+	// 有至少一个增量被发出，证明增量是流式发出的。
+	if len(deltaCountsAtRecv) < 3 {
+		t.Fatalf("expected recv hook to observe at least 3 receives, got %#v", deltaCountsAtRecv)
+	}
+	last := deltaCountsAtRecv[len(deltaCountsAtRecv)-1]
+	if last == 0 {
+		t.Fatalf("expected deltas to be emitted while streaming, but no delta was sent before the final chunk: %#v", deltaCountsAtRecv)
+	}
+}
+
+// TestRespondToConversation_EmitsResetWhenTruncatedOutputDiscarded 断言：当首次
+// 输出因 token 上限被截断（finish_reason=length）而被丢弃、升级预算后重试时，
+// 会先发出 assistant_stream_reset 事件，让 TUI 清空已流式显示的部分内容，避免
+// 丢弃的半截输出与重试后的完整输出叠加。
+func TestRespondToConversation_EmitsResetWhenTruncatedOutputDiscarded(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "半截被截断的"}, FinishReason: openai.FinishReasonLength}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完整答案"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	message, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_truncate_reset", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "写长回答", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if message.Content != "完整答案" {
+		t.Fatalf("expected upgraded retry content to win, got %q", message.Content)
+	}
+	events := writer.nonMetaEvents()
+	resetIndex := -1
+	for i, e := range events {
+		if e.name == assistantStreamResetEvent {
+			resetIndex = i
+		}
+	}
+	if resetIndex < 0 {
+		t.Fatalf("expected an assistant_stream_reset event after discarding truncated output, got %#v", events)
+	}
+	// reset 之后必须仍有完整答案的增量被流式发出。
+	sawDeltaAfterReset := false
+	for _, e := range events[resetIndex+1:] {
+		if e.name == "assistant_delta" {
+			sawDeltaAfterReset = true
+			break
+		}
+	}
+	if !sawDeltaAfterReset {
+		t.Fatalf("expected streamed deltas after reset, got %#v", events)
 	}
 }
 

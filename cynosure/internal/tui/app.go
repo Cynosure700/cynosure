@@ -306,6 +306,8 @@ func (m *Model) applyEvent(msg Event) {
 	case "assistant_delta":
 		m.answerStarted = true
 		m.appendAssistantDelta(msg.Content)
+	case "assistant_stream_reset":
+		m.resetLiveAssistant()
 	case "assistant":
 		m.answerStarted = true
 		m.updateMetaFromData(msg.Data)
@@ -637,6 +639,17 @@ func (m *Model) appendAssistantDelta(delta string) {
 		return
 	}
 	m.messages[len(m.messages)-1].Content += delta
+}
+
+// resetLiveAssistant 丢弃本轮正在流式显示的半截 assistant 内容。运行时在输出
+// 被截断升级重试、或上下文溢出压缩重试时会发出 assistant_stream_reset：那段
+// 已流式显示的内容会被废弃并重新生成，这里把它从界面移除，避免与重试结果叠加。
+func (m *Model) resetLiveAssistant() {
+	if len(m.messages) > 0 && isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
+		m.messages = m.messages[:len(m.messages)-1]
+	}
+	// 重新进入“等待输出”状态：恢复 Thinking 提示，直到重试产生新的增量。
+	m.answerStarted = false
 }
 
 func (m *Model) replaceLastAssistant(content, reasoning string) {
