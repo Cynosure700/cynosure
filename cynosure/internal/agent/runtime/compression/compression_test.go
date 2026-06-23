@@ -306,30 +306,19 @@ func TestMessageWindow_NoopAtLimit(t *testing.T) {
 	}
 }
 
-func TestMessageWindow_TrimsMiddleKeepingHeadTail(t *testing.T) {
-	// Latest user at index 0 followed by many assistant messages, so the
-	// current turn count (60) exceeds the limit and trimming triggers.
+func TestMessageWindow_NoopWhenStrategyDisabledEvenOverLimit(t *testing.T) {
 	const n = 60
 	history := make([]storage.Message, n)
 	history[0] = storage.Message{Role: "user", Content: "latest-user"}
 	for i := 1; i < n; i++ {
 		history[i] = storage.Message{Role: "assistant", Content: string(rune('A' + i%26))}
 	}
-	first := history[0].Content
-	lastTailFirst := history[n-messageWindowTail].Content
 	req := &Request{RequestHistory: history}
 	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	got := req.RequestHistory
-	if len(got) != messageWindowHead+messageWindowTail {
-		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
-	}
-	if got[0].Content != first {
-		t.Fatalf("expected head to start at latest user")
-	}
-	if got[messageWindowHead].Content != lastTailFirst {
-		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
+	if len(req.RequestHistory) != n {
+		t.Fatalf("expected no trim while message window strategy is disabled, got %d", len(req.RequestHistory))
 	}
 }
 
@@ -348,19 +337,11 @@ func TestMessageWindow_KeepsLatestUserPlusTwoAsHead(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	got := req.RequestHistory
-	if len(got) != messageWindowHead+messageWindowTail {
-		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
+	if len(got) != n {
+		t.Fatalf("expected no trim while message window strategy is disabled, got %d", len(got))
 	}
-	// head = history[5:8], so latest user is the first kept message.
-	if got[0].Content != "latest-user" {
-		t.Fatalf("expected latest user as first head message, got %q", got[0].Content)
-	}
-	if got[1].Content != history[6].Content || got[2].Content != history[7].Content {
-		t.Fatalf("expected the two messages after latest user preserved")
-	}
-	// tail = history[n-46:], so head (3) is followed by original index n-46.
-	if got[messageWindowHead].Content != history[n-messageWindowTail].Content {
-		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
+	if got[5].Content != "latest-user" {
+		t.Fatalf("expected original latest user position preserved, got %q", got[5].Content)
 	}
 }
 
@@ -378,10 +359,11 @@ func TestMessageWindow_DropsOrphanToolAtCut(t *testing.T) {
 	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	for _, msg := range req.RequestHistory {
-		if msg.Role == "tool" && msg.ToolCallID == "orphan" {
-			t.Fatalf("expected orphan tool message to be dropped")
-		}
+	if len(req.RequestHistory) != n {
+		t.Fatalf("expected no trim while message window strategy is disabled, got %d", len(req.RequestHistory))
+	}
+	if req.RequestHistory[n-messageWindowTail].ToolCallID != "orphan" {
+		t.Fatalf("expected disabled strategy to preserve original messages")
 	}
 }
 
@@ -456,27 +438,20 @@ func TestMessageWindow_FallsBackToFirstThreeWhenNoUser(t *testing.T) {
 	for i := range history {
 		history[i] = storage.Message{Role: "assistant", Content: string(rune('A' + i%26))}
 	}
-	first := history[0].Content
 	req := &Request{RequestHistory: history}
 	if err := (&MessageWindowCompressionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	got := req.RequestHistory
-	if len(got) != messageWindowHead+messageWindowTail {
-		t.Fatalf("expected %d messages, got %d", messageWindowHead+messageWindowTail, len(got))
-	}
-	if got[0].Content != first {
-		t.Fatalf("expected head to start at the first message, got %q", got[0].Content)
-	}
-	if got[messageWindowHead].Content != history[n-messageWindowTail].Content {
-		t.Fatalf("expected tail to start at original index %d", n-messageWindowTail)
+	if len(got) != n {
+		t.Fatalf("expected no trim while message window strategy is disabled, got %d", len(got))
 	}
 }
 
 // --- RecentToolResultRetentionStrategy ---
 
-func TestRecentToolRetention_NoopAtExactlyTwentyFullInlineResults(t *testing.T) {
-	history := makeToolResultMessages(20)
+func TestRecentToolRetention_NoopAtThresholdFullInlineResults(t *testing.T) {
+	history := makeToolResultMessages(recentToolResultRetentionThreshold)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -489,18 +464,19 @@ func TestRecentToolRetention_NoopAtExactlyTwentyFullInlineResults(t *testing.T) 
 	}
 }
 
-func TestRecentToolRetention_CompactsAtTwentyOneFullInlineResultsAndKeepsRecentFive(t *testing.T) {
-	history := makeToolResultMessages(21)
+func TestRecentToolRetention_CompactsOverThresholdAndKeepsRecentInlineResults(t *testing.T) {
+	history := makeToolResultMessages(recentToolResultRetentionThreshold + 1)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	for i := 0; i < 16; i++ {
+	cutoff := len(history) - recentToolResultRetention
+	for i := 0; i < cutoff; i++ {
 		if got := resultOf(t, history[i].Content); got != earlierToolResultPlaceholder {
 			t.Fatalf("expected older tool %d compacted, got %q", i, got)
 		}
 	}
-	for i := 16; i < 21; i++ {
+	for i := cutoff; i < len(history); i++ {
 		want := "result_" + string(rune('a'+i))
 		if got := resultOf(t, history[i].Content); got != want {
 			t.Fatalf("expected recent tool %d to stay inline as %q, got %q", i, want, got)
@@ -537,8 +513,8 @@ func TestRecentToolRetention_CountsOnlyFullInlineToolResults(t *testing.T) {
 	}
 }
 
-func TestRecentToolRetention_SkipsPersistedAndPlaceholderWhenKeepingRecentFive(t *testing.T) {
-	history := makeToolResultMessages(18)
+func TestRecentToolRetention_SkipsPersistedAndPlaceholderWhenKeepingRecentInlineResults(t *testing.T) {
+	history := makeToolResultMessages(28)
 	history = append(history,
 		toolMsg("persisted", "success", buildPersistedOutputMarker("po_existing", 1234, "preview")),
 		toolMsg("placeholder", "success", earlierToolResultPlaceholder),
@@ -554,14 +530,20 @@ func TestRecentToolRetention_SkipsPersistedAndPlaceholderWhenKeepingRecentFive(t
 			t.Fatalf("expected older full inline tool %d compacted, got %q", i, got)
 		}
 	}
-	if got := resultOf(t, history[18].Content); !strings.Contains(got, PersistedOutputMarkerPrefix) {
+	for i := 18; i < 28; i++ {
+		want := "result_" + string(rune('a'+i))
+		if got := resultOf(t, history[i].Content); got != want {
+			t.Fatalf("expected recent full inline tool %d to stay inline as %q, got %q", i, want, got)
+		}
+	}
+	if got := resultOf(t, history[28].Content); !strings.Contains(got, PersistedOutputMarkerPrefix) {
 		t.Fatalf("expected persisted marker to stay unchanged, got %q", got)
 	}
-	if got := resultOf(t, history[19].Content); got != earlierToolResultPlaceholder {
+	if got := resultOf(t, history[29].Content); got != earlierToolResultPlaceholder {
 		t.Fatalf("expected existing placeholder to stay unchanged, got %q", got)
 	}
-	for i := 20; i < 25; i++ {
-		want := "result_" + string(rune('a'+i-2))
+	for i := 30; i < 35; i++ {
+		want := "result_" + string(rune('a'+i-12))
 		if got := resultOf(t, history[i].Content); got != want {
 			t.Fatalf("expected recent full inline tool %d to stay inline as %q, got %q", i, want, got)
 		}
@@ -570,7 +552,7 @@ func TestRecentToolRetention_SkipsPersistedAndPlaceholderWhenKeepingRecentFive(t
 
 func TestRecentToolRetention_NonJSONReplacedWithPlainPlaceholder(t *testing.T) {
 	history := []storage.Message{{Role: "tool", ToolCallID: "raw", Content: "raw not json"}}
-	history = append(history, makeToolResultMessages(21)...)
+	history = append(history, makeToolResultMessages(recentToolResultRetentionThreshold)...)
 	req := &Request{RequestHistory: history}
 	if err := (&RecentToolResultRetentionStrategy{}).Apply(context.Background(), req); err != nil {
 		t.Fatalf("apply: %v", err)

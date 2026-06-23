@@ -40,7 +40,7 @@ func RunBashInDir(command, dir string) (string, error) {
 
 	result := strings.TrimSpace(string(output))
 	if result == "" {
-		return "(no output)", nil
+		return "success · No output", nil
 	}
 
 	return result, err

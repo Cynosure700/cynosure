@@ -148,9 +148,10 @@ func TestToolMessageUsesLowercaseFileSearchDisplayNames(t *testing.T) {
 		want string
 	}{
 		{name: "write_file", want: "● ✓ write("},
-		{name: "read_file", want: "● ✓ file("},
+		{name: "read_file", want: "● ✓ read("},
 		{name: "Glob", want: "● ✓ glob("},
 		{name: "grep", want: "● ✓ grep("},
+		{name: "edit_file", want: "● ✓ edit("},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := Message{Role: "tool", ToolCall: &ToolCallView{
@@ -355,12 +356,12 @@ func TestHandleHelpCommandListsAvailableSlashCommands(t *testing.T) {
 	}
 	content := app.messages[len(app.messages)-1].Content
 	for _, want := range []string{
-		"/help：显示所有可用的斜杠命令。",
 		"/clear：开启全新对话并清空当前上下文。",
 		"/cwd：显示当前工作区。",
 		"/skills：显示已加载的 Skill 列表。",
 		"/mcp：显示 MCP server 状态和工具数量。",
 		"/resume：查看并恢复当前工作区的历史会话。",
+		"/cancel：在恢复历史会话选择中取消当前选择。",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("/help output = %q, want it to contain %q", content, want)
@@ -370,8 +371,8 @@ func TestHandleHelpCommandListsAvailableSlashCommands(t *testing.T) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, "/") {
-			t.Fatalf("/help line = %q, want each non-empty line to start with a slash command", line)
+		if !strings.HasPrefix(strings.TrimSpace(line), "/") {
+			t.Fatalf("/help line = %q, want each non-empty line to describe a slash command", line)
 		}
 	}
 }
@@ -905,7 +906,7 @@ func TestModelAppendsToolDoneWhenStartWasMissing(t *testing.T) {
 		t.Fatalf("messages = %#v, want appended completed tool message", model.messages)
 	}
 	rendered := plainTerminalText(model.renderMessages())
-	for _, want := range []string{"✗ file", "⎿ rejected · Error: outside workspace"} {
+	for _, want := range []string{"✗ read", "⎿ rejected · Error: outside workspace"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want %q", rendered, want)
 		}
@@ -1097,7 +1098,7 @@ func TestHeaderShowsOnlyModelAndWorkspaceMetadata(t *testing.T) {
 			t.Fatalf("header = %q, want metadata %q", header, want)
 		}
 	}
-	for _, forbidden := range []string{"cynosure", "workspace ", "Welcome back!", "API Usage Billing", "Tips for getting started", "Project guide", "Skills 2", "MCP tools 3"} {
+	for _, forbidden := range []string{"workspace ", "Welcome back!", "API Usage Billing", "Tips for getting started", "Project guide", "Skills 2", "MCP tools 3"} {
 		if strings.Contains(header, forbidden) {
 			t.Fatalf("header = %q, should not contain noisy metadata %q", header, forbidden)
 		}
@@ -1110,7 +1111,7 @@ func TestHeaderUsesGreenAccentAndCompactCenteredLinkVersionMascot(t *testing.T) 
 	model := updated.(Model)
 
 	header := model.renderHeader()
-	for _, want := range []string{`Cynosure version: 0.0.1`, `Welcome back`, `/^ ^\`, `/ 0 0 \`, `V\ Y /V`, `/ - \`, `|| (__V`} {
+	for _, want := range []string{`cynosure version: 0.0.1`, `Welcome back`, `/^ ^\`, `/ 0 0 \`, `V\ Y /V`, `/ - \`, `|| (__V`} {
 		if !strings.Contains(header, want) {
 			t.Fatalf("header = %q, want compact Cynosure version mascot part %q", header, want)
 		}

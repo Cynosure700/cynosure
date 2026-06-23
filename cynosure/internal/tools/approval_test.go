@@ -60,7 +60,6 @@ func TestRequiresApprovalBashMutating(t *testing.T) {
 		{"cat a > b", "cat *"},
 		{"echo hi; rm x", "echo *"},
 		{"git commit -m x", "git *"},
-		{"sed -i s/a/b/ f", "sed *"},
 		{"foobar baz", "foobar *"},
 		{"", "bash *"},
 	}

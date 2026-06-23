@@ -992,6 +992,8 @@ func displayToolName(name string, rawArgs string) string {
 		return "glob"
 	case "grep":
 		return "grep"
+	case "edit_file":
+		return "edit"
 	}
 	if strings.EqualFold(trimmed, "spawn_subagent") {
 		if subType := spawnSubagentDisplayName(rawArgs); subType != "" {

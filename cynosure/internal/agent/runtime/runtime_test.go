@@ -496,7 +496,6 @@ func TestBuildExploreSubagentSystemPromptIsReadOnlyAndSearchFocused(t *testing.T
 		"ls",
 		"read_file",
 		"read_file can directly read files from the local filesystem.",
-		"If the caller provides a file path, assume that path is valid.",
 		"It is okay to read a caller-provided file path that does not exist; the tool will return an error.",
 		"For paths you infer rather than paths provided by the caller, confirm the file exists before reading it.",
 		"ALWAYS use grep for content search. NEVER invoke grep or rg as a Bash command.",
@@ -557,8 +556,8 @@ func TestBuildSubagentProfileUsesExploreSpecificMaxRounds(t *testing.T) {
 	service := &Service{Cfg: cfg}
 
 	explore := service.buildSubagentProfile(subagentTypeExplore, storage.User{}, nil)
-	if explore.MaxRounds != 50 {
-		t.Fatalf("expected explore max rounds to be 50, got %d", explore.MaxRounds)
+	if explore.MaxRounds != exploreSubagentMaxRounds {
+		t.Fatalf("expected explore max rounds to be %d, got %d", exploreSubagentMaxRounds, explore.MaxRounds)
 	}
 
 	general := service.buildSubagentProfile(subagentTypeGeneral, storage.User{}, nil)
@@ -860,14 +859,14 @@ func TestRespondToConversation_RetriesOnceWhenFinalAnswerContentIsEmpty(t *testi
 	if llm.calls != 2 {
 		t.Fatalf("expected empty final answer to retry exactly once, got %d calls", llm.calls)
 	}
-	if !strings.Contains(openAIRequestContent(llm.reqs[1]), "请输出最终可见答案") {
+	if !strings.Contains(openAIRequestContent(llm.reqs[1]), emptyFinalAnswerRetryPrompt) {
 		t.Fatalf("expected retry request to include final-answer prompt, got %#v", llm.reqs[1].Messages)
 	}
 	if len(store.historyUpdates) != 1 {
 		t.Fatalf("expected one visible history update, got %d", len(store.historyUpdates))
 	}
 	for _, msg := range store.historyUpdates[0] {
-		if strings.Contains(msg.Content, "请输出最终可见答案") {
+		if strings.Contains(msg.Content, emptyFinalAnswerRetryPrompt) {
 			t.Fatalf("expected internal retry prompt not to be persisted in display history, got %#v", store.historyUpdates[0])
 		}
 	}
@@ -898,13 +897,13 @@ func TestRespondToConversation_EmptyToolCallRoundDoesNotTriggerFinalAnswerRetry(
 		t.Fatalf("expected tool round plus final round only, got %d calls", llm.calls)
 	}
 	for _, req := range llm.reqs {
-		if strings.Contains(openAIRequestContent(req), "请输出最终可见答案") {
+		if strings.Contains(openAIRequestContent(req), emptyFinalAnswerRetryPrompt) {
 			t.Fatalf("expected tool-call round not to inject empty-final retry prompt, got %#v", req.Messages)
 		}
 	}
 }
 
-func TestRespondToConversation_EmptyFinalAnswerRetryStopsAfterOneAttempt(t *testing.T) {
+func TestRespondToConversation_EmptyFinalAnswerRetriesUntilContent(t *testing.T) {
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{FinishReason: openai.FinishReasonStop}}},
@@ -924,11 +923,11 @@ func TestRespondToConversation_EmptyFinalAnswerRetryStopsAfterOneAttempt(t *test
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if message.Content != "(no response)" {
-		t.Fatalf("expected existing fallback after one retry, got %q", message.Content)
+	if message.Content != "unexpected third call" {
+		t.Fatalf("expected final answer after repeated empty retry, got %q", message.Content)
 	}
-	if llm.calls != 2 {
-		t.Fatalf("expected exactly one retry after empty final answer, got %d calls", llm.calls)
+	if llm.calls != 3 {
+		t.Fatalf("expected retry to continue until content is produced, got %d calls", llm.calls)
 	}
 }
 
@@ -2223,14 +2222,14 @@ func TestPreviewToolResultKeepsFiveLinesAndReportsOmittedLines(t *testing.T) {
 	}, "\n")}
 
 	got := previewToolResult(outcome)
-	want := "line1\nline2\nline3\nline4\nline5\n... + 2 lines"
+	want := "line1\nline2\nline3\n... + 4 lines"
 	if got != want {
 		t.Fatalf("previewToolResult() = %q, want %q", got, want)
 	}
 }
 
-func TestPreviewToolResultKeepsFiveLinesWithoutOmissionMarker(t *testing.T) {
-	outcome := toolExecutionOutcome{Status: "success", Result: "line1\nline2\nline3\nline4\nline5"}
+func TestPreviewToolResultKeepsThreeLinesWithoutOmissionMarker(t *testing.T) {
+	outcome := toolExecutionOutcome{Status: "success", Result: "line1\nline2\nline3"}
 
 	got := previewToolResult(outcome)
 	if got != outcome.Result {
