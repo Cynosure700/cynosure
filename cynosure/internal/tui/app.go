@@ -1447,11 +1447,11 @@ func toolStyleForStatus(status string) lipgloss.Style {
 func toolTextColorForStatus(status string) lipgloss.Color {
 	switch status {
 	case "success":
-		return tuiPalette.mint
+		return lipgloss.Color("#8FB89A")
 	case "rejected", "error", "failed":
-		return tuiPalette.coral
+		return lipgloss.Color("#C79B92")
 	default:
-		return lipgloss.Color("245")
+		return lipgloss.Color("#9A9A9A")
 	}
 }
 
