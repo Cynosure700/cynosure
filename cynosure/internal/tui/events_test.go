@@ -481,14 +481,17 @@ func TestModelKeepsWaitingAfterStaleGenerationEvent(t *testing.T) {
 	app.running = true
 	app.events <- Event{Generation: 2, Name: "assistant_delta", Content: "fresh"}
 
-	_, cmd := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "stale"})
+	updated, cmd := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "stale"})
+	model := updated.(Model)
 
-	if cmd == nil {
-		t.Fatal("expected stale event to keep waiting while current generation is still running")
+	// 合并事件后，本轮 Update 会非阻塞 drain 掉 channel 中已就绪的同代事件，
+	// 因此 fresh 事件在同一次 Update 内被应用，而 stale 事件被忽略。
+	if len(model.messages) != 1 || model.messages[0].Content != "fresh" {
+		t.Fatalf("messages = %#v, want stale ignored and fresh applied", model.messages)
 	}
-	got := cmd()
-	if event, ok := got.(Event); !ok || event.Generation != 2 || event.Content != "fresh" {
-		t.Fatalf("next message = %#v, want fresh event from current generation", got)
+	// 仍在生成中，应继续等待后续事件。
+	if cmd == nil {
+		t.Fatal("expected model to keep waiting while current generation is still running")
 	}
 }
 
@@ -503,6 +506,98 @@ func TestRespondSendsTerminalEventThroughEventQueue(t *testing.T) {
 	got := <-app.events
 	if got.Generation != 7 || got.Name != "error" || !strings.Contains(got.Content, "runtime 未初始化") {
 		t.Fatalf("queued event = %#v, want runtime error for generation 7", got)
+	}
+}
+
+func TestUpdateCoalescesPendingStreamingEventsIntoOneFrame(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+	// 预填若干已就绪的流式增量，模拟底部正在快速输出时 channel 中的堆积。
+	app.events <- Event{Generation: 1, Name: "assistant_delta", Content: "二"}
+	app.events <- Event{Generation: 1, Name: "assistant_delta", Content: "三"}
+	app.events <- Event{Generation: 1, Name: "assistant_delta", Content: "四"}
+
+	updated, cmd := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "一"})
+	model := updated.(Model)
+
+	// 四个增量应在一次 Update 内被合并应用，channel 被清空。
+	if len(model.events) != 0 {
+		t.Fatalf("pending events = %d, want all coalesced and drained within one Update", len(model.events))
+	}
+	if len(model.messages) != 1 || model.messages[0].Content != "一二三四" {
+		t.Fatalf("messages = %#v, want all streaming deltas merged into one assistant message", model.messages)
+	}
+	if cmd == nil {
+		t.Fatal("expected model to keep waiting for further events while running")
+	}
+}
+
+func TestUpdateStopsDrainingAtTerminalDoneEvent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+	app.events <- Event{Generation: 1, Name: "done"}
+
+	updated, cmd := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "答案"})
+	model := updated.(Model)
+
+	if model.running {
+		t.Fatal("drained done event should stop the running state")
+	}
+	if cmd != nil {
+		t.Fatalf("expected no further waiting command after done, got %#v", cmd)
+	}
+}
+
+func TestRenderCacheReusesUnchangedMessageRenders(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 80
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+	app.messages = []Message{{Role: "assistant", Content: "你好"}}
+
+	app.renderCachedMessage(app.messages[0])
+	key := messageRenderKey(app.messages[0], app.messageWidth())
+	if _, ok := app.renderCache.entries[key]; !ok {
+		t.Fatal("expected first render to populate the cache")
+	}
+	// 篡改缓存值，若第二次渲染命中缓存则应返回被篡改的内容，证明未重算。
+	app.renderCache.entries[key] = "CACHED-SENTINEL"
+	if got := app.renderCachedMessage(app.messages[0]); got != "CACHED-SENTINEL" {
+		t.Fatalf("second render = %q, want cached value reused instead of recomputed", got)
+	}
+}
+
+func TestRenderCacheInvalidatesWhenMessageContentChanges(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 80
+	app.renderer = newMarkdownRenderer(app.messageWidth())
+
+	app.renderCachedMessage(Message{Role: "assistant", Content: "你好"})
+	changed := app.renderCachedMessage(Message{Role: "assistant", Content: "你好世界"})
+
+	if !strings.Contains(plainTerminalText(changed), "你好世界") {
+		t.Fatalf("render = %q, want changed content recomputed rather than serving stale cache", changed)
+	}
+}
+
+func TestRefreshViewportPrunesStaleRenderCacheEntries(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+	model.messages = []Message{{Role: "assistant", Content: "第一版"}}
+	model.refreshViewport()
+
+	// 模拟流式增量：内容增长产生新的缓存 key，旧 key 应在下一次刷新时被清理。
+	model.messages[0].Content = "第一版内容增长"
+	model.refreshViewport()
+
+	if len(model.renderCache.entries) != len(model.messages) {
+		t.Fatalf("cache entries = %d, want pruned down to the %d live messages", len(model.renderCache.entries), len(model.messages))
+	}
+	key := messageRenderKey(model.messages[0], model.messageWidth())
+	if _, ok := model.renderCache.entries[key]; !ok {
+		t.Fatal("expected the current message render to remain cached after pruning")
 	}
 }
 

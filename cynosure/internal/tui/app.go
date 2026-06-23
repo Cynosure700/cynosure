@@ -117,6 +117,18 @@ type Model struct {
 	thinkingStartedAt time.Time
 	thinkingNow       time.Time
 	answerStarted     bool
+	renderCache       *messageRenderCache
+}
+
+// messageRenderCache 缓存每条消息的渲染结果，避免每个流式增量都重算全部历史。
+// 渲染输出是 (消息内容, 宽度) 的纯函数，因此可安全按内容缓存；指针语义让
+// Bubble Tea 的 Model 值拷贝之间共享同一份缓存。
+type messageRenderCache struct {
+	entries map[string]string
+}
+
+func newMessageRenderCache() *messageRenderCache {
+	return &messageRenderCache{entries: make(map[string]string)}
 }
 
 type thinkingTickMsg struct {
@@ -135,7 +147,7 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
 	renderer := newMarkdownRenderer(100)
-	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer, autoFollow: true}
+	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer, autoFollow: true, renderCache: newMessageRenderCache()}
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
@@ -250,44 +262,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, m.thinkingTick(msg.generation)
 	case Event:
-		if msg.Generation != 0 && msg.Generation != m.generation {
-			if m.running {
-				return m, m.waitEvent()
-			}
-			return m, nil
-		}
-		switch msg.Name {
-		case "approval_request":
-			if req, ok := msg.Data.(approvalRequestMsg); ok {
-				m.beginApproval(req)
-			}
-		case "assistant_delta":
-			m.answerStarted = true
-			m.appendAssistantDelta(msg.Content)
-		case "assistant":
-			m.answerStarted = true
-			m.updateMetaFromData(msg.Data)
-			content := msg.Content
-			if content == "" && msg.Data != nil {
-				content = eventContent(msg.Data)
-			}
-			if content != "" {
-				m.replaceLastAssistant(content, eventString(msg.Data, "reasoning_content"))
-			}
-		case "meta":
-			m.updateMetaFromData(msg.Data)
-		case "tool_call_start":
-			m.appendToolCallStart(msg.Data)
-		case "tool_call_done":
-			m.updateToolCallDone(msg.Data)
-		case "tool_call_group_clear":
-			m.clearToolCallGroup(msg.Data)
-		case "error":
-			m.appendMessage("error", msg.Content)
-			m.running = false
-		case "done":
-			m.running = false
-		}
+		m.applyEvent(msg)
+		// 合并事件：非阻塞地把 channel 中已堆积的同批事件一次性消费完，
+		// 一轮模型输出的大量连续 assistant_delta 会被压成一帧，渲染次数
+		// 从「每个 token 一次」降到「每批一次」，从而让 Update 循环及时
+		// 腾出来响应鼠标滚轮等输入，避免滚动延迟与卡顿。
+		m.drainPendingEvents()
 		m.refreshViewport()
 		if m.running {
 			return m, m.waitEvent()
@@ -298,6 +278,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.input, cmd = m.input.Update(msg)
 	m.refreshViewport()
 	return m, cmd
+}
+
+// drainPendingEvents 非阻塞地消费并应用 channel 中已就绪的事件。
+func (m *Model) drainPendingEvents() {
+	for {
+		select {
+		case next := <-m.events:
+			m.applyEvent(next)
+		default:
+			return
+		}
+	}
+}
+
+// applyEvent 应用单个事件到 Model 状态，不触发重渲染，便于批量合并。
+// 非当前 generation 的事件直接忽略（来自已被中断的旧轮次）。
+func (m *Model) applyEvent(msg Event) {
+	if msg.Generation != 0 && msg.Generation != m.generation {
+		return
+	}
+	switch msg.Name {
+	case "approval_request":
+		if req, ok := msg.Data.(approvalRequestMsg); ok {
+			m.beginApproval(req)
+		}
+	case "assistant_delta":
+		m.answerStarted = true
+		m.appendAssistantDelta(msg.Content)
+	case "assistant":
+		m.answerStarted = true
+		m.updateMetaFromData(msg.Data)
+		content := msg.Content
+		if content == "" && msg.Data != nil {
+			content = eventContent(msg.Data)
+		}
+		if content != "" {
+			m.replaceLastAssistant(content, eventString(msg.Data, "reasoning_content"))
+		}
+	case "meta":
+		m.updateMetaFromData(msg.Data)
+	case "tool_call_start":
+		m.appendToolCallStart(msg.Data)
+	case "tool_call_done":
+		m.updateToolCallDone(msg.Data)
+	case "tool_call_group_clear":
+		m.clearToolCallGroup(msg.Data)
+	case "error":
+		m.appendMessage("error", msg.Content)
+		m.running = false
+	case "done":
+		m.running = false
+	}
 }
 
 func (m *Model) updateViewportScroll(msg tea.Msg) (tea.Cmd, bool) {
@@ -739,9 +771,28 @@ func (m *Model) refreshViewport() {
 	shouldFollow := m.autoFollow || m.viewport.AtBottom()
 	m.viewport.Width = max(10, m.width)
 	m.viewport.Height = m.viewportHeight()
+	m.pruneRenderCache()
 	m.viewport.SetContent(m.renderTranscript())
 	if shouldFollow {
 		m.viewport.GotoBottom()
+	}
+}
+
+// pruneRenderCache 仅保留当前消息列表对应的缓存项，避免流式增量（每次内容
+// 增长都会产生新 key）和窗口宽度变化导致缓存无限膨胀。
+func (m *Model) pruneRenderCache() {
+	if m.renderCache == nil {
+		return
+	}
+	live := make(map[string]struct{}, len(m.messages))
+	width := m.messageWidth()
+	for _, msg := range m.messages {
+		live[messageRenderKey(msg, width)] = struct{}{}
+	}
+	for key := range m.renderCache.entries {
+		if _, ok := live[key]; !ok {
+			delete(m.renderCache.entries, key)
+		}
 	}
 }
 
@@ -789,12 +840,55 @@ func (m Model) renderMessages() string {
 			trimTrailingBlankLines(&b)
 			b.WriteString("\n")
 		}
-		b.WriteString(m.renderMessageAt(msg))
+		b.WriteString(m.renderCachedMessage(msg))
 		b.WriteString("\n\n")
 	}
 	if indicator := m.renderThinkingIndicator(); indicator != "" {
 		b.WriteString(indicator)
 		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
+// renderCachedMessage 复用缓存渲染结果，仅在 (内容, 宽度) 变化时重算。
+// 流式输出时只有最后一条 assistant 消息在变化，因此单帧渲染成本从
+// O(历史长度) 降到 O(1)。
+func (m Model) renderCachedMessage(msg Message) string {
+	if m.renderCache == nil {
+		return m.renderMessageAt(msg)
+	}
+	key := messageRenderKey(msg, m.messageWidth())
+	if cached, ok := m.renderCache.entries[key]; ok {
+		return cached
+	}
+	rendered := m.renderMessageAt(msg)
+	m.renderCache.entries[key] = rendered
+	return rendered
+}
+
+// messageRenderKey 捕获所有会影响一条消息渲染输出的字段。
+func messageRenderKey(msg Message, width int) string {
+	var b strings.Builder
+	b.WriteString(strconv.Itoa(width))
+	b.WriteByte('\x00')
+	b.WriteString(msg.Role)
+	b.WriteByte('\x00')
+	b.WriteString(msg.Content)
+	b.WriteByte('\x00')
+	b.WriteString(msg.ReasoningContent)
+	if tool := msg.ToolCall; tool != nil {
+		b.WriteByte('\x00')
+		fields := []string{
+			tool.ID, tool.Name, tool.RawArgs, tool.ArgsPreview, tool.Status,
+			tool.ResultPreview, tool.Scope, tool.EphemeralGroupID, tool.ParentToolCallID,
+		}
+		for _, field := range fields {
+			b.WriteString(field)
+			b.WriteByte('\x00')
+		}
+		if tool.SuppressResult {
+			b.WriteByte('1')
+		}
 	}
 	return b.String()
 }
@@ -1135,7 +1229,25 @@ func userInputTextStart() string {
 }
 
 func ansiForeground(color lipgloss.Color) string {
-	return "\x1b[0;38;5;" + string(color) + "m"
+	value := string(color)
+	if strings.HasPrefix(value, "#") {
+		if r, g, b, ok := parseHexColor(value); ok {
+			return fmt.Sprintf("\x1b[0;38;2;%d;%d;%dm", r, g, b)
+		}
+	}
+	return "\x1b[0;38;5;" + value + "m"
+}
+
+func parseHexColor(value string) (int, int, int, bool) {
+	hex := strings.TrimPrefix(value, "#")
+	if len(hex) != 6 {
+		return 0, 0, 0, false
+	}
+	parsed, err := strconv.ParseInt(hex, 16, 32)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return int(parsed>>16) & 0xFF, int(parsed>>8) & 0xFF, int(parsed) & 0xFF, true
 }
 
 func renderSelectedUserMessage(content string, width int) string {
