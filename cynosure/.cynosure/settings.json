@@ -10,7 +10,8 @@
       "multi_edit *",
       "mkdir *",
       "find *",
-      "cat *"
+      "cat *",
+      "for *"
     ]
   }
 }

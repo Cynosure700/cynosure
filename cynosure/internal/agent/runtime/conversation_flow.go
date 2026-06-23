@@ -244,6 +244,7 @@ func (s *Service) executeToolCallBatch(ctx context.Context, state *LoopState, ca
 		toolCtx := toolCtx
 		execCtx := opts.ToolContext
 		execCtx.Todos = append([]agenttools.TodoItem(nil), todosSnapshot...)
+		execCtx.ParentToolCallID = toolCtx.ToolCall.ID
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

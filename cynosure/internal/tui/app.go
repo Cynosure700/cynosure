@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ type ToolCallView struct {
 	ResultPreview    string
 	Scope            string
 	EphemeralGroupID string
+	ParentToolCallID string
 	SuppressResult   bool
 }
 
@@ -639,7 +641,45 @@ func (m *Model) appendToolCallStart(data any) {
 	if tool.Status == "" {
 		tool.Status = "running"
 	}
-	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
+	m.replaceSubagentEphemeralTool(tool)
+	m.insertToolCallMessage(tool)
+}
+
+func (m *Model) replaceSubagentEphemeralTool(tool ToolCallView) {
+	if tool.Scope != "subagent" || strings.TrimSpace(tool.EphemeralGroupID) == "" {
+		return
+	}
+	filtered := m.messages[:0]
+	for _, msg := range m.messages {
+		if msg.Role == "tool" && msg.ToolCall != nil && msg.ToolCall.Scope == "subagent" && msg.ToolCall.EphemeralGroupID == tool.EphemeralGroupID {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	m.messages = filtered
+}
+
+func (m *Model) insertToolCallMessage(tool ToolCallView) {
+	msg := Message{Role: "tool", ToolCall: &tool}
+	if tool.Scope != "subagent" || strings.TrimSpace(tool.ParentToolCallID) == "" {
+		m.messages = append(m.messages, msg)
+		return
+	}
+	parentIndex := -1
+	for i := range m.messages {
+		if m.messages[i].Role == "tool" && m.messages[i].ToolCall != nil && m.messages[i].ToolCall.ID == tool.ParentToolCallID {
+			parentIndex = i
+			break
+		}
+	}
+	if parentIndex < 0 {
+		m.messages = append(m.messages, msg)
+		return
+	}
+	insertAt := parentIndex + 1
+	m.messages = append(m.messages, Message{})
+	copy(m.messages[insertAt+1:], m.messages[insertAt:])
+	m.messages[insertAt] = msg
 }
 
 func (m *Model) updateToolCallDone(data any) {
@@ -659,9 +699,13 @@ func (m *Model) updateToolCallDone(data any) {
 			m.messages[i].ToolCall.ResultPreview = tool.ResultPreview
 			m.messages[i].ToolCall.Scope = firstNonEmpty(tool.Scope, m.messages[i].ToolCall.Scope)
 			m.messages[i].ToolCall.EphemeralGroupID = firstNonEmpty(tool.EphemeralGroupID, m.messages[i].ToolCall.EphemeralGroupID)
+			m.messages[i].ToolCall.ParentToolCallID = firstNonEmpty(tool.ParentToolCallID, m.messages[i].ToolCall.ParentToolCallID)
 			m.messages[i].ToolCall.SuppressResult = tool.SuppressResult || m.messages[i].ToolCall.SuppressResult
 			return
 		}
+	}
+	if tool.Scope == "subagent" && strings.TrimSpace(tool.EphemeralGroupID) != "" {
+		return
 	}
 	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
 }
@@ -691,6 +735,7 @@ func toolCallViewFromEvent(data any) ToolCallView {
 		ResultPreview:    eventString(data, "result_preview"),
 		Scope:            eventString(data, "scope"),
 		EphemeralGroupID: eventString(data, "ephemeral_group_id"),
+		ParentToolCallID: eventString(data, "parent_tool_call_id"),
 		SuppressResult:   eventBool(data, "suppress_result"),
 	}
 }
@@ -760,14 +805,32 @@ func (m Model) renderMessages() string {
 		if m.shouldHideMessageAt(i, msg) {
 			continue
 		}
+		if b.Len() > 0 && isSubagentToolMessage(msg) {
+			trimTrailingBlankLines(&b)
+			b.WriteString("\n")
+		}
 		b.WriteString(m.renderMessageAt(i, msg, m.shouldShowReasoningAt(i, msg, lastUserIndex)))
-		b.WriteString("\n\n")
+		if isSubagentToolMessage(msg) {
+			b.WriteString("\n\n")
+		} else {
+			b.WriteString("\n\n")
+		}
 	}
 	if indicator := m.renderThinkingIndicator(); indicator != "" {
 		b.WriteString(indicator)
 		b.WriteString("\n\n")
 	}
 	return b.String()
+}
+
+func trimTrailingBlankLines(b *strings.Builder) {
+	text := strings.TrimRight(b.String(), "\n")
+	b.Reset()
+	b.WriteString(text)
+}
+
+func isSubagentToolMessage(msg Message) bool {
+	return msg.Role == "tool" && msg.ToolCall != nil && msg.ToolCall.Scope == "subagent"
 }
 
 func (m Model) renderThinkingIndicator() string {
@@ -868,21 +931,22 @@ func (m Model) renderToolMessage(msg Message, hideResult bool) string {
 	if isTodoWriteTool(tool.Name) {
 		return m.renderTodoWriteToolMessage(tool, status)
 	}
-	icon := toolIcon(status)
 	name := displayToolName(tool.Name, tool.RawArgs)
-	line := icon + " " + name
-	if strings.TrimSpace(tool.ArgsPreview) != "" {
-		line += "(" + tool.ArgsPreview + ")"
+	line := name
+	if args := toolArgsDisplay(tool.RawArgs, tool.ArgsPreview); args != "" {
+		line += "(" + args + ")"
 	}
+	if tool.Scope == "subagent" {
+		return ansiForeground(tuiPalette.muted) + renderSubagentToolStatus(line, m.messageWidth()) + "\x1b[0m"
+	}
+	icon := toolIcon(status)
+	line = icon + " " + line
 	result := status
 	if !hideResult && !tool.SuppressResult && strings.TrimSpace(tool.ResultPreview) != "" {
 		resultPrefix := result + " · "
 		result += " · " + alignToolResultPreview(tool.ResultPreview, lipgloss.Width("  ⎿ "+resultPrefix))
 	}
 	body := line + "\n  ⎿ " + result
-	if tool.Scope == "subagent" {
-		return ansiForeground(tuiPalette.muted) + renderSubagentToolStatus(body, m.messageWidth()) + "\x1b[0m"
-	}
 	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
 }
 
@@ -894,8 +958,9 @@ func renderSubagentToolStatus(body string, width int) string {
 	}
 	wrapped := wrapText(lines[0], width)
 	wrappedLines := strings.Split(wrapped, "\n")
+	prefix := strings.Repeat(" ", lipgloss.Width("   ⎿ "))
 	for i := range wrappedLines {
-		wrappedLines[i] = "  " + strings.TrimLeft(wrappedLines[i], " ")
+		wrappedLines[i] = prefix + strings.TrimLeft(wrappedLines[i], " ")
 	}
 	if len(lines) > 1 {
 		wrappedLines = append(wrappedLines, lines[1:]...)
@@ -965,6 +1030,40 @@ func parseTodoWriteTodos(rawArgs string) ([]todoDisplayItem, bool) {
 func isTodoWriteTool(name string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
 	return normalized == "todowrite"
+}
+
+func toolArgsDisplay(rawArgs, fallback string) string {
+	var args map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err == nil && len(args) > 0 {
+		keys := make([]string, 0, len(args))
+		for key := range args {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, key+": "+formatToolArgValue(args[key]))
+		}
+		return strings.Join(parts, ", ")
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func formatToolArgValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return v
+	case float64, bool:
+		return fmt.Sprint(v)
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprint(v)
+		}
+		return string(encoded)
+	}
 }
 
 func toolIcon(status string) string {

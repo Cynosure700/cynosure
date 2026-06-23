@@ -26,6 +26,7 @@ type ToolContext struct {
 	PersistedOutputReader agenttools.PersistedOutputReader
 	Todos                 []agenttools.TodoItem
 	Writer                EventWriter
+	ParentToolCallID      string
 }
 
 type ToolExecutionResult struct {

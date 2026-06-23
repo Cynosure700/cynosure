@@ -360,6 +360,43 @@ func (w *captureEventWriter) nonMetaEvents() []capturedEvent {
 	return out
 }
 
+func TestSubagentEventWriterForwardsParentToolCallIDAndOmitsChildToolCallCount(t *testing.T) {
+	writer := &captureEventWriter{}
+	childWriter := subagentEventWriter{parent: writer, runID: "subagent_1", parentToolCallID: "spawn_1"}
+
+	if err := childWriter.Event("meta", map[string]any{
+		"tool_call_count": 2,
+		"context_tokens":  48000,
+		"context_budget":  100000,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(writer.events) != 1 {
+		t.Fatalf("events = %#v, want one forwarded meta event", writer.events)
+	}
+	payload, _ := writer.events[0].data.(map[string]any)
+	if _, ok := payload["tool_call_count"]; ok {
+		t.Fatalf("payload = %#v, should not forward child tool_call_count", payload)
+	}
+	for _, key := range []string{"context_tokens", "context_budget"} {
+		if _, ok := payload[key]; !ok {
+			t.Fatalf("payload = %#v, want forwarded %s", payload, key)
+		}
+	}
+
+	if err := childWriter.Event(toolCallStartEvent, map[string]any{
+		"tool_call_id": "child_tool_1",
+		"tool_name":    "read_file",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	payload, _ = writer.events[1].data.(map[string]any)
+	if payload["parent_tool_call_id"] != "spawn_1" {
+		t.Fatalf("payload = %#v, want parent_tool_call_id spawn_1", payload)
+	}
+}
+
 func nonToolLifecycleEvents(events []capturedEvent) []capturedEvent {
 	out := make([]capturedEvent, 0, len(events))
 	for _, e := range events {
@@ -1453,6 +1490,11 @@ func TestRespondToConversation_SubagentForwardsToolStatusWithoutResultAndClearsG
 			}
 			if strings.Contains(stringValue(payload["result_preview"]), "secret subagent tool result") {
 				t.Fatalf("child done leaked result preview: %#v", payload)
+			}
+		}
+		if event.name == "meta" && payload["scope"] == "subagent" {
+			if _, ok := payload["tool_call_count"]; ok {
+				t.Fatalf("subagent meta payload = %#v, should not forward child tool_call_count to parent UI", payload)
 			}
 		}
 		if event.name == "tool_call_group_clear" {

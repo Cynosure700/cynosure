@@ -214,15 +214,16 @@ func (s *Service) executeChildToolCall(ctx context.Context, tools *ToolRegistry,
 }
 
 type subagentEventWriter struct {
-	parent EventWriter
-	runID  string
+	parent           EventWriter
+	runID            string
+	parentToolCallID string
 }
 
 func newSubagentEventWriter(parent ToolContext, runID string) EventWriter {
 	if parent.Writer == nil {
 		return nil
 	}
-	return subagentEventWriter{parent: parent.Writer, runID: runID}
+	return subagentEventWriter{parent: parent.Writer, runID: runID, parentToolCallID: parent.ParentToolCallID}
 }
 
 func (w subagentEventWriter) Event(name string, data any) error {
@@ -237,6 +238,7 @@ func (w subagentEventWriter) Event(name string, data any) error {
 		return nil
 	}
 	if name == "meta" {
+		delete(payload, "tool_call_count")
 		return w.parent.Event(name, payload)
 	}
 	if id, _ := payload["tool_call_id"].(string); id != "" {
@@ -245,6 +247,9 @@ func (w subagentEventWriter) Event(name string, data any) error {
 	payload["scope"] = "subagent"
 	payload["subagent_run_id"] = w.runID
 	payload["ephemeral_group_id"] = w.runID
+	if w.parentToolCallID != "" {
+		payload["parent_tool_call_id"] = w.parentToolCallID
+	}
 	payload["suppress_result"] = true
 	delete(payload, "result_preview")
 	return w.parent.Event(name, payload)
