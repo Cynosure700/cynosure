@@ -50,7 +50,7 @@ func TestValidateToolArgs_IntegerAcceptsWholeFloat(t *testing.T) {
 func TestValidateToolArgs_EnumViolation(t *testing.T) {
 	err := ValidateToolArgs("todo_write", schemaOf(t, "todo_write"), map[string]any{
 		"todos": []any{
-			map[string]any{"id": "1", "content": "do it", "status": "not_a_status"},
+			map[string]any{"id": "1", "content": "do it", "activeForm": "doing it", "status": "not_a_status"},
 		},
 	})
 	if err == nil {
@@ -61,7 +61,7 @@ func TestValidateToolArgs_EnumViolation(t *testing.T) {
 func TestValidateToolArgs_NestedRequired(t *testing.T) {
 	err := ValidateToolArgs("todo_write", schemaOf(t, "todo_write"), map[string]any{
 		"todos": []any{
-			map[string]any{"id": "1", "content": "missing status"},
+			map[string]any{"id": "1", "content": "missing status", "activeForm": "missing status"},
 		},
 	})
 	if err == nil {
@@ -69,10 +69,21 @@ func TestValidateToolArgs_NestedRequired(t *testing.T) {
 	}
 }
 
+func TestValidateToolArgs_NestedRequiredActiveForm(t *testing.T) {
+	err := ValidateToolArgs("todo_write", schemaOf(t, "todo_write"), map[string]any{
+		"todos": []any{
+			map[string]any{"id": "1", "content": "missing activeForm", "status": TodoStatusPending},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing nested required field activeForm")
+	}
+}
+
 func TestValidateToolArgs_Valid(t *testing.T) {
 	err := ValidateToolArgs("todo_write", schemaOf(t, "todo_write"), map[string]any{
 		"todos": []any{
-			map[string]any{"id": "1", "content": "do it", "status": TodoStatusPending},
+			map[string]any{"id": "1", "content": "do it", "activeForm": "doing it", "status": TodoStatusPending},
 		},
 	})
 	if err != nil {

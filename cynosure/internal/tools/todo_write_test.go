@@ -8,9 +8,9 @@ import (
 
 func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
 	result, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
-		map[string]any{"id": "1", "content": "梳理需求", "status": "completed"},
-		map[string]any{"id": "2", "content": "实现功能", "status": "in_progress"},
-		map[string]any{"id": "3", "content": "运行测试", "status": "pending"},
+		map[string]any{"id": "1", "content": "梳理需求", "activeForm": "梳理需求中", "status": "completed"},
+		map[string]any{"id": "2", "content": "实现功能", "activeForm": "实现功能中", "status": "in_progress"},
+		map[string]any{"id": "3", "content": "运行测试", "activeForm": "运行测试中", "status": "pending"},
 	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -19,9 +19,9 @@ func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
 		t.Fatalf("unexpected summary: %q", result.Output)
 	}
 	expected := []TodoItem{
-		{ID: "1", Content: "梳理需求", Status: "completed"},
-		{ID: "2", Content: "实现功能", Status: "in_progress"},
-		{ID: "3", Content: "运行测试", Status: "pending"},
+		{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"},
+		{ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"},
+		{ID: "3", Content: "运行测试", ActiveForm: "运行测试中", Status: "pending"},
 	}
 	if len(result.Todos) != len(expected) {
 		t.Fatalf("expected %d todos, got %#v", len(expected), result.Todos)
@@ -48,7 +48,7 @@ func TestHandleTodoWrite_AllowsEmptyTodoList(t *testing.T) {
 
 func TestHandleTodoWrite_RejectsInvalidStatus(t *testing.T) {
 	_, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
-		map[string]any{"id": "1", "content": "实现功能", "status": "blocked"},
+		map[string]any{"id": "1", "content": "实现功能", "activeForm": "实现功能中", "status": "blocked"},
 	}})
 	if err == nil {
 		t.Fatalf("expected invalid status error")
@@ -60,12 +60,24 @@ func TestHandleTodoWrite_RejectsInvalidStatus(t *testing.T) {
 
 func TestHandleTodoWrite_RejectsMissingContent(t *testing.T) {
 	_, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
-		map[string]any{"id": "1", "status": "pending"},
+		map[string]any{"id": "1", "activeForm": "实现功能中", "status": "pending"},
 	}})
 	if err == nil {
 		t.Fatalf("expected missing content error")
 	}
 	if !strings.Contains(err.Error(), "todos[0].content is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHandleTodoWrite_RejectsMissingActiveForm(t *testing.T) {
+	_, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
+		map[string]any{"id": "1", "content": "实现功能", "status": "pending"},
+	}})
+	if err == nil {
+		t.Fatalf("expected missing activeForm error")
+	}
+	if !strings.Contains(err.Error(), "todos[0].activeForm is required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -13,9 +13,10 @@ const (
 )
 
 type TodoItem struct {
-	ID      string `json:"id"`
-	Content string `json:"content"`
-	Status  string `json:"status"`
+	ID         string `json:"id"`
+	Content    string `json:"content"`
+	ActiveForm string `json:"activeForm"`
+	Status     string `json:"status"`
 }
 
 type TodoWriteResult struct {
@@ -38,9 +39,11 @@ func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult
 		}
 		id, _ := item["id"].(string)
 		content, _ := item["content"].(string)
+		activeForm, _ := item["activeForm"].(string)
 		status, _ := item["status"].(string)
 		id = strings.TrimSpace(id)
 		content = strings.TrimSpace(content)
+		activeForm = strings.TrimSpace(activeForm)
 		status = strings.TrimSpace(status)
 		if id == "" {
 			return TodoWriteResult{}, fmt.Errorf("todos[%d].id is required", i)
@@ -48,10 +51,13 @@ func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult
 		if content == "" {
 			return TodoWriteResult{}, fmt.Errorf("todos[%d].content is required", i)
 		}
+		if activeForm == "" {
+			return TodoWriteResult{}, fmt.Errorf("todos[%d].activeForm is required", i)
+		}
 		if !isValidTodoStatus(status) {
 			return TodoWriteResult{}, fmt.Errorf("todos[%d].status must be one of pending, in_progress, completed", i)
 		}
-		todos = append(todos, TodoItem{ID: id, Content: content, Status: status})
+		todos = append(todos, TodoItem{ID: id, Content: content, ActiveForm: activeForm, Status: status})
 		counts[status]++
 	}
 

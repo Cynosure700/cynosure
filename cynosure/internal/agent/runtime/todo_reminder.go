@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	todoWriteReminderThreshold = 5
-	todoWriteReminderText      = "You have not called todo_write for 3 consecutive model rounds. This is a reminder — NOT an obligation to call it. Only call todo_write when you have actual task changes to record (new tasks, status updates, or plan changes). If no tasks need creating or updating, do NOT call todo_write — proceed normally."
+	todoWriteReminderThreshold = 10
+	todoWriteReminderText      = "The task tools haven't been used recently. If you're the type of person who likes to use task tracking to keep track of your progress, you can use todo_write to add new tasks and todo_write to update task status (set to in_progress when starting, completed when done). Please consider cleaning up the task list if it is not needed."
 )
 
 func toolCallsInclude(toolCalls []openai.ToolCall, name string) bool {

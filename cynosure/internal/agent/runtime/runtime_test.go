@@ -1161,7 +1161,7 @@ func TestRespondToConversation_StreamsToolCallsAcrossChunks(t *testing.T) {
 }
 
 func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
-	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"}]}`
+	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","activeForm":"梳理需求中","status":"completed"},{"id":"2","content":"实现功能","activeForm":"实现功能中","status":"in_progress"}]}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "todo_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: todoArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
@@ -1186,7 +1186,7 @@ func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []agenttools.TodoItem{{ID: "1", Content: "梳理需求", Status: "completed"}, {ID: "2", Content: "实现功能", Status: "in_progress"}}
+	expected := []agenttools.TodoItem{{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"}, {ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"}}
 	if len(observedTodos) != len(expected) {
 		t.Fatalf("expected observed todos %#v, got %#v", expected, observedTodos)
 	}
@@ -1198,7 +1198,7 @@ func TestRespondToConversation_TodoWriteUpdatesLoopStateTodos(t *testing.T) {
 }
 
 func TestRespondToConversation_TodoListReadsLatestTodoWriteState(t *testing.T) {
-	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","status":"completed"},{"id":"2","content":"实现功能","status":"in_progress"}]}`
+	todoArgs := `{"todos":[{"id":"1","content":"梳理需求","activeForm":"梳理需求中","status":"completed"},{"id":"2","content":"实现功能","activeForm":"实现功能中","status":"in_progress"}]}`
 	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
 		{
 			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "todo_write_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: todoArgs}}}}, FinishReason: openai.FinishReasonToolCalls}}},
@@ -2813,7 +2813,7 @@ func bashToolRound(id string) []openai.ChatCompletionStreamResponse {
 }
 
 func todoWriteToolRound(id string) []openai.ChatCompletionStreamResponse {
-	return []openai.ChatCompletionStreamResponse{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: id, Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: `{"todos":[{"id":"1","content":"更新计划","status":"in_progress"}]}`}}}}, FinishReason: openai.FinishReasonToolCalls}}}}
+	return []openai.ChatCompletionStreamResponse{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: id, Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "todo_write", Arguments: `{"todos":[{"id":"1","content":"更新计划","activeForm":"更新计划中","status":"in_progress"}]}`}}}}, FinishReason: openai.FinishReasonToolCalls}}}}
 }
 
 func requestContainsTodoWriteReminder(req openai.ChatCompletionRequest) bool {

@@ -126,7 +126,7 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"name"},
 	}),
-	toolSpec("todo_write", "Create or update the current task plan. Use this tool to track progress on multi-step tasks.", map[string]any{
+	toolSpec("todo_write", "Update the todo list for the current session. To be used proactively and often to track progress and pending tasks. Make sure that at least one task is in_progress at all times. Always provide both content (imperative) and activeForm (present continuous) for each task.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"todos": map[string]any{
@@ -134,11 +134,12 @@ var baseToolSpecs = []ToolSpec{
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"id":      map[string]any{"type": "string"},
-						"content": map[string]any{"type": "string"},
-						"status":  map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},
+						"id":         map[string]any{"type": "string"},
+						"content":    map[string]any{"type": "string", "description": "The task description in imperative form (e.g. \"Run tests\")."},
+						"activeForm": map[string]any{"type": "string", "description": "The task description in present continuous form (e.g. \"Running tests\")."},
+						"status":     map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},
 					},
-					"required": []string{"id", "content", "status"},
+					"required": []string{"id", "content", "activeForm", "status"},
 				},
 			},
 		},
