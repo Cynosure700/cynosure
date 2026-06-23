@@ -1,0 +1,20 @@
+cynosure/assets/system_prompt.md
+  h_3b65c6a993f880 80
+cynosure/assets/prompts/general_subagent.md
+  h_3b65c6a993f880 9
+cynosure/assets/prompts/explore_subagent.md
+  h_3b65c6a993f880 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c519e978a9dd5233cf70b6d7df05d30b9f06e4eb",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
