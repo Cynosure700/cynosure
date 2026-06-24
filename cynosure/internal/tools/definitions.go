@@ -137,7 +137,7 @@ var baseToolSpecs = []ToolSpec{
 						"id":         map[string]any{"type": "string", "description": "Required stable id for this todo item. Create a new id when adding a new todo, using simple sequential numbers such as 1, 2, 3, 4. When updating an existing todo, reuse the existing todo's id instead of generating a new one."},
 						"content":    map[string]any{"type": "string", "description": "The task description in imperative form (e.g. \"Run tests\")."},
 						"activeForm": map[string]any{"type": "string", "description": "The task description in present continuous form (e.g. \"Running tests\")."},
-						"status":     map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},
+						"status":     map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}, "description": "Current status of the task. Only one task may be in_progress at any given time; mark a task completed immediately once it is done before starting the next one."},
 					},
 					"required": []string{"id", "content", "activeForm", "status"},
 				},
