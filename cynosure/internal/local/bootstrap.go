@@ -12,6 +12,7 @@ import (
 	"cynosure/internal/agent/storage"
 	"cynosure/internal/assistant"
 	"cynosure/internal/config"
+	"cynosure/internal/gitcontext"
 	"cynosure/internal/idgen"
 	"cynosure/internal/llm"
 	"cynosure/internal/logger"
@@ -72,6 +73,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load CYNOSURE.MD context: %w", err)
 	}
+	gitStatus := gitcontext.CollectAndFormat(cfg.WorkspaceRoot)
 	store, err := NewStoreWithMemory(cfg.WorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("init memory store: %w", err)
@@ -83,6 +85,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	runtimeService.SetBuiltinSkills(builtinSkills)
 	runtimeService.SetBasePrompt(basePrompt)
 	runtimeService.SetCynosureMarkdownContext(cynosureMarkdown)
+	runtimeService.SetGitStatusContext(gitStatus)
 	mcpManager := mcp.NewManager()
 	workspaceMCPServers, err := mcp.LoadWorkspaceConfig(config.WorkspaceMCPConfigPath(cfg.WorkspaceRoot))
 	if err != nil {

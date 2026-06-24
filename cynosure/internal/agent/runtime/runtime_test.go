@@ -1996,6 +1996,42 @@ func TestBuildSystemPromptIncludesCynosureMarkdownContext(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPromptIncludesGitStatusContext(t *testing.T) {
+	cfg := testAppConfig(t)
+	service := &Service{Cfg: cfg}
+	service.SetGitStatusContext("This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.\n\nCurrent branch: main\n\nGit user: dunxing.7")
+
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_git", Username: "git-user"}, nil, "")
+	for _, want := range []string{
+		"<git-status>",
+		"This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
+		"Current branch: main",
+		"Git user: dunxing.7",
+		"</git-status>",
+	} {
+		if !contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
+func TestBuildSystemPromptInjectsCurrentDayEveryTurn(t *testing.T) {
+	cfg := testAppConfig(t)
+	service := &Service{Cfg: cfg}
+
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_day", Username: "day-user"}, nil, "")
+	today := time.Now().Format("2006-01-02")
+	for _, want := range []string{
+		"<system-reminder>",
+		"current_day: " + today,
+		"</system-reminder>",
+	} {
+		if !contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
 func TestBuildSkillSnapshotUsesLocalSkillsWithoutStoreLookup(t *testing.T) {
 	localSkills := sessions.NewSkillLoader()
 	localSkills.LoadFromEntries(map[string]*sessions.SkillEntry{

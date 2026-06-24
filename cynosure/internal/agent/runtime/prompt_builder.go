@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -43,6 +44,8 @@ func (s *Service) buildSystemPromptWithMemory(user storage.User, snapshot *agent
 		Surface:           fmt.Sprintf("the local TUI session for user %s", user.Username),
 		SkillDescriptions: loader.GetDescriptions(),
 		MemorySection:     memorySection,
+		GitStatus:         s.GitStatus,
+		CurrentDate:       time.Now().Format("2006-01-02"),
 		WorkingDirectory:  strings.TrimSpace(s.Cfg.WorkspaceRoot),
 		CynosureMarkdown: assistant.CynosureMarkdownContext{
 			UserPath:         s.CynosureMarkdown.UserPath,

@@ -124,6 +124,8 @@ type PromptOptions struct {
 	Surface           string
 	SkillDescriptions string
 	MemorySection     string
+	GitStatus         string
+	CurrentDate       string
 	WorkingDirectory  string
 	CynosureMarkdown  CynosureMarkdownContext
 	ToolNames         []string
@@ -165,8 +167,8 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		)
 	}
 	sections = append(sections, renderTag("workspace", strings.Join(workspaceLines, "\n")))
-	if linkContext := renderCynosureMarkdownContext(opts.CynosureMarkdown); linkContext != "" {
-		sections = append(sections, renderTag("system-reminder", linkContext))
+	if reminder := renderSystemReminder(opts.CurrentDate, opts.CynosureMarkdown); reminder != "" {
+		sections = append(sections, renderTag("system-reminder", reminder))
 	}
 
 	toolNames := make([]string, 0, len(opts.ToolNames))
@@ -199,11 +201,26 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		sections = append(sections, renderTag("skills", skillBody))
 	}
 
+	if gitStatus := strings.TrimSpace(opts.GitStatus); gitStatus != "" {
+		sections = append(sections, renderTag("git-status", gitStatus))
+	}
+
 	if memory := strings.TrimSpace(opts.MemorySection); memory != "" {
 		sections = append(sections, renderTag("memory", strings.Join([]string{memorySectionGuidance, memory}, "\n\n")))
 	}
 
 	return strings.Join(sections, "\n\n")
+}
+
+func renderSystemReminder(currentDate string, ctx CynosureMarkdownContext) string {
+	parts := make([]string, 0, 2)
+	if date := strings.TrimSpace(currentDate); date != "" {
+		parts = append(parts, "current_day: "+date)
+	}
+	if linkContext := renderCynosureMarkdownContext(ctx); linkContext != "" {
+		parts = append(parts, linkContext)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func renderCynosureMarkdownContext(ctx CynosureMarkdownContext) string {

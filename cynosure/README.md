@@ -29,6 +29,7 @@ cynosure/
     ├── assistant/           # system prompt 拼装
     ├── cli/                 # 命令行参数解析
     ├── config/              # 配置与 runtime 路径
+    ├── gitcontext/          # 启动期 Git 快照采集与格式化
     ├── idgen/               # ID 生成
     ├── llm/                 # OpenAI 兼容 LLM 客户端与错误分类
     ├── local/               # TUI bootstrap 与本地内存 Store
@@ -217,9 +218,10 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 - `<identity>`：基础提示词，来自嵌入二进制的 `assets/system_prompt.md`，若存在 `~/.cynosure/system_prompt.md` 则优先使用该覆盖文件。内容参考 `cn/system.md` 的分域设计，并按 Cynosure 当前能力划分为 `定义角色`、`安全性声明`、`帮助文档`、`输出风格`、`任务管理`、`工具调用`、`环境信息` 七类；其中工具与环境部分只描述 Cynosure 当前真实存在的能力和运行期动态注入边界。
 - `<workspace>`：注入 Surface 与当前工作目录。
-- `<system-reminder>`：在存在 `CYNOSURE.MD` 时注入用户级与工作区级说明，以及重要指令提醒。
+- `<system-reminder>`：首行注入 `current_day: <YYYY-MM-DD>`，每轮对话用当前日期实时刷新；在存在 `CYNOSURE.MD` 时再追加用户级与工作区级说明，以及重要指令提醒。当日期与 `CYNOSURE.MD` 均缺失时整段省略。
 - `<tools>`：注入本次会话实际可用的工具名清单（含 MCP 工具）。
 - `<skills>`：注入加载到的 Skill 摘要，模型按需 `load_skill` 加载正文。
+- `<git-status>`：在工作区是 Git 仓库时，注入对话开始时采集的 Git 快照（当前分支、主分支、工作区变更状态、最近 5 条提交、Git 用户名）；`status` 超过 2000 字符会截断并提示。该段落位于 `<memory>` 之前；非 Git 仓库、Git 未安装或采集失败时整段省略。快照在进程启动时采集一次，会话过程中不刷新，相关代码见 `internal/gitcontext`。
 - `<memory>`：开启记忆时注入按当前对话筛选出的项目记忆。
 
 基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
@@ -400,4 +402,10 @@ docs/上下文压缩优化设计文档.md
 
 ```text
 docs/会话记忆提取与更新机制调整设计文档.md
+```
+
+Git 环境上下文注入设计文档位于：
+
+```text
+docs/Git环境上下文注入设计文档.md
 ```

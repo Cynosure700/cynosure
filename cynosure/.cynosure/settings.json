@@ -11,7 +11,8 @@
       "mkdir *",
       "find *",
       "cat *",
-      "for *"
+      "for *",
+      "git *"
     ]
   }
 }

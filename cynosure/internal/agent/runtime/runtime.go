@@ -63,6 +63,7 @@ type Service struct {
 	BasePrompt        string
 	Prompts           FunctionalPrompts
 	CynosureMarkdown  config.CynosureMarkdownContext
+	GitStatus         string
 	Hooks             *HookManager
 	ContextCompressor *compression.Compressor
 	EnableMemory      bool
@@ -108,6 +109,10 @@ func (s *Service) SetBasePrompt(prompt string) {
 
 func (s *Service) SetCynosureMarkdownContext(ctx config.CynosureMarkdownContext) {
 	s.CynosureMarkdown = ctx
+}
+
+func (s *Service) SetGitStatusContext(text string) {
+	s.GitStatus = text
 }
 
 func (s *Service) SetMCPManager(manager *mcp.Manager) {
