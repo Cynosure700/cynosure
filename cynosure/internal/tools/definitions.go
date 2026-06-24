@@ -126,7 +126,7 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"name"},
 	}),
-	toolSpec("todo_write", "Update the todo list for the current session. To be used proactively and often to track progress and pending tasks. Make sure that at least one task is in_progress at all times. Always provide both content (imperative) and activeForm (present continuous) for each task.", map[string]any{
+	toolSpec("todo_write", "Update the todo list for the current session. To be used proactively and often to track progress and pending tasks. Make sure that at least one task is in_progress at all times. Always provide both content (imperative) and activeForm (present continuous) for each task. Before calling this tool, first read the task status in the current session and check whether an update is needed; if no update is needed, do not call this tool.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"todos": map[string]any{
