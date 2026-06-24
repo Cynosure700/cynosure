@@ -548,18 +548,92 @@ func renderResumeCandidates(sessions []storage.ResumableSession) string {
 	return b.String()
 }
 
+// resumeToolResultPreviewMaxLines 与 runtime 在线流式时 previewToolResult 的
+// 行数上限保持一致，确保 /resume 还原出的工具结果预览与实时渲染一致。
+const resumeToolResultPreviewMaxLines = 3
+
+// messagesForDisplay 把持久化的展示历史还原为 TUI 消息列表，原样重建实时会话：
+// user/system/error 文本、assistant 文本，以及每次工具调用对应的工具行（含状态
+// 图标与结果预览）。工具结果通过 tool_call_id 与 assistant 的 ToolCalls 关联，
+// 因此即便 tool 结果消息排在 assistant 之后，也能在工具行上正确回填状态与预览。
 func messagesForDisplay(history []storage.Message) []Message {
 	if len(history) == 0 {
 		return nil
 	}
+	toolResults := make(map[string]string, len(history))
+	for _, msg := range history {
+		if msg.Role == "tool" && strings.TrimSpace(msg.ToolCallID) != "" {
+			toolResults[msg.ToolCallID] = msg.Content
+		}
+	}
 	messages := make([]Message, 0, len(history))
 	for _, msg := range history {
 		switch msg.Role {
-		case "user", "assistant", "system", "error":
+		case "user", "system", "error":
 			messages = append(messages, Message{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
+		case "assistant":
+			// 实时流式时空文本的 assistant 轮次不会产生文本气泡，只展示工具行，
+			// 还原时保持一致，避免出现空白 assistant 行。
+			if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ReasoningContent) != "" {
+				messages = append(messages, Message{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
+			}
+			for _, call := range msg.ToolCalls {
+				messages = append(messages, reconstructToolCallMessage(call, toolResults[call.ID]))
+			}
 		}
 	}
 	return messages
+}
+
+// reconstructToolCallMessage 由 assistant 的工具调用及其结果消息重建工具行视图，
+// 字段映射与实时 emitToolCallStart/Done 一致：RawArgs 携带原始参数（渲染时解析
+// 为参数预览），Status/ResultPreview 来源于持久化的工具结果消息。
+func reconstructToolCallMessage(call storage.MessageToolCall, resultContent string) Message {
+	view := ToolCallView{
+		ID:      call.ID,
+		Name:    call.Function.Name,
+		RawArgs: call.Function.Arguments,
+		Status:  "running",
+	}
+	if strings.TrimSpace(resultContent) != "" {
+		status, preview := parseToolResultContent(resultContent)
+		if status != "" {
+			view.Status = status
+		}
+		view.ResultPreview = preview
+	}
+	return Message{Role: "tool", ToolCall: &view}
+}
+
+// parseToolResultContent 解析持久化的工具结果消息内容（形如
+// {"status":...,"result":...}），返回状态与裁剪后的结果预览；无法解析为 JSON 时
+// 退化为对原始内容做行截断。
+func parseToolResultContent(content string) (status, preview string) {
+	var outcome struct {
+		Status string `json:"status"`
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &outcome); err != nil {
+		return "", truncateResultPreviewLines(content, resumeToolResultPreviewMaxLines)
+	}
+	return outcome.Status, truncateResultPreviewLines(outcome.Result, resumeToolResultPreviewMaxLines)
+}
+
+// truncateResultPreviewLines 复刻 runtime.truncatePreviewLines 的行截断规则，保证
+// /resume 还原的工具结果预览与实时一致。
+func truncateResultPreviewLines(text string, maxLines int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	omitted := len(lines) - maxLines
+	kept := append([]string(nil), lines[:maxLines]...)
+	kept = append(kept, fmt.Sprintf("... + %d lines", omitted))
+	return strings.Join(kept, "\n")
 }
 
 func renderSkillDetails(skills []sessions.SkillSummary, fallbackCount int) string {

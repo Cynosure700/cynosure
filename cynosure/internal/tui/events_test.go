@@ -436,9 +436,16 @@ func TestResumeCommandShowsCurrentWorkspaceSessions(t *testing.T) {
 
 func TestResumeSelectionRestoresConversationAndDisplayHistory(t *testing.T) {
 	resumer := &fakeSessionResumer{
-		sessions: []storage.ResumableSession{{SessionID: "session-1", Title: "第一段会话", UpdatedAt: time.Now(), MessageCount: 3}},
+		sessions: []storage.ResumableSession{{SessionID: "session-1", Title: "第一段会话", UpdatedAt: time.Now(), MessageCount: 4}},
 		conv:     storage.Conversation{ID: "conv_1", SessionID: "session-1", UserID: "local-user", Title: "第一段会话"},
-		history:  []storage.Message{{Role: "user", Content: "hello"}, {Role: "tool", Content: "large result"}, {Role: "assistant", Content: "hi"}},
+		history: []storage.Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "let me check", ToolCalls: []storage.MessageToolCall{
+				{ID: "call_1", Type: "function", Function: storage.MessageFunctionCall{Name: "read_file", Arguments: `{"path":"README.md"}`}},
+			}},
+			{Role: "tool", ToolCallID: "call_1", Content: `{"status":"success","result":"file contents"}`},
+			{Role: "assistant", Content: "hi"},
+		},
 	}
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", User: storage.User{ID: "local-user"}, Resumer: resumer})
 	app.handleSlashCommand("/resume")
@@ -452,14 +459,69 @@ func TestResumeSelectionRestoresConversationAndDisplayHistory(t *testing.T) {
 	if app.resumeSelecting {
 		t.Fatal("resumeSelecting should be false after successful restore")
 	}
-	rendered := app.renderMessages()
-	for _, want := range []string{"hello", "hi"} {
+	rendered := plainTerminalText(app.renderMessages())
+	// 原样还原历史会话：user/assistant 文本以及工具调用行都应被展示。
+	for _, want := range []string{"hello", "let me check", "README.md", "file contents", "hi"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered messages = %q, want %q", rendered, want)
 		}
 	}
-	if strings.Contains(rendered, "large result") {
-		t.Fatalf("rendered messages = %q, should not include tool result", rendered)
+}
+
+func TestResumeReproducesToolCallsInOrder(t *testing.T) {
+	history := []storage.Message{
+		{Role: "user", Content: "请运行测试"},
+		{Role: "assistant", Content: "我先跑一下测试。", ToolCalls: []storage.MessageToolCall{
+			{ID: "call_1", Type: "function", Function: storage.MessageFunctionCall{Name: "bash", Arguments: `{"command":"go test ./..."}`}},
+		}},
+		{Role: "tool", ToolCallID: "call_1", Content: `{"status":"success","result":"ok cynosure/internal/tui 0.42s"}`},
+		{Role: "assistant", Content: "测试通过了。"},
+	}
+	resumer := &fakeSessionResumer{
+		sessions: []storage.ResumableSession{{SessionID: "session-1", Title: "会话", UpdatedAt: time.Now(), MessageCount: len(history)}},
+		conv:     storage.Conversation{ID: "conv_1", SessionID: "session-1", UserID: "local-user", Title: "会话"},
+		history:  history,
+	}
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project", User: storage.User{ID: "local-user"}, Resumer: resumer})
+	app.handleSlashCommand("/resume")
+	if handled := app.handleResumeSelection("1"); !handled {
+		t.Fatal("resume selection was not handled")
+	}
+
+	rendered := plainTerminalText(app.renderMessages())
+	for _, want := range []string{"请运行测试", "我先跑一下测试。", "go test ./...", "ok cynosure/internal/tui 0.42s", "测试通过了。"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want it to contain %q", rendered, want)
+		}
+	}
+
+	// 工具调用行应被还原，并携带成功状态图标与结果预览。
+	var toolMsg *Message
+	for i := range app.messages {
+		if app.messages[i].Role == "tool" && app.messages[i].ToolCall != nil {
+			toolMsg = &app.messages[i]
+			break
+		}
+	}
+	if toolMsg == nil {
+		t.Fatalf("messages = %#v, want a reconstructed tool message", app.messages)
+	}
+	if toolMsg.ToolCall.Name != "bash" {
+		t.Fatalf("tool name = %q, want bash", toolMsg.ToolCall.Name)
+	}
+	if toolMsg.ToolCall.Status != "success" {
+		t.Fatalf("tool status = %q, want success", toolMsg.ToolCall.Status)
+	}
+	if !strings.Contains(rendered, "✓") {
+		t.Fatalf("rendered = %q, want success icon", rendered)
+	}
+
+	// 顺序应与历史一致：assistant 文本在工具行之前，最终回答在工具行之后。
+	assistantIdx := strings.Index(rendered, "我先跑一下测试。")
+	toolIdx := strings.Index(rendered, "go test ./...")
+	finalIdx := strings.Index(rendered, "测试通过了。")
+	if !(assistantIdx < toolIdx && toolIdx < finalIdx) {
+		t.Fatalf("ordering wrong: assistant=%d tool=%d final=%d", assistantIdx, toolIdx, finalIdx)
 	}
 }
 
