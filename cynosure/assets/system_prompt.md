@@ -62,6 +62,7 @@
   1. 状态流转为 pending → in_progress → completed；
   2. 每个任务需要两种形式：content（祈使句，如 "Run tests"）和 activeForm（进行时，如 "Running tests"）；
   3. 同一时刻恰好一个任务处于 in_progress（不多不少）。
+  4. 成功更新后不要重复提交相同 todo 列表，除非状态发生变化
 - 任务完成要求（与 `TaskUpdate` 一致）：
   1. 仅在完全完成时标记 completed；
   2. 测试失败、实现不完整、有未解决错误时，保持 in_progress；

@@ -134,7 +134,7 @@ var baseToolSpecs = []ToolSpec{
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"id":         map[string]any{"type": "string"},
+						"id":         map[string]any{"type": "string", "description": "Required stable id for this todo item. Create a new id when adding a new todo, using simple sequential numbers such as 1, 2, 3, 4. When updating an existing todo, reuse the existing todo's id instead of generating a new one."},
 						"content":    map[string]any{"type": "string", "description": "The task description in imperative form (e.g. \"Run tests\")."},
 						"activeForm": map[string]any{"type": "string", "description": "The task description in present continuous form (e.g. \"Running tests\")."},
 						"status":     map[string]any{"type": "string", "enum": []string{TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted}},

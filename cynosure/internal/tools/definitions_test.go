@@ -187,3 +187,24 @@ func TestTodoListToolDefinitionIsNoArgumentReadOnlyQuery(t *testing.T) {
 	}
 	t.Fatalf("expected AllToolDefs to include todo_list")
 }
+
+func TestTodoWriteToolDefinitionGuidesSequentialIDs(t *testing.T) {
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil || tool.Function.Name != "todo_write" {
+			continue
+		}
+		schema := string(RawSchemaFromParameters(tool.Function.Parameters))
+		for _, want := range []string{
+			"Create a new id when adding a new todo",
+			"When updating an existing todo",
+			"reuse the existing todo's id",
+			"1, 2, 3, 4",
+		} {
+			if !strings.Contains(schema, want) {
+				t.Fatalf("expected todo_write schema to mention %q, got %s", want, schema)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected AllToolDefs to include todo_write")
+}

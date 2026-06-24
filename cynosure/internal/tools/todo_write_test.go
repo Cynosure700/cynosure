@@ -2,11 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
 
-func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
+const wantTodoStatusPrefix = "当前任务状态信息为:"
+
+func TestHandleTodoWrite_ReturnsJSONTodosAndParsedTodos(t *testing.T) {
 	result, err := ExecuteTodoWrite(context.Background(), map[string]any{"todos": []any{
 		map[string]any{"id": "1", "content": "梳理需求", "activeForm": "梳理需求中", "status": "completed"},
 		map[string]any{"id": "2", "content": "实现功能", "activeForm": "实现功能中", "status": "in_progress"},
@@ -15,13 +18,19 @@ func TestHandleTodoWrite_ReturnsSummaryAndParsedTodos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Output != "Todo list updated: 3 items (pending: 1, in_progress: 1, completed: 1)." {
-		t.Fatalf("unexpected summary: %q", result.Output)
-	}
 	expected := []TodoItem{
 		{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"},
 		{ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"},
 		{ID: "3", Content: "运行测试", ActiveForm: "运行测试中", Status: "pending"},
+	}
+	payload := parseTodoStatusOutput(t, result.Output)
+	if len(payload.Todos) != len(expected) {
+		t.Fatalf("expected output todos %#v, got %#v", expected, payload.Todos)
+	}
+	for i := range expected {
+		if payload.Todos[i] != expected[i] {
+			t.Fatalf("output todo[%d] expected %#v, got %#v", i, expected[i], payload.Todos[i])
+		}
 	}
 	if len(result.Todos) != len(expected) {
 		t.Fatalf("expected %d todos, got %#v", len(expected), result.Todos)
@@ -38,8 +47,9 @@ func TestHandleTodoWrite_AllowsEmptyTodoList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Output != "Todo list updated: 0 items (pending: 0, in_progress: 0, completed: 0)." {
-		t.Fatalf("unexpected summary: %q", result.Output)
+	payload := parseTodoStatusOutput(t, result.Output)
+	if payload.Todos == nil || len(payload.Todos) != 0 {
+		t.Fatalf("expected empty output todos, got %#v", payload.Todos)
 	}
 	if len(result.Todos) != 0 {
 		t.Fatalf("expected empty todos, got %#v", result.Todos)
@@ -84,23 +94,27 @@ func TestHandleTodoWrite_RejectsMissingActiveForm(t *testing.T) {
 
 func TestHandleTodoList_ReturnsCurrentTodosFromContext(t *testing.T) {
 	ctx := WithTodoSnapshot(context.Background(), []TodoItem{
-		{ID: "1", Content: "梳理需求", Status: "completed"},
-		{ID: "2", Content: "实现功能", Status: "in_progress"},
-		{ID: "3", Content: "运行测试", Status: "pending"},
+		{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"},
+		{ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"},
+		{ID: "3", Content: "运行测试", ActiveForm: "运行测试中", Status: "pending"},
 	})
 
 	output, err := handleTodoList(ctx, map[string]any{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, want := range []string{
-		"Todo list: 3 items (pending: 1, in_progress: 1, completed: 1).",
-		"[completed] 1: 梳理需求",
-		"[in_progress] 2: 实现功能",
-		"[pending] 3: 运行测试",
-	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("expected output to contain %q, got %q", want, output)
+	payload := parseTodoStatusOutput(t, output)
+	expected := []TodoItem{
+		{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"},
+		{ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"},
+		{ID: "3", Content: "运行测试", ActiveForm: "运行测试中", Status: "pending"},
+	}
+	if len(payload.Todos) != len(expected) {
+		t.Fatalf("expected output todos %#v, got %#v", expected, payload.Todos)
+	}
+	for i := range expected {
+		if payload.Todos[i] != expected[i] {
+			t.Fatalf("output todo[%d] expected %#v, got %#v", i, expected[i], payload.Todos[i])
 		}
 	}
 }
@@ -110,8 +124,9 @@ func TestHandleTodoList_ReturnsEmptyMessageWithoutTodos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if output != "Todo list is empty. Use todo_write to create or update the current task plan." {
-		t.Fatalf("unexpected output: %q", output)
+	payload := parseTodoStatusOutput(t, output)
+	if payload.Todos == nil || len(payload.Todos) != 0 {
+		t.Fatalf("expected empty output todos, got %#v", payload.Todos)
 	}
 }
 
@@ -124,4 +139,21 @@ func TestHandleTodoList_RejectsArguments(t *testing.T) {
 	if !strings.Contains(err.Error(), "todo_list does not accept arguments") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func parseTodoStatusOutput(t *testing.T, output string) struct {
+	Todos []TodoItem `json:"todos"`
+} {
+	t.Helper()
+	if !strings.HasPrefix(output, wantTodoStatusPrefix) {
+		t.Fatalf("expected output prefix %q, got %q", wantTodoStatusPrefix, output)
+	}
+	jsonPart := strings.TrimSpace(strings.TrimPrefix(output, wantTodoStatusPrefix))
+	var payload struct {
+		Todos []TodoItem `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(jsonPart), &payload); err != nil {
+		t.Fatalf("expected output JSON after prefix, got %q: %v", output, err)
+	}
+	return payload
 }

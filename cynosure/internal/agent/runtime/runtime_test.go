@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1333,24 +1334,28 @@ func TestRespondToConversation_TodoListReadsLatestTodoWriteState(t *testing.T) {
 		t.Fatalf("expected JSON tool message content, got error: %v, content: %q", err, toolMessage.Content)
 	}
 	result := outcome.Result
-	for _, want := range []string{
-		"Todo list: 2 items (pending: 0, in_progress: 1, completed: 1).",
-		"[completed] 1: 梳理需求",
-		"[in_progress] 2: 实现功能",
-	} {
-		if !strings.Contains(result, want) {
-			t.Fatalf("expected todo_list result to contain %q, got %q", want, result)
+	payload := parseTodoStatusToolResult(t, result)
+	expected := []agenttools.TodoItem{
+		{ID: "1", Content: "梳理需求", ActiveForm: "梳理需求中", Status: "completed"},
+		{ID: "2", Content: "实现功能", ActiveForm: "实现功能中", Status: "in_progress"},
+	}
+	if len(payload.Todos) != len(expected) {
+		t.Fatalf("expected todo_list todos %#v, got %#v", expected, payload.Todos)
+	}
+	for i := range expected {
+		if payload.Todos[i] != expected[i] {
+			t.Fatalf("todo[%d] expected %#v, got %#v", i, expected[i], payload.Todos[i])
 		}
 	}
 }
 
-func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTodoWrite(t *testing.T) {
-	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
-		bashToolRound("tool_1"),
-		bashToolRound("tool_2"),
-		bashToolRound("tool_3"),
-		{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}},
-	}}
+func TestRespondToConversation_InjectsTodoWriteReminderAfterThresholdWithoutTodoWrite(t *testing.T) {
+	rounds := make([][]openai.ChatCompletionStreamResponse, 0, todoWriteReminderThreshold+1)
+	for i := 0; i < todoWriteReminderThreshold; i++ {
+		rounds = append(rounds, bashToolRound(fmt.Sprintf("tool_%d", i+1)))
+	}
+	rounds = append(rounds, []openai.ChatCompletionStreamResponse{{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}}})
+	llm := &fakeLLMClient{streamChunkSets: rounds}
 	store := &fakeStore{}
 	cfg := testAppConfig(t)
 	cfg.AllowedTools = []string{"bash", "todo_write"}
@@ -1360,11 +1365,12 @@ func TestRespondToConversation_InjectsTodoWriteReminderAfterThreeRoundsWithoutTo
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(llm.reqs) != 4 {
-		t.Fatalf("expected 4 model requests, got %d", len(llm.reqs))
+	expectedRequests := todoWriteReminderThreshold + 1
+	if len(llm.reqs) != expectedRequests {
+		t.Fatalf("expected %d model requests, got %d", expectedRequests, len(llm.reqs))
 	}
-	if !requestContainsTodoWriteReminder(llm.reqs[3]) {
-		t.Fatalf("expected fourth request to contain todo_write reminder, got %#v", llm.reqs[3].Messages)
+	if !requestContainsTodoWriteReminder(llm.reqs[todoWriteReminderThreshold]) {
+		t.Fatalf("expected request after threshold to contain todo_write reminder, got %#v", llm.reqs[todoWriteReminderThreshold].Messages)
 	}
 }
 
@@ -2923,11 +2929,28 @@ func todoWriteToolRound(id string) []openai.ChatCompletionStreamResponse {
 
 func requestContainsTodoWriteReminder(req openai.ChatCompletionRequest) bool {
 	for _, message := range req.Messages {
-		if strings.Contains(message.Content, "not called todo_write for 3 consecutive model rounds") {
+		if strings.Contains(message.Content, todoWriteReminderText) {
 			return true
 		}
 	}
 	return false
+}
+
+func parseTodoStatusToolResult(t *testing.T, result string) struct {
+	Todos []agenttools.TodoItem `json:"todos"`
+} {
+	t.Helper()
+	const prefix = "当前任务状态信息为:"
+	if !strings.HasPrefix(result, prefix) {
+		t.Fatalf("expected todo status result prefix %q, got %q", prefix, result)
+	}
+	var payload struct {
+		Todos []agenttools.TodoItem `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(result, prefix))), &payload); err != nil {
+		t.Fatalf("expected todo status JSON result, got %q: %v", result, err)
+	}
+	return payload
 }
 
 func contains(s, substr string) bool {

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -10,6 +11,8 @@ const (
 	TodoStatusPending    = "pending"
 	TodoStatusInProgress = "in_progress"
 	TodoStatusCompleted  = "completed"
+
+	todoStatusOutputPrefix = "当前任务状态信息为:"
 )
 
 type TodoItem struct {
@@ -31,7 +34,6 @@ func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult
 	}
 
 	todos := make([]TodoItem, 0, len(rawTodos))
-	counts := map[string]int{TodoStatusPending: 0, TodoStatusInProgress: 0, TodoStatusCompleted: 0}
 	for i, raw := range rawTodos {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -58,11 +60,14 @@ func ExecuteTodoWrite(ctx context.Context, args map[string]any) (TodoWriteResult
 			return TodoWriteResult{}, fmt.Errorf("todos[%d].status must be one of pending, in_progress, completed", i)
 		}
 		todos = append(todos, TodoItem{ID: id, Content: content, ActiveForm: activeForm, Status: status})
-		counts[status]++
 	}
 
+	output, err := formatTodoStatusOutput(todos)
+	if err != nil {
+		return TodoWriteResult{}, err
+	}
 	return TodoWriteResult{
-		Output: fmt.Sprintf("Todo list updated: %d items (pending: %d, in_progress: %d, completed: %d).", len(todos), counts[TodoStatusPending], counts[TodoStatusInProgress], counts[TodoStatusCompleted]),
+		Output: output,
 		Todos:  todos,
 	}, nil
 }
@@ -72,19 +77,20 @@ func handleTodoList(ctx context.Context, args map[string]any) (string, error) {
 		return "", fmt.Errorf("todo_list does not accept arguments")
 	}
 	todos, _ := TodoSnapshotFromContext(ctx)
-	if len(todos) == 0 {
-		return "Todo list is empty. Use todo_write to create or update the current task plan.", nil
+	return formatTodoStatusOutput(todos)
+}
+
+func formatTodoStatusOutput(todos []TodoItem) (string, error) {
+	if todos == nil {
+		todos = []TodoItem{}
 	}
-	counts := map[string]int{TodoStatusPending: 0, TodoStatusInProgress: 0, TodoStatusCompleted: 0}
-	var b strings.Builder
-	for _, todo := range todos {
-		counts[todo.Status]++
+	output, err := json.Marshal(struct {
+		Todos []TodoItem `json:"todos"`
+	}{Todos: todos})
+	if err != nil {
+		return "", fmt.Errorf("marshal todo status output: %w", err)
 	}
-	fmt.Fprintf(&b, "Todo list: %d items (pending: %d, in_progress: %d, completed: %d).", len(todos), counts[TodoStatusPending], counts[TodoStatusInProgress], counts[TodoStatusCompleted])
-	for _, todo := range todos {
-		fmt.Fprintf(&b, "\n[%s] %s: %s", todo.Status, todo.ID, todo.Content)
-	}
-	return b.String(), nil
+	return todoStatusOutputPrefix + string(output), nil
 }
 
 func isValidTodoStatus(status string) bool {
