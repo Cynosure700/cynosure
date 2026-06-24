@@ -5,14 +5,14 @@
 ## 核心能力
 
 - **TUI 聊天界面**：终端内多轮对话、Claude Code 风格布局、流式输出、Markdown 渲染、实时状态栏和基础 slash commands。
-- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`todo_list`、`load_skill`、`spawn_subagent`、`read_persisted_output`。
+- **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`todo_list`、`load_skill`、`spawn_subagent`、`read_persisted_output`、`update_memory`、`delete_memory`。
 - **工作区与权限边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；不再有静态的“禁止越界工作区”硬校验，越权风险统一由命令权限审批在执行前拦截。
 - **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
 - **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
 - **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
 - **历史会话恢复**：对话历史持久化到 `~/.cynosure/session/{workspace}/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
-- **上下文压缩**：请求模型前自动压缩超长历史，支持大工具结果落盘、消息窗口裁剪、最近工具结果保留与 413 后激进压缩；消息窗口裁剪在消息总数超过 50 条时，从队首保留到“用户最新消息 + 其后 2 条”并补足尾部至合计 50 条，避免裁掉用户最新提问；全量摘要采用结构化提示词（用户最新问题、改动文件路径、关键决策、进展与待办、报错与命令结论），并保留最近 5 条原文，最终结构为 `[系统提示 + 摘要 + 最近 5 条]`；上下文摘要仅保存在运行期内存中，不做持久化。
+- **上下文压缩**：请求模型前自动压缩超长历史。压缩策略链按顺序执行：大工具结果落盘（超预算时从最大结果开始落盘，仅保留 `<persisted-output>` 标记与前 2000 字符预览）、最近工具结果保留（内联完整 `tool_result` 超过 30 个时触发微压缩，仅保留最近 15 个，其余替换为占位符）、会话记忆裁剪，以及全量摘要兜底。全量摘要在确定性压缩后仍超 token 预算时触发，采用结构化提示词（用户最新问题、已完成的工作、关键决策与原因、当前进展与待办、重要报错与命令结论），保留最近 5 条原文，最终结构为 `[系统提示 + 摘要 + 最近 5 条]`；摘要与保留尾部均基于逐字展示历史。413（上下文溢出）被拒后会带外执行一次激进压缩并重建请求。上下文摘要仅保存在运行期内存中，不做持久化。
 
 ## 项目结构
 
@@ -23,6 +23,7 @@ cynosure/
 ├── assets/                  # go:embed 嵌入资源
 │   ├── embed.go             # 嵌入声明
 │   ├── system_prompt.md     # 基础 identity prompt（嵌入二进制）
+│   ├── prompts/             # 功能性提示词（记忆抽取/选择/合并、子 Agent、上下文摘要等）
 │   └── skills/              # 内置 Skill（嵌入二进制）
 └── internal/
     ├── agent/               # Agent runtime、MCP 与存储模型
@@ -88,7 +89,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 
 ```json
 {
-  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent"
+  "allowed_tools": "load_skill,bash,read_file,write_file,edit_file,multi_edit,grep,glob,ls,web_fetch,todo_write,todo_list,spawn_subagent,update_memory,delete_memory"
 }
 ```
 
@@ -105,6 +106,7 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 ```
 
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
+- 维护长期记忆必须且只能使用 `update_memory`（按 `memory.md` 索引中的文件路径修正记忆的 name/description/body）与 `delete_memory`（删除记忆文件并同步移除索引条目）；这两个工具在运行时层执行（不进入无状态 Dispatch），因为记忆文件位于工作区之外且必须与索引保持同步，且都免审批。
 - 长期记忆分为四类：`preference`（用户长期偏好、习惯与项目相关描述）、`feedback`（对 Agent 行为的纠正与肯定，body 含 `Why:` 与 `How to apply:`）、`project`（项目进展、决策、截止日期等不可从代码推导的动态，相对日期转为绝对日期）、`reference`（外部系统中信息的定位信息）。抽取时不会记录可从代码、Git 历史、调试上下文或 `CYNOSURE.MD` 直接获得的内容。
 - 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.cynosure/memory/<workspace>/sessions/<session_id>.md`，不会按轮次生成多个文件。
 - 记忆提取（长期记忆与会话记忆）基于**模型线**而非纯文本对话：渲染时包含完整交互——用户与助手文本、助手发起的工具调用（名称与参数）、工具结果（状态与内容），使记忆扎根于真实发生的交互。轮末提取与模型历史落库共用本轮压缩后的请求线（`lastRequestHistory` + 本轮最终 assistant）；循环中途提取则取 `state.ModelHistory`（会话循环内逐字 lockstep 追加的 user / assistant / tool 消息）。
@@ -180,23 +182,22 @@ go run . --cwd /path/to/project
 
 ## TUI 界面与实时状态
 
-TUI 主界面由顶部状态栏、会话视窗和输入区组成：
+TUI 主界面由顶部头部、会话视窗和底部输入区组成：
 
-- **顶部状态栏**：展示当前运行状态、当前回复已使用工具数、上下文 token 使用比例、当前工作区、Skill 数量和 MCP 工具数量。
+- **顶部头部**：展示 `cynosure version`、欢迎语、当前模型名（`model <model-id>`）和当前工作区路径；终端高度较小时会自动降级为更紧凑的单/双行布局。
 - **会话视窗**：按角色区分用户、Agent、系统和错误消息；Agent 回复支持 Markdown 渲染。
-- **思考过程**：模型返回的 reasoning（思考内容）仍会随消息落库与参与记忆，但不再向终端输出，界面只展示每一轮真实可见的 content。
+- **思考过程**：模型返回的 reasoning（思考内容）仍会随消息落库与参与记忆，但不再向终端输出，界面只展示每一轮真实可见的 content。生成期间在会话底部展示 `* Thinking... (Ns)` 计时提示，出现可见 content 或工具调用后切换为 `* Working... (Ns)`。
 - **流式回答**：每一轮模型 content（包括会触发工具调用的中间轮次）都会按增量实时输出；当最终回答开始时，前面各轮的 content 与工具调用记录全部保留可见，不再折叠隐藏。
 - **并行工具实时更新**：同一轮多个工具并行执行时，任一工具先完成即立即更新其展示状态与结果，无需等待整批工具全部结束。
-- **输入区提示**：底部固定展示 `Enter`、`Ctrl+C`、`/help` 等常用操作提示。
+- **底部状态行**：输入框下方固定展示常用操作与实时指标 `工具 N`（当前回复累计工具调用次数）和 `上下文 N% · 估算 token/预算`（最近一次发送给模型的上下文估算 token 与预算占比）。
 
-状态栏示例：
+底部状态行示例（终端较宽时）：
 
 ```text
-✦ cynosure  generating  工具 3  上下文 72% · 72k/100k
-cwd /path/to/project · skills 6 · mcp tools 4
+Enter 发送 · Esc 中断 · Ctrl+C 退出 · /help · 工具 3 · 上下文 72% · 72k/100k
 ```
 
-其中 `工具` 是当前回复累计工具调用次数，`上下文` 是最近一次发送给模型的上下文估算 token 与预算占比。
+生成进行时状态行简化为 `Enter · Esc 中断 · /help · 工具 N · 上下文 N%`；终端较窄时整体进一步压缩展示。
 
 ## TUI 快捷命令
 
@@ -226,14 +227,14 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
 
-基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；文件名匹配使用 `glob`，目录浏览使用 `ls`；`read_file` 可直接读取本地文件系统中的文件，用户提供文件路径时默认路径有效，读取不存在的用户提供路径由工具返回错误，非用户直接提供的路径必须先确认文件存在再读取；文件修改优先使用 `edit_file`、`multi_edit`，创建新文件或完整重写才使用 `write_file`，且写入既有文件前必须先 `read_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 必须提供 `sub_type` 与 `task`，搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 `sub_type=explore`，`sub_type=general` 仅用于需要隔离上下文的综合分析或执行型子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。
+基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；文件名匹配使用 `glob`，目录浏览使用 `ls`；`read_file` 可直接读取本地文件系统中的文件，用户提供文件路径时默认路径有效，读取不存在的用户提供路径由工具返回错误，非用户直接提供的路径必须先确认文件存在再读取；文件修改优先使用 `edit_file`、`multi_edit`，创建新文件或完整重写才使用 `write_file`，且写入既有文件前必须先 `read_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 必须提供 `sub_type` 与 `task`，搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 `sub_type=explore`，`sub_type=general` 仅用于需要隔离上下文的综合分析或执行型子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。维护记忆时必须且只能使用 `update_memory`（新增或修正记忆）与 `delete_memory`（删除记忆），严禁用 `bash`、`ls`、`write_file`、`edit_file` 或其他终端命令直接读写记忆文件。
 
 ## 工具系统
 
 | 工具 | 说明 |
 | --- | --- |
 | `load_skill` | 加载 Skill 正文与元数据 |
-| `bash` | 在工作区内执行 shell 命令，受越权路径与危险命令限制，执行前需用户审批 |
+| `bash` | 通过 `bash -c` 在工作区根目录执行 shell 命令，相对路径基于工作区根目录解析；只读命令免审批，变更类命令执行前需用户审批 |
 | `read_file` | 读取本地文件；用户提供路径时默认有效，不存在时由工具返回错误；非用户直接提供路径需先确认文件存在 |
 | `write_file` | 创建或完整重写文件，会覆盖既有文件；写既有文件前需先读取，执行前需用户审批 |
 | `edit_file` | 按唯一精确文本替换编辑文件，执行前需用户审批 |
@@ -247,12 +248,14 @@ cwd /path/to/project · skills 6 · mcp tools 4
 | `todo_list` | 查询当前任务清单状态，不修改任务 |
 | `spawn_subagent` | 派生带 `sub_type` 的隔离子 Agent；`explore` 用于只读搜索，`general` 用于非搜索的综合分析或执行型子任务 |
 | `read_persisted_output` | 自动暴露，用于读取上下文压缩落盘的大工具结果 |
+| `update_memory` | 按 `memory.md` 索引中的文件路径修正错误或过时的长期记忆（name/description/body），运行时层执行并同步刷新索引 |
+| `delete_memory` | 按 `memory.md` 索引中的文件路径删除不再适用的长期记忆，运行时层执行并同步移除索引条目 |
 
 安全边界：
 
 - 文件读写、编辑、内容/文件名检索、目录列举和命令执行都以 TUI 工作区为默认工作目录；越权风险由命令权限审批在执行前拦截，而非静态路径沙箱。
 - `grep`/`glob` 的 `path` 默认是当前工作目录；`ls` 要求传入绝对路径。三者均为只读检索，默认免审批。
-- `web_fetch` 会将 `http://` 升级为 `https://`，限制响应体大小并复用普通工具的 60 秒看门狗；`web_search` 当前为占位实现。
+- `web_fetch` 会将 `http://` 升级为 `https://`，限制响应体大小（2 MB），内部 HTTP 请求超时 30 秒，并复用普通工具的 60 秒 Dispatch 看门狗；`web_search` 当前为占位实现，未配置搜索后端时返回不可用提示。
 - 变更类操作（`bash`、`write_file`、`edit_file`、`multi_edit`）在执行前通过交互式审批门控，详见下文“命令权限审批”。
 
 超时机制：
@@ -267,7 +270,7 @@ cwd /path/to/project · skills 6 · mcp tools 4
 
 为避免变更类操作未经确认即执行，TUI 在工具执行前引入交互式权限审批：
 
-- **免审批（查询/搜索）**：`read_file`、`grep`、`glob`、`ls`、`web_search`、`web_fetch`、`load_skill`、`todo_write`、`todo_list`、`read_persisted_output`、`spawn_subagent` 等工具直接执行，无需确认。
+- **免审批（查询/搜索）**：`read_file`、`grep`、`glob`、`ls`、`web_search`、`web_fetch`、`load_skill`、`todo_write`、`todo_list`、`read_persisted_output`、`spawn_subagent`、`update_memory`、`delete_memory` 等工具直接执行，无需确认。
 - **需审批（变更类）**：`bash`（含 `curl`、写入、删除等任意命令）以及 `write_file`、`edit_file`、`multi_edit` 在执行前弹出审批面板，提供三个选项：
   - `1. Yes`：本次放行。
   - `2. Yes, and don't ask again for: <rule>`：本次放行并把放行规则写入工作区 `settings.json`，后续同类操作不再询问。`bash` 规则按命令名通配（如 `curl *`），写工具规则按工具名通配（如 `write_file *`）。
@@ -374,38 +377,15 @@ go test ./...
 
 ## 设计文档
 
-TUI 化设计文档位于：
+所有设计文档集中在 `docs/` 目录，按主题命名，例如：
 
 ```text
-TUI化改造设计文档.md
-```
-
-超时机制设计文档位于：
-
-```text
+docs/TUI化改造设计文档.md
 docs/超时机制设计文档.md
-```
-
-命令权限审批机制设计文档位于：
-
-```text
 docs/终端命令权限审批机制设计文档.md
-```
-
-上下文压缩优化设计文档位于：
-
-```text
 docs/上下文压缩优化设计文档.md
-```
-
-会话记忆提取与更新机制（含提取数据源切换为模型线）设计文档位于：
-
-```text
 docs/会话记忆提取与更新机制调整设计文档.md
-```
-
-Git 环境上下文注入设计文档位于：
-
-```text
 docs/Git环境上下文注入设计文档.md
 ```
+
+更多专题文档（子 Agent、记忆类型重构、工具结果落盘、流式输出等）同样位于 `docs/`。
