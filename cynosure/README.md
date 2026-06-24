@@ -101,6 +101,7 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 ~/.cynosure/memory/<workspace>/
 ├── memory.md                 # 长期记忆索引
 ├── <memory-name>.md          # 单条长期记忆
+├── .consolidation_state.json # 定时去重状态（累计会话数与上次运行时间）
 └── sessions/
     └── <session_id>.md       # 当前会话记忆，按随机 UUID session_id 覆盖更新
 ```
@@ -108,6 +109,7 @@ TUI 本地模式会在用户目录创建并维护 `~/.cynosure/memory/<workspace
 - `memory.md` 只保存记忆文件位置、名称和描述；模型会先基于索引判断哪些记忆对当前轮对话有用，再注入选中记忆正文。
 - 维护长期记忆必须且只能使用 `update_memory`（按 `memory.md` 索引中的文件路径修正记忆的 name/description/body）与 `delete_memory`（删除记忆文件并同步移除索引条目）；这两个工具在运行时层执行（不进入无状态 Dispatch），因为记忆文件位于工作区之外且必须与索引保持同步，且都免审批。
 - 长期记忆分为四类：`preference`（用户长期偏好、习惯与项目相关描述）、`feedback`（对 Agent 行为的纠正与肯定，body 含 `Why:` 与 `How to apply:`）、`project`（项目进展、决策、截止日期等不可从代码推导的动态，相对日期转为绝对日期）、`reference`（外部系统中信息的定位信息）。抽取时不会记录可从代码、Git 历史、调试上下文或 `CYNOSURE.MD` 直接获得的内容。
+- **定时去重（consolidation）**：系统会定期对上述四类长期记忆做全量去重/淘汰。默认累计 **5 次以上会话**且距上次运行 **≥24 小时**时触发（阈值可由 `~/.cynosure/config.json` 的 `memory_consolidation_min_sessions` 与 `memory_consolidation_interval_hours` 覆盖）；触发时按类型把该类全部记忆喂给 LLM 合并、淘汰冗余，并整类替换、同步刷新 `memory.md`。累计会话数与上次运行时间记录在 `~/.cynosure/memory/<workspace>/.consolidation_state.json`，运行后会话计数清零。该流程为 best-effort：未配置 LLM 或任一步骤失败仅记录告警，不影响用户响应。
 - 当前会话记忆使用随机 UUID `session_id` 标识，同一会话每轮结束后覆盖更新 `~/.cynosure/memory/<workspace>/sessions/<session_id>.md`，不会按轮次生成多个文件。
 - 记忆提取（长期记忆与会话记忆）基于**模型线**而非纯文本对话：渲染时包含完整交互——用户与助手文本、助手发起的工具调用（名称与参数）、工具结果（状态与内容），使记忆扎根于真实发生的交互。轮末提取与模型历史落库共用本轮压缩后的请求线（`lastRequestHistory` + 本轮最终 assistant）；循环中途提取则取 `state.ModelHistory`（会话循环内逐字 lockstep 追加的 user / assistant / tool 消息）。
 - 会话收尾更新只对当前项目当前会话加锁，锁 key 为 `项目名 + session_id`。
