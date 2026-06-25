@@ -15,7 +15,7 @@ func TestHandleRead_UsesWorkspaceRootForRelativePath(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	result, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": "note.txt"})
+	result, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "note.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestHandleRead_UsesWorkspaceRootForRelativePath(t *testing.T) {
 
 func TestHandleWrite_UsesWorkspaceRootForRelativePath(t *testing.T) {
 	root := t.TempDir()
-	_, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": "nested/out.txt", "content": "created"})
+	_, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "nested/out.txt", "content": "created"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestHandleEdit_UsesWorkspaceRootForRelativePath(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	_, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"path": "edit.txt", "old_text": "before", "new_text": "after"})
+	_, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "edit.txt", "old_text": "before", "new_text": "after"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,9 +156,9 @@ func TestHandlers_RejectInvalidWorkspaceRoot(t *testing.T) {
 		args map[string]any
 	}{
 		{name: "bash", fn: handleBash, args: map[string]any{"command": "pwd"}},
-		{name: "read", fn: handleRead, args: map[string]any{"path": "note.txt"}},
-		{name: "write", fn: handleWrite, args: map[string]any{"path": "note.txt", "content": "hello"}},
-		{name: "edit", fn: handleEdit, args: map[string]any{"path": "note.txt", "old_text": "before", "new_text": "after"}},
+		{name: "read", fn: handleRead, args: map[string]any{"file_path": "note.txt"}},
+		{name: "write", fn: handleWrite, args: map[string]any{"file_path": "note.txt", "content": "hello"}},
+		{name: "edit", fn: handleEdit, args: map[string]any{"file_path": "note.txt", "old_text": "before", "new_text": "after"}},
 	}
 
 	t.Run("missing workspace root", func(t *testing.T) {

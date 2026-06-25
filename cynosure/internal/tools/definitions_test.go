@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,58 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 		strings.Contains(schemasByName["read_file"], "do not read user-provided missing files") {
 		t.Fatalf("read_file guidance should allow direct reads of user-provided paths and missing-file errors, got description=%q schema=%q", toolsByName["read_file"], schemasByName["read_file"])
 	}
+}
+
+func TestFileToolSchemasRequireFilePathNotPath(t *testing.T) {
+	for _, name := range []string{"read_file", "write_file", "edit_file"} {
+		schema := schemaMapForTool(t, name)
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema properties missing or wrong type: %#v", name, schema["properties"])
+		}
+		if _, ok := properties["file_path"]; !ok {
+			t.Fatalf("%s schema should expose file_path, got properties %#v", name, properties)
+		}
+		if _, ok := properties["path"]; ok {
+			t.Fatalf("%s schema should not expose path, got properties %#v", name, properties)
+		}
+
+		required, ok := schema["required"].([]any)
+		if !ok {
+			t.Fatalf("%s schema required missing or wrong type: %#v", name, schema["required"])
+		}
+		if !containsAnyString(required, "file_path") {
+			t.Fatalf("%s schema should require file_path, got %#v", name, required)
+		}
+		if containsAnyString(required, "path") {
+			t.Fatalf("%s schema should not require path, got %#v", name, required)
+		}
+	}
+}
+
+func schemaMapForTool(t *testing.T, name string) map[string]any {
+	t.Helper()
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil || tool.Function.Name != name {
+			continue
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(RawSchemaFromParameters(tool.Function.Parameters), &schema); err != nil {
+			t.Fatalf("unmarshal %s schema: %v", name, err)
+		}
+		return schema
+	}
+	t.Fatalf("expected AllToolDefs to include %s", name)
+	return nil
+}
+
+func containsAnyString(values []any, want string) bool {
+	for _, value := range values {
+		if s, ok := value.(string); ok && s == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSearchToolDescriptionsMatchPromptStrategy(t *testing.T) {

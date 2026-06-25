@@ -20,7 +20,7 @@ func schemaOf(t *testing.T, name string) json.RawMessage {
 func TestValidateToolArgs_MissingRequired(t *testing.T) {
 	err := ValidateToolArgs("read_file", schemaOf(t, "read_file"), map[string]any{})
 	if err == nil {
-		t.Fatal("expected error for missing required parameter path")
+		t.Fatal("expected error for missing required parameter file_path")
 	}
 	if !strings.Contains(err.Error(), "read_file") {
 		t.Fatalf("error should mention tool name, got: %v", err)
@@ -29,8 +29,8 @@ func TestValidateToolArgs_MissingRequired(t *testing.T) {
 
 func TestValidateToolArgs_TypeMismatch(t *testing.T) {
 	err := ValidateToolArgs("read_file", schemaOf(t, "read_file"), map[string]any{
-		"path":  "main.go",
-		"limit": "ten",
+		"file_path": "main.go",
+		"limit":     "ten",
 	})
 	if err == nil {
 		t.Fatal("expected error for limit type mismatch")
@@ -39,11 +39,23 @@ func TestValidateToolArgs_TypeMismatch(t *testing.T) {
 
 func TestValidateToolArgs_IntegerAcceptsWholeFloat(t *testing.T) {
 	err := ValidateToolArgs("read_file", schemaOf(t, "read_file"), map[string]any{
-		"path":  "main.go",
-		"limit": float64(20),
+		"file_path": "main.go",
+		"limit":     float64(20),
 	})
 	if err != nil {
 		t.Fatalf("whole-number float should pass integer validation, got: %v", err)
+	}
+}
+
+func TestValidateToolArgs_ReadFileRequiresFilePathNotPath(t *testing.T) {
+	err := ValidateToolArgs("read_file", schemaOf(t, "read_file"), map[string]any{
+		"path": "main.go",
+	})
+	if err == nil {
+		t.Fatal("expected read_file to reject path without file_path")
+	}
+	if !strings.Contains(err.Error(), "file_path") {
+		t.Fatalf("expected error to mention file_path, got: %v", err)
 	}
 }
 

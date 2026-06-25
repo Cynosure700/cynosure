@@ -30,7 +30,7 @@ func bashToolCall(command string) openai.ToolCall {
 func TestApproveToolCallReadOnlyToolSkipsApproval(t *testing.T) {
 	approver := &stubApprover{decision: ApprovalNo}
 	svc := &Service{Cfg: config.AppConfig{WorkspaceRoot: t.TempDir()}, Approver: approver}
-	tc := openai.ToolCall{Function: openai.FunctionCall{Name: "read_file", Arguments: `{"path":"a.go"}`}}
+	tc := openai.ToolCall{Function: openai.FunctionCall{Name: "read_file", Arguments: `{"file_path":"a.go"}`}}
 
 	approved, _ := svc.approveToolCall(context.Background(), tc)
 	if !approved {

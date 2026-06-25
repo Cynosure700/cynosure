@@ -109,9 +109,9 @@ func handleBash(ctx context.Context, args map[string]any) (string, error) {
 }
 
 func handleRead(ctx context.Context, args map[string]any) (string, error) {
-	path, _ := args["path"].(string)
+	path, _ := args["file_path"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return "", fmt.Errorf("file_path is required")
 	}
 	limit := 0
 	if l, ok := args["limit"].(float64); ok {
@@ -125,10 +125,10 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 }
 
 func handleWrite(ctx context.Context, args map[string]any) (string, error) {
-	path, _ := args["path"].(string)
+	path, _ := args["file_path"].(string)
 	content, _ := args["content"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return "", fmt.Errorf("file_path is required")
 	}
 	root, resolvedPath, err := resolvePathFromContext(ctx, path)
 	if err != nil {
@@ -138,11 +138,11 @@ func handleWrite(ctx context.Context, args map[string]any) (string, error) {
 }
 
 func handleEdit(ctx context.Context, args map[string]any) (string, error) {
-	path, _ := args["path"].(string)
+	path, _ := args["file_path"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return "", fmt.Errorf("file_path is required")
 	}
 	root, resolvedPath, err := resolvePathFromContext(ctx, path)
 	if err != nil {

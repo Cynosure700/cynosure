@@ -39,6 +39,31 @@ func TestDispatchNewToolsEndToEnd(t *testing.T) {
 		t.Fatalf("ls should reject relative path")
 	}
 
+	// read_file
+	res, err = Dispatch(ctx, "read_file", map[string]any{"file_path": filepath.Join(root, "notes.txt")})
+	if err != nil || !strings.Contains(res.Output, "alpha beta") {
+		t.Fatalf("read_file dispatch failed: out=%q err=%v", res.Output, err)
+	}
+
+	// write_file
+	res, err = Dispatch(ctx, "write_file", map[string]any{
+		"file_path": filepath.Join(root, "created.txt"),
+		"content":   "created content\n",
+	})
+	if err != nil || !strings.Contains(res.Output, "Wrote") {
+		t.Fatalf("write_file dispatch failed: out=%q err=%v", res.Output, err)
+	}
+
+	// edit_file
+	res, err = Dispatch(ctx, "edit_file", map[string]any{
+		"file_path": filepath.Join(root, "created.txt"),
+		"old_text":  "created",
+		"new_text":  "updated",
+	})
+	if err != nil || !strings.Contains(res.Output, "Edited") {
+		t.Fatalf("edit_file dispatch failed: out=%q err=%v", res.Output, err)
+	}
+
 	// multi_edit
 	res, err = Dispatch(ctx, "multi_edit", map[string]any{
 		"file_path": filepath.Join(root, "notes.txt"),

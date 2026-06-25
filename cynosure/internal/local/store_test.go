@@ -229,7 +229,7 @@ func TestStoreAppendsToolResultLogUnderSessionDirectory(t *testing.T) {
 		t.Fatalf("CreateConversation returned error: %v", err)
 	}
 	first := storage.ToolResultLogEntry{ConversationID: conv.ID, UserID: conv.UserID, ToolCallID: "call_1", ToolName: "bash", RawArgs: `{"command":"pwd"}`, Status: "success", Result: "line1\n```\nline2", AuditSummary: `{"outcome_summary":"line1"}`}
-	second := storage.ToolResultLogEntry{ConversationID: conv.ID, UserID: conv.UserID, ToolCallID: "call_2", ToolName: "read_file", RawArgs: `{"path":"README.md"}`, Status: "error", Result: "not found"}
+	second := storage.ToolResultLogEntry{ConversationID: conv.ID, UserID: conv.UserID, ToolCallID: "call_2", ToolName: "read_file", RawArgs: `{"file_path":"README.md"}`, Status: "error", Result: "not found"}
 
 	if err := store.AppendToolResultLog(ctx, first); err != nil {
 		t.Fatalf("AppendToolResultLog first returned error: %v", err)

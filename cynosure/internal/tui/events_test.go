@@ -156,7 +156,7 @@ func TestToolMessageUsesLowercaseFileSearchDisplayNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := Message{Role: "tool", ToolCall: &ToolCallView{
 				Name:        tt.name,
-				ArgsPreview: "path: README.md",
+				ArgsPreview: "file_path: README.md",
 				Status:      "success",
 			}}
 
@@ -460,7 +460,7 @@ func TestResumeSelectionRestoresConversationAndDisplayHistory(t *testing.T) {
 		history: []storage.Message{
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "let me check", ToolCalls: []storage.MessageToolCall{
-				{ID: "call_1", Type: "function", Function: storage.MessageFunctionCall{Name: "read_file", Arguments: `{"path":"README.md"}`}},
+				{ID: "call_1", Type: "function", Function: storage.MessageFunctionCall{Name: "read_file", Arguments: `{"file_path":"README.md"}`}},
 			}},
 			{Role: "tool", ToolCallID: "call_1", Content: `{"status":"success","result":"file contents"}`},
 			{Role: "assistant", Content: "hi"},
@@ -857,7 +857,7 @@ func TestSubagentToolStatusAttachesUnderRunningColumn(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_1",
 		"tool_name":          "read_file",
-		"args_preview":       "path: /Users/bytedance/golang_pro/cynosure/cynosure/main.go",
+		"args_preview":       "file_path: /Users/bytedance/golang_pro/cynosure/cynosure/main.go",
 		"status":             "running",
 		"scope":              "subagent",
 		"ephemeral_group_id": "subagent_1",
@@ -916,7 +916,7 @@ func TestConcurrentSubagentToolStatusAttachesToMatchingParent(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":        "subagent_1:tool_1",
 		"tool_name":           "read_file",
-		"args_preview":        "path: internal/agent/runtime/context_compression.go",
+		"args_preview":        "file_path: internal/agent/runtime/context_compression.go",
 		"status":              "running",
 		"scope":               "subagent",
 		"ephemeral_group_id":  "subagent_1",
@@ -928,7 +928,7 @@ func TestConcurrentSubagentToolStatusAttachesToMatchingParent(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(plainTerminalText(model.renderMessages()), "\n"), "\n")
 	firstSpawn := indexLineContaining(lines, "task: inspect runtime")
 	secondSpawn := indexLineContaining(lines, "task: inspect tui")
-	child := indexLineContaining(lines, "read(path: internal/agent/runtime/context_compression.go)")
+	child := indexLineContaining(lines, "read(file_path: internal/agent/runtime/context_compression.go)")
 	if firstSpawn < 0 || secondSpawn < 0 || child < 0 {
 		t.Fatalf("lines = %#v, want both parent spawns and child tool row", lines)
 	}
@@ -952,7 +952,7 @@ func TestSubagentToolStatusKeepsBlankLineBeforeNextTool(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":        "subagent_1:tool_1",
 		"tool_name":           "read_file",
-		"args_preview":        "path: internal/local/store_test.go",
+		"args_preview":        "file_path: internal/local/store_test.go",
 		"status":              "running",
 		"scope":               "subagent",
 		"ephemeral_group_id":  "subagent_1",
@@ -969,7 +969,7 @@ func TestSubagentToolStatusKeepsBlankLineBeforeNextTool(t *testing.T) {
 	model = updated.(Model)
 
 	lines := strings.Split(strings.TrimRight(plainTerminalText(model.renderMessages()), "\n"), "\n")
-	child := indexLineContaining(lines, "read(path: internal/local/store_test.go)")
+	child := indexLineContaining(lines, "read(file_path: internal/local/store_test.go)")
 	next := indexLineContaining(lines, "task: inspect logger")
 	if child < 0 || next < 0 {
 		t.Fatalf("lines = %#v, want child tool row and following parent tool", lines)
@@ -1006,7 +1006,7 @@ func TestModelShowsOnlyLatestSubagentToolStatus(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_2",
 		"tool_name":          "read_file",
-		"args_preview":       "path: README.md",
+		"args_preview":       "file_path: README.md",
 		"status":             "running",
 		"scope":              "subagent",
 		"ephemeral_group_id": "subagent_1",
@@ -1021,7 +1021,7 @@ func TestModelShowsOnlyLatestSubagentToolStatus(t *testing.T) {
 	if strings.Contains(rendered, "grep") || strings.Contains(rendered, "pattern: TODO") {
 		t.Fatalf("rendered = %q, should replace the previous subagent tool status", rendered)
 	}
-	for _, want := range []string{"read", "path: README.md"} {
+	for _, want := range []string{"read", "file_path: README.md"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want latest subagent tool detail %q", rendered, want)
 		}
@@ -1181,7 +1181,7 @@ func TestModelClearsSubagentToolGroupWithoutBlankLines(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_2",
 		"tool_name":          "read_file",
-		"args_preview":       "path: README.md",
+		"args_preview":       "file_path: README.md",
 		"status":             "running",
 		"scope":              "subagent",
 		"ephemeral_group_id": "subagent_1",
@@ -1249,7 +1249,7 @@ func TestReadFileToolMessageAlignsMultilineContent(t *testing.T) {
 	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
 		"tool_call_id":   "tool_read",
 		"tool_name":      "read_file",
-		"args_preview":   "path: cynosure/internal/tui/app.go",
+		"args_preview":   "file_path: cynosure/internal/tui/app.go",
 		"status":         "success",
 		"result_preview": "package tui\n\nimport \"strings\"\n\nfunc render() {}",
 	}})

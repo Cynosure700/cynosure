@@ -97,27 +97,27 @@ var baseToolSpecs = []ToolSpec{
 	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a user-provided file path that does not exist; an error will be returned. For paths inferred by you rather than provided by the user, confirm the file exists before reading.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"file_path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
-			"limit": intParam("Maximum number of lines to read"),
+			"file_path": strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
+			"limit":     intParam("Maximum number of lines to read"),
 		},
-		"required": []string{"path"},
+		"required": []string{"file_path"},
 	}),
 	toolSpec("write_file", "Writes a file to the local filesystem. This tool will overwrite the existing file if there is one at the provided path. If this is an existing file, you MUST use read_file first to read the file's contents. Prefer edit_file for modifying existing files because it only sends the diff. Only use write_file to create new files or for complete rewrites. NEVER create documentation files (*.md) or README files unless explicitly requested by the user. Only use emojis if the user explicitly requests it; avoid writing emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"file_path":    strParam("Path to the file to write. Existing files are overwritten; use read_file first before overwriting an existing file."),
-			"content": strParam("Complete file content to write. Avoid documentation files and emojis unless the user explicitly requested them."),
+			"file_path": strParam("Path to the file to write. Existing files are overwritten; use read_file first before overwriting an existing file."),
+			"content":   strParam("Complete file content to write. Avoid documentation files and emojis unless the user explicitly requested them."),
 		},
-		"required": []string{"path", "content"},
+		"required": []string{"file_path", "content"},
 	}),
 	toolSpec("edit_file", "Performs exact string replacements in files. You MUST use read_file first in the conversation before editing. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_text or new_text. ALWAYS prefer editing existing files in the codebase. Prefer multi_edit when making several edits to the same file. NEVER write new files unless explicitly required. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked. The edit will fail if old_text is not unique in the file; provide a larger string with more surrounding context to make old_text must be unique.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"file_path":     strParam("Path to the file to edit"),
-			"old_text": strParam("Exact text to find and replace. Must match file contents exactly, preserve indentation, exclude read_file line number prefixes, and old_text must be unique unless the tool explicitly supports replacing all occurrences."),
-			"new_text": strParam("Text to replace old_text with. Preserve surrounding style and avoid emojis unless explicitly requested."),
+			"file_path": strParam("Path to the file to edit"),
+			"old_text":  strParam("Exact text to find and replace. Must match file contents exactly, preserve indentation, exclude read_file line number prefixes, and old_text must be unique unless the tool explicitly supports replacing all occurrences."),
+			"new_text":  strParam("Text to replace old_text with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 		},
-		"required": []string{"path", "old_text", "new_text"},
+		"required": []string{"file_path", "old_text", "new_text"},
 	}),
 	toolSpec("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill.", map[string]any{
 		"type": "object",
