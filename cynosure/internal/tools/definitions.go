@@ -119,7 +119,7 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"path", "old_text", "new_text"},
 	}),
-	toolSpec("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill. Skills are loaded from the user's ~/.cynosure/skills and the workspace .cynosure/skills directories, with workspace skills taking precedence.", map[string]any{
+	toolSpec("load_skill", "Load the full instructions of a local skill by exact name before using or following that skill.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"name": strParam("Name of the skill to load"),
