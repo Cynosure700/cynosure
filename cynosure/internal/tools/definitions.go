@@ -90,14 +90,14 @@ var baseToolSpecs = []ToolSpec{
 	toolSpec("bash", "Execute a shell command via bash -c. The command runs in the workspace root, and relative path arguments are interpreted under it.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"command": strParam("The shell command to execute"),
+			"command": strParam("The shell command to execute. By default, it runs in the current workspace root directory."),
 		},
 		"required": []string{"command"},
 	}),
 	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a user-provided file path that does not exist; an error will be returned. For paths inferred by you rather than provided by the user, confirm the file exists before reading.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
+			"file_path":  strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
 			"limit": intParam("Maximum number of lines to read"),
 		},
 		"required": []string{"path"},
@@ -105,7 +105,7 @@ var baseToolSpecs = []ToolSpec{
 	toolSpec("write_file", "Writes a file to the local filesystem. This tool will overwrite the existing file if there is one at the provided path. If this is an existing file, you MUST use read_file first to read the file's contents. Prefer edit_file for modifying existing files because it only sends the diff. Only use write_file to create new files or for complete rewrites. NEVER create documentation files (*.md) or README files unless explicitly requested by the user. Only use emojis if the user explicitly requests it; avoid writing emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":    strParam("Path to the file to write. Existing files are overwritten; use read_file first before overwriting an existing file."),
+			"file_path":    strParam("Path to the file to write. Existing files are overwritten; use read_file first before overwriting an existing file."),
 			"content": strParam("Complete file content to write. Avoid documentation files and emojis unless the user explicitly requested them."),
 		},
 		"required": []string{"path", "content"},
@@ -113,7 +113,7 @@ var baseToolSpecs = []ToolSpec{
 	toolSpec("edit_file", "Performs exact string replacements in files. You MUST use read_file first in the conversation before editing. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_text or new_text. ALWAYS prefer editing existing files in the codebase. Prefer multi_edit when making several edits to the same file. NEVER write new files unless explicitly required. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked. The edit will fail if old_text is not unique in the file; provide a larger string with more surrounding context to make old_text must be unique.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path":     strParam("Path to the file to edit"),
+			"file_path":     strParam("Path to the file to edit"),
 			"old_text": strParam("Exact text to find and replace. Must match file contents exactly, preserve indentation, exclude read_file line number prefixes, and old_text must be unique unless the tool explicitly supports replacing all occurrences."),
 			"new_text": strParam("Text to replace old_text with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 		},
@@ -145,11 +145,11 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"todos"},
 	}),
-	toolSpec("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
-		"type":                 "object",
-		"properties":           map[string]any{},
-		"additionalProperties": false,
-	}),
+	// toolSpec("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
+	// 	"type":                 "object",
+	// 	"properties":           map[string]any{},
+	// 	"additionalProperties": false,
+	// }),
 	toolSpec("grep", "A powerful search tool for content search in any size codebase. ALWAYS use grep for search tasks. NEVER invoke grep or rg as a bash command; this tool is optimized for Cynosure permissions and workspace access. Supports Go regular expression syntax, e.g. log.*Error or function\\s+\\w+. Filter files with the glob parameter, e.g. *.go or **/*.ts. Output modes: content shows matching lines, files_with_matches shows only file paths (default), and count shows match counts. Pattern syntax uses Go regular expression syntax in this project; literal braces and other regexp metacharacters need escaping when they should be matched literally.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
