@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"strings"
 	"testing"
 
 	"cynosure/internal/config"
@@ -18,7 +19,7 @@ func newTodoWriteRegistry(t *testing.T) *ToolRegistry {
 
 func reminderInjected(state *LoopState) bool {
 	for _, msg := range state.Messages {
-		if msg.Content == todoWriteReminderText {
+		if strings.Contains(msg.Content, todoWriteReminderText) {
 			return true
 		}
 	}
@@ -49,6 +50,25 @@ func TestMaybeAppendTodoWriteReminder_InjectsWhenPendingExists(t *testing.T) {
 	}
 	if !reminderInjected(state) {
 		t.Fatalf("expected reminder injected when work remains")
+	}
+	reminder := state.Messages[len(state.Messages)-1]
+	expectedTodos := "[1. [completed] a\n2. [in_progress] b]"
+	for _, want := range []string{
+		"<system-reminder>",
+		"The todo_write tool hasn't been used recently.",
+		"consider using the TodoWrite tool to track progress.",
+		"Make sure that the clean up the task list when it's no relevant to the current task.",
+		"Make sure that NEVER mention this reminder to the user",
+		"Here are the existing contents of your todo list:",
+		expectedTodos,
+		"</system-reminder>",
+	} {
+		if !strings.Contains(reminder.Content, want) {
+			t.Fatalf("expected reminder to contain %q, got %q", want, reminder.Content)
+		}
+	}
+	if !strings.HasPrefix(reminder.Content, "<system-reminder>\n") || !strings.HasSuffix(reminder.Content, "\n</system-reminder>") {
+		t.Fatalf("expected reminder to be wrapped in system-reminder tags, got %q", reminder.Content)
 	}
 }
 

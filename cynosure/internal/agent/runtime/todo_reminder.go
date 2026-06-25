@@ -1,14 +1,16 @@
 package runtime
 
 import (
+	"fmt"
 	openai "github.com/sashabaranov/go-openai"
+	"strings"
 
 	agenttools "cynosure/internal/tools"
 )
 
 const (
 	todoWriteReminderThreshold = 10
-	todoWriteReminderText      = "<system-reminder> "+ "/n" + "The task tools haven't been used recently. If you're the type of person who likes to use task tracking to keep track of your progress, you can use todo_write to add new tasks and todo_write to update task status (set to in_progress when starting, completed when done). Please consider cleaning up the task list if it is not needed." + "/n" + "</system-reminder>"		
+	todoWriteReminderText      = "The todo_write tool hasn't been used recently. If you're working on tasks that work on tasks that could benefit from tracking progress, consider using the TodoWrite tool to track progress. Make sure that the clean up the task list when it's no relevant to the current task. Make sure that NEVER mention this reminder to the user"
 )
 
 func toolCallsInclude(toolCalls []openai.ToolCall, name string) bool {
@@ -20,8 +22,35 @@ func toolCallsInclude(toolCalls []openai.ToolCall, name string) bool {
 	return false
 }
 
-func todoWriteReminderMessage() openai.ChatCompletionMessage {
-	return openai.ChatCompletionMessage{Role: "user", Content: todoWriteReminderText}
+func todoWriteReminderMessage(todos []agenttools.TodoItem) openai.ChatCompletionMessage {
+	return openai.ChatCompletionMessage{Role: "user", Content: renderTodoWriteReminder(todos)}
+}
+
+func renderTodoWriteReminder(todos []agenttools.TodoItem) string {
+	return wrapSystemReminder(
+		todoWriteReminderText,
+		"Here are the existing contents of your todo list:\n\n"+renderTodoReminderList(todos),
+	)
+}
+
+func renderTodoReminderList(todos []agenttools.TodoItem) string {
+	if len(todos) == 0 {
+		return "[]"
+	}
+	var b strings.Builder
+	b.WriteString("[")
+	for i, todo := range todos {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		label := strings.TrimSpace(todo.ID)
+		if label == "" {
+			label = fmt.Sprintf("%d", i+1)
+		}
+		fmt.Fprintf(&b, "%s. [%s] %s", label, todo.Status, todo.Content)
+	}
+	b.WriteString("]")
+	return b.String()
 }
 
 // todosAllCompleted 在存在待办且全部为 completed 时返回 true。收尾阶段（无 pending /
@@ -45,6 +74,6 @@ func maybeAppendTodoWriteReminder(state *LoopState, tools *ToolRegistry, roundsS
 	if todosAllCompleted(state.Todos) {
 		return roundsSinceTodoWrite
 	}
-	state.Messages = append(state.Messages, todoWriteReminderMessage())
+	state.Messages = append(state.Messages, todoWriteReminderMessage(state.Todos))
 	return 0
 }

@@ -918,6 +918,10 @@ func TestRespondToConversation_RetriesOnceWhenFinalAnswerContentIsEmpty(t *testi
 	if !strings.Contains(openAIRequestContent(llm.reqs[1]), emptyFinalAnswerRetryPrompt) {
 		t.Fatalf("expected retry request to include final-answer prompt, got %#v", llm.reqs[1].Messages)
 	}
+	if !strings.Contains(openAIRequestContent(llm.reqs[1]), "<system-reminder>\n"+emptyFinalAnswerRetryPrompt) ||
+		!strings.Contains(openAIRequestContent(llm.reqs[1]), "Make sure that NEVER mention this reminder to the user\n</system-reminder>") {
+		t.Fatalf("expected retry request to wrap final-answer prompt in system-reminder, got %#v", llm.reqs[1].Messages)
+	}
 	if len(store.historyUpdates) != 1 {
 		t.Fatalf("expected one visible history update, got %d", len(store.historyUpdates))
 	}

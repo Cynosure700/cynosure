@@ -222,8 +222,8 @@ func renderSkillsSection(skillDescriptions string) string {
 }
 
 // systemReminderClosingNote 是 <system-reminder> 末尾的固定提醒：其中的运行期上下文
-// 不一定与当前任务相关，模型仅在高度相关时才应对其作出回应。
-const systemReminderClosingNote = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task."
+// 不一定与当前任务相关，模型仅在高度相关时才应对其作出回应，且不得向用户提及。
+const systemReminderClosingNote = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n\nMake sure that NEVER mention this reminder to the user"
 
 func renderSystemReminder(currentDate string, skillDescriptions string, ctx CynosureMarkdownContext, memoryIndex string, memorySection string) string {
 	parts := make([]string, 0, 6)

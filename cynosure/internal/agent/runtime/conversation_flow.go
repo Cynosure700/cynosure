@@ -158,7 +158,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 
 		if finishReason != "tool_calls" || len(msg.ToolCalls) == 0 {
 			if finishReason != "tool_calls" && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" {
-				appendInternalUserPrompt(state, emptyFinalAnswerRetryPrompt)
+				appendInternalUserPrompt(state, wrapSystemReminder(emptyFinalAnswerRetryPrompt))
 				continue
 			}
 			// 会话结束：把本轮模型最终回复纳入真实消息历史后重算，得到会话结束时的最终

@@ -98,6 +98,7 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		"Remember user preference.",
 		"</memory>",
 		"IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
+		"Make sure that NEVER mention this reminder to the user",
 		"</system-reminder>",
 	} {
 		if !strings.Contains(reminder, want) {
@@ -326,7 +327,7 @@ func TestBuildSystemReminderRendersMemoryIndexWithoutEffectiveMemory(t *testing.
 }
 
 func TestBuildSystemReminderAppendsClosingRelevanceNoteAtEndOfReminder(t *testing.T) {
-	const note = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task."
+	const note = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n\nMake sure that NEVER mention this reminder to the user"
 	reminder := BuildSystemReminder(PromptOptions{
 		BasePrompt:  "Base prompt.",
 		Surface:     "local TUI",
