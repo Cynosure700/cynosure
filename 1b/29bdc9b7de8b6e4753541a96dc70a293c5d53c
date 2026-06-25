@@ -1,0 +1,20 @@
+cynosure/internal/agent/runtime/helpers.go
+  h_3b65c6a993f880 24
+cynosure/internal/agent/runtime/system_reminder.go
+  h_3b65c6a993f880 1-24
+cynosure/docs/模型回答兜底机制设计文档.md
+  h_3b65c6a993f880 11,82,85-89,108,122,131,135-138,177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1b29bdc9b7de8b6e4753541a96dc70a293c5d53c",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
