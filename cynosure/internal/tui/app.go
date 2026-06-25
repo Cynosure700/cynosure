@@ -649,21 +649,32 @@ func renderSkillDetails(skills []sessions.SkillSummary, fallbackCount int) strin
 	for _, skill := range skills {
 		b.WriteString("\n- ")
 		b.WriteString(skill.Name)
-		if strings.TrimSpace(skill.Source) != "" {
+		if label := skillSourceLabel(skill.Source); label != "" {
 			b.WriteString(" [")
-			b.WriteString(skill.Source)
+			b.WriteString(label)
 			b.WriteString("]")
 		}
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(" ")
 			b.WriteString(skill.Description)
 		}
-		if strings.TrimSpace(skill.Path) != "" {
-			b.WriteString("\n  path: ")
-			b.WriteString(skill.Path)
-		}
 	}
 	return b.String()
+}
+
+// skillSourceLabel 把 skill 来源标识映射为面向用户的中文来源类型，
+// 不暴露磁盘路径。未知来源原样返回。
+func skillSourceLabel(source string) string {
+	switch strings.TrimSpace(source) {
+	case "workspace":
+		return "当前项目"
+	case "user":
+		return "家目录"
+	case "builtin":
+		return "系统内置"
+	default:
+		return strings.TrimSpace(source)
+	}
 }
 
 func renderMCPDetails(servers []mcp.ServerStatus, toolCount int) string {

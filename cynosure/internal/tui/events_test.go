@@ -389,15 +389,34 @@ func TestSlashLikeNaturalQuestionIsNotHandledAsCommand(t *testing.T) {
 }
 
 func TestHandleSkillsCommandShowsSkillDetails(t *testing.T) {
-	app := NewModel(nil, SessionInfo{Skills: []sessions.SkillSummary{{Name: "project-helper", Source: "workspace", Description: "Project helper", Path: "/project/.cynosure/skills/project-helper/skill.md"}}})
+	app := NewModel(nil, SessionInfo{Skills: []sessions.SkillSummary{
+		{Name: "project-helper", Source: "workspace", Description: "Project helper", Path: "/project/.cynosure/skills/project-helper/skill.md"},
+		{Name: "personal-tool", Source: "user", Description: "Personal tool", Path: "/home/.cynosure/skills/personal-tool/SKILL.md"},
+		{Name: "skill-creator", Source: "builtin", Description: "Builtin skill", Path: "skill-creator/SKILL.md"},
+	}})
 
 	if handled := app.handleSlashCommand("/skills"); !handled {
 		t.Fatal("/skills was not handled")
 	}
 	content := app.messages[len(app.messages)-1].Content
-	for _, want := range []string{"已加载 Skills：1 个", "project-helper", "workspace", "Project helper", "/project/.cynosure/skills/project-helper/skill.md"} {
+	for _, want := range []string{
+		"已加载 Skills：3 个",
+		"project-helper", "当前项目", "Project helper",
+		"personal-tool", "家目录", "Personal tool",
+		"skill-creator", "系统内置", "Builtin skill",
+	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("/skills output = %q, want it to contain %q", content, want)
+		}
+	}
+	for _, forbidden := range []string{
+		"/project/.cynosure/skills/project-helper/skill.md",
+		"/home/.cynosure/skills/personal-tool/SKILL.md",
+		"path:",
+		"[workspace]", "[user]", "[builtin]",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("/skills output = %q, should not contain %q", content, forbidden)
 		}
 	}
 }

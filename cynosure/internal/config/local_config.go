@@ -118,6 +118,16 @@ func CynosureSkillsDir() (string, error) {
 	return filepath.Join(home, ".cynosure", "skills"), nil
 }
 
+// CynosureSystemSkillsDir 返回系统内置 skill 的落盘根目录 ~/.cynosure/system/skills。
+// load_skill 加载内置 skill 时，会把该 skill 的整棵目录树物化到此目录下。
+func CynosureSystemSkillsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".cynosure", "system", "skills"), nil
+}
+
 func CynosureMemoryDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

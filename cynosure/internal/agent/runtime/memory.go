@@ -265,32 +265,27 @@ func (s *Service) executeMemoryTool(ctx context.Context, name, rawArgs string) (
 	}
 }
 
-// buildMemorySection 构造系统提示词 <memory> 段：① memory.md 索引块（受行数/字节
-// 上限约束，超限附警告）；② LLM 从确定性扫描候选中精选出的记忆完整内容块（带相对
-// 时间与过期说明，并按会话去重/重读替换）。Best-effort：失败返回已得到的部分。
-func (s *Service) buildMemorySection(ctx context.Context, conversationID string, user storage.User, history []storage.Message) string {
+// buildMemorySection 构造系统提示词的两段记忆内容：① memoryIndex —— memory.md 索引
+// 正文（受行数/字节上限约束，超限附警告），用于 <memory_index> 段；② memorySection ——
+// LLM 从确定性扫描候选中精选出的记忆完整内容块（带相对时间，并按会话去重/重读替换），
+// 用于 <memory> 段。两段均不含使用规则（规则统一在 identity 基础提示词中），各自为空时
+// 返回 ""。Best-effort：失败返回已得到的部分。
+func (s *Service) buildMemorySection(ctx context.Context, conversationID string, user storage.User, history []storage.Message) (memoryIndex string, memorySection string) {
 	if !s.EnableMemory {
-		return ""
+		return "", ""
 	}
-	blocks := make([]string, 0, 2)
-	if indexBlock := s.renderMemoryIndexBlock(ctx); indexBlock != "" {
-		blocks = append(blocks, indexBlock)
-	}
-	if selectedBlock := s.renderSelectedMemoriesBlock(ctx, conversationID, user, history); selectedBlock != "" {
-		blocks = append(blocks, selectedBlock)
-	}
-	return strings.Join(blocks, "\n\n")
+	return s.renderMemoryIndexBlock(ctx), s.renderSelectedMemoriesBlock(ctx, conversationID, user, history)
 }
 
-// renderMemoryIndexBlock 渲染 memory.md 索引块（需求1）。
+// renderMemoryIndexBlock 渲染 memory.md 索引正文（需求1）。仅返回索引数据本身（超限时
+// 附运行态警告），不含说明文案——<memory_index> 段的内容简述由 prompt 层提供，使用规则
+// 统一位于 identity 基础提示词。
 func (s *Service) renderMemoryIndexBlock(ctx context.Context) string {
 	text, truncated, totalLines := s.Store.LoadMemoryIndexForPrompt(ctx)
 	if strings.TrimSpace(text) == "" || !hasMemoryIndexEntries(text) {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("### 过往记忆索引（memory.md）\n")
-	b.WriteString("以下内容来自 memory.md，仅作为过往记忆文件的索引使用。仅用于 update_memory/delete_memory 定位、更新或删除对应记忆文件；索引条目不是有效记忆内容，不得当作用户偏好、项目事实或参考资料使用。\n\n")
 	if truncated {
 		b.WriteString(fmt.Sprintf("WARNING: MEMORY.md is %d lines (limit: %d). Only part of it was loaded.\n", totalLines, memoryIndexMaxLines))
 		b.WriteString("Keep index entries to one line under ~200 chars; move detail into topic files.\n\n")
@@ -333,7 +328,9 @@ func (s *Service) selectRelevantMemories(ctx context.Context, candidates []stora
 	return pickScannedByIndex(candidates, indices, maxInjectedMemories)
 }
 
-// renderSelectedMemoriesBlock 扫描候选、LLM 精选、读取完整内容并渲染（需求4/5）。
+// renderSelectedMemoriesBlock 扫描候选、LLM 精选、读取完整内容并渲染（需求4/5）。仅返回
+// 被选中记忆的正文条目（按会话去重/重读），不含说明文案与过期提示——<memory> 段的内容简述
+// 由 prompt 层提供，记忆可能过期、须以当前事实为准等使用规则统一位于 identity 基础提示词。
 func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationID string, user storage.User, history []storage.Message) string {
 	candidates, err := s.Store.ScanRecentMemories(ctx)
 	if err != nil {
@@ -354,7 +351,6 @@ func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationI
 		modTime time.Time
 	}
 	rendered := make([]renderedMemory, 0, len(selected))
-	hasStale := false
 	for _, cand := range selected {
 		shouldInject, err := s.Store.ShouldInjectMemory(ctx, conversationID, cand.Path, cand.ModTime)
 		if err != nil {
@@ -369,25 +365,16 @@ func (s *Service) renderSelectedMemoriesBlock(ctx context.Context, conversationI
 			continue
 		}
 		rendered = append(rendered, renderedMemory{mem: mem, modTime: cand.ModTime})
-		if now.Sub(cand.ModTime) > 24*time.Hour {
-			hasStale = true
-		}
 	}
 	if len(rendered) == 0 {
 		return ""
 	}
 
-	var b strings.Builder
-	b.WriteString("### 真实有效记忆\n以下内容来自被选中的具体记忆文件，不是 memory.md 索引；它们只是可能与当前会话相关的历史上下文，仅适用于当前项目。若与当前用户描述、当前会话上下文或当前项目事实不符，必须以当前描述和当前事实为准。")
-	if hasStale {
-		b.WriteString("\n")
-		b.WriteString("Memories are point-in-time observations, not live state — claims about code behavior or file:line citations may be outdated. Verify against current code before asserting as fact.")
-	}
+	entries := make([]string, 0, len(rendered))
 	for _, item := range rendered {
-		b.WriteString("\n\n")
-		b.WriteString(renderSelectedMemory(item.mem, humanizeRelativeTime(item.modTime, now)))
+		entries = append(entries, renderSelectedMemory(item.mem, humanizeRelativeTime(item.modTime, now)))
 	}
-	return b.String()
+	return strings.Join(entries, "\n\n")
 }
 
 // renderSelectedMemory 渲染单条被选中记忆的完整内容，带类型与相对时间。

@@ -46,7 +46,7 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		Conversation:   state.Conversation,
 		User:           state.User,
 		RequestHistory: requestHistory,
-		SystemPrompt:   state.SystemPrompt,
+		SystemPrompt:   estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder),
 		Tools:          s.Tools.Definitions(),
 		Store:          store,
 		Estimator:      compression.DefaultTokenEstimator{},
@@ -112,7 +112,7 @@ func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 		Conversation:   state.Conversation,
 		User:           state.User,
 		RequestHistory: requestHistory,
-		SystemPrompt:   state.SystemPrompt,
+		SystemPrompt:   estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder),
 		Tools:          s.Tools.Definitions(),
 		Store:          store,
 		Estimator:      compression.DefaultTokenEstimator{},
@@ -125,7 +125,7 @@ func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 		return err
 	}
 	state.ModelHistory = req.RequestHistory
-	state.Messages = buildOpenAIMessages(state.SystemPrompt, req.RequestHistory)
+	state.Messages = buildOpenAIMessagesWithReminder(state.SystemPrompt, state.SystemReminder, req.RequestHistory)
 	return nil
 }
 

@@ -60,6 +60,7 @@ type Service struct {
 	LLM               llm.Client
 	Tools             *ToolRegistry
 	BuiltinSkills     *sessions.SkillLoader
+	UserSkillsDir     string
 	BasePrompt        string
 	Prompts           FunctionalPrompts
 	CynosureMarkdown  config.CynosureMarkdownContext
@@ -101,6 +102,12 @@ func (s *Service) hookManager() *HookManager {
 
 func (s *Service) SetBuiltinSkills(loader *sessions.SkillLoader) {
 	s.BuiltinSkills = loader
+}
+
+// SetUserSkillsDir 设置用户级 skill 目录（~/.cynosure/skills）。
+// buildSkillSnapshot 每轮从该目录与工作区目录重新加载非内置 skill。
+func (s *Service) SetUserSkillsDir(dir string) {
+	s.UserSkillsDir = dir
 }
 
 func (s *Service) SetBasePrompt(prompt string) {

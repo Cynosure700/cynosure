@@ -317,3 +317,17 @@ func TestLoadCynosureMarkdownContextRejectsUnreadableCynosureMarkdown(t *testing
 		t.Fatalf("error = %q, want path %q", err.Error(), badPath)
 	}
 }
+
+func TestCynosureSystemSkillsDirResolvesUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir, err := CynosureSystemSkillsDir()
+	if err != nil {
+		t.Fatalf("CynosureSystemSkillsDir: %v", err)
+	}
+	want := filepath.Join(home, ".cynosure", "system", "skills")
+	if dir != want {
+		t.Fatalf("CynosureSystemSkillsDir = %q, want %q", dir, want)
+	}
+}

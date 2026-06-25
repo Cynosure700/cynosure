@@ -113,7 +113,7 @@ func (s *Service) buildSubagentProfile(kind subagentType, user storage.User, sna
 }
 
 func (s *Service) buildSubagentSystemPrompt(user storage.User, snapshot *agenttools.SkillSnapshot) string {
-	base := s.buildSystemPromptWithMemory(user, snapshot, "")
+	base := s.buildSystemPromptWithMemory(user, snapshot, "", "")
 	return strings.TrimSpace(base) + "\n\n" + strings.TrimSpace(s.Prompts.withDefaults().GeneralSubagent)
 }
 

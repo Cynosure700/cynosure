@@ -2,7 +2,7 @@
 
 ## 1. 背景与目标
 
-当前 cynosure 在每轮请求前由 `assistant.BuildSystemPrompt` 统一拼接系统提示词，动态段落依次为 `identity`、`workspace`、`system-reminder`（CYNOSURE.MD）、`tools`、`skills`、`memory`（`internal/assistant/prompt.go:147`、`internal/assistant/prompt.go:202`）。启动期通过 `local.Bootstrap` 读取进程级上下文（如 CYNOSURE.MD），再注入 runtime service（`internal/local/bootstrap.go:71`、`internal/local/bootstrap.go:85`）。
+当前 cynosure 在每轮请求前由 `assistant.BuildSystemPrompt` 构造 system prompt，并由 `assistant.BuildSystemReminder` 构造紧跟 system message 的临时 user `<system-reminder>`。system prompt 动态段落为 `identity`、`workspace`、`tools`、`git-status`；临时 `<system-reminder>` 承载 `current_day`、skills、CYNOSURE.MD、memory index 与 memory。启动期通过 `local.Bootstrap` 读取进程级上下文（如 CYNOSURE.MD 与 Git 快照），再注入 runtime service。
 
 本次目标：为系统提示词新增 **Git 环境上下文** 段落，让模型在回答时了解当前工作区的 Git 状态。
 
@@ -11,7 +11,7 @@
 1. 采集当前工作区的 Git 信息：当前分支、主分支、工作区变更状态、最近提交、Git 用户名。
 2. 按固定格式拼接成一段文本，作为对话开始时的 Git 快照（snapshot），会话过程中不刷新。
 3. `status` 输出超过 2000 字符时截断，并追加截断提示。
-4. 将该段落注入到 `memory` 段落之前。
+4. 将该段落放到 system prompt 最后。
 5. 若本地不是 Git 仓库 / 无 Git 信息 / 关键 Git 命令执行失败，则**整段忽略**，不影响其余提示词。
 6. 其他策略不变，不影响现有功能。
 
@@ -35,7 +35,7 @@
 
 ### 方案 B：启动期采集，独立段落注入（推荐）
 
-启动期在 `local.Bootstrap` 采集 Git 快照并格式化为文本，注入 runtime；`BuildSystemPrompt` 渲染为独立 `<git-status>` 段落，位置在 `<memory>` 之前。
+启动期在 `local.Bootstrap` 采集 Git 快照并格式化为文本，注入 runtime；`BuildSystemPrompt` 渲染为独立 `<git-status>` 段落，位置在 system prompt 最后。
 
 - 优点：边界清晰、与 CYNOSURE.MD/workspace 等动态段落一致；快照语义自洽；启动只执行一次；易于单测。
 - 缺点：需新增采集包、runtime 字段与 setter，并补充单测（改动可控）。
@@ -44,7 +44,7 @@
 
 把 Git 文本拼进现有 system-reminder 段落。
 
-- 缺点：Git 状态与"用户/项目说明"语义不同，混在一起边界不清；需求明确要求注入到 `memory` 段落之前，单独成段更直观。
+- 缺点：Git 状态与"用户/项目说明"语义不同，混在一起边界不清；当前结构要求 Git 信息保留在 system prompt 最后，单独成段更直观。
 
 **采用方案 B。**
 
@@ -168,7 +168,7 @@ if gitStatus := strings.TrimSpace(opts.GitStatus); gitStatus != "" {
 }
 ```
 
-- 段落顺序变为：`identity` → `workspace` → `system-reminder`(CYNOSURE.MD) → `tools` → `skills` → `git-status` → `memory`。满足"注入到记忆段落的前面"。
+- 段落顺序变为：system prompt 内 `identity` → `workspace` → `tools` → `git-status`，运行期 `<system-reminder>` 作为紧跟 system message 的临时 user message 承载 current_day、skills、CYNOSURE.MD 与 memory。满足"git 相关信息放到系统提示词的最后"。
 - 该段独立于 memory：即使 memory 段为空，只要 `GitStatus` 非空仍会渲染。
 
 ### 6.3 `internal/agent/runtime`：持有并传递
@@ -223,7 +223,7 @@ runtimeService.SetGitStatusContext(gitStatus)
 ### 7.2 `internal/assistant` 单测（扩展 `prompt_test.go`）
 
 - `GitStatus` 非空时输出包含 `<git-status>` 及其内容。
-- 段落顺序：`</skills>`（或 `</tools>`）在 `<git-status>` 之前，`</git-status>` 在 `<memory>` 之前。
+- 段落顺序：`</tools>` 在 `<git-status>` 之前，`</git-status>` 是 system prompt 的最后一个动态段落；`<system-reminder>` 不属于 system prompt。
 - `GitStatus` 为空时不输出 `<git-status>`。
 - 即使 `MemorySection` 为空，`GitStatus` 非空仍渲染 `<git-status>`。
 

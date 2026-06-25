@@ -21,7 +21,7 @@ func appendInternalUserPrompt(state *LoopState, content string) {
 		ID:             state.NextMessageID(),
 		ConversationID: state.Conversation.ID,
 		UserID:         state.User.ID,
-		Role:           "assistant",
+		Role:           "system",
 		Content:        content,
 	})
 }

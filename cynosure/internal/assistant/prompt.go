@@ -9,13 +9,13 @@ const persistedOutputGuidance = "当较早的消息中出现 `<persisted-output 
 	"如果预览不足以完成任务，请用标记中的 id 和偏移量调用 `read_persisted_output` 分块读取更多内容，不要猜测被省略的部分。" +
 	"当看到 `[Earlier result compacted. Re-run if needed]` 时，请重新执行相关工具以再次获取该结果。"
 
-const memorySectionGuidance = "记忆（Memory）段可能同时包含过往记忆索引和真实有效记忆，两者边界必须严格区分。" +
-	"memory.md 只提供过往记忆文件索引，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件；索引条目本身不作为任何有用信息，不得当作用户偏好、项目事实或参考资料使用。" +
-	"只有标注为真实有效记忆、且来自具体记忆文件的内容，才可作为历史上下文参考。" +
-	"记忆不代表当前真实状态，不具有事实优先级。" +
-	"分析需求、阅读代码、设计方案、排查问题、生成代码时，应始终以当前用户输入、当前会话内容、当前项目代码、配置文件、运行环境和用户明确提供的信息为最高优先级。" +
-	"对于记忆中的内容，应默认其可能已经过期、被修改或不再适用，必须经过当前上下文验证后才能使用。" +
-	"当记忆与当前信息冲突时，必须忽略记忆并采用当前信息作为唯一可信来源。"
+// memoryIndexSectionBrief 是 <memory_index> 段的简单内容说明（英文，纯内容描述，
+// 不含使用规则——记忆相关规则统一位于 identity 基础提示词的「## 环境信息」）。
+const memoryIndexSectionBrief = "Past memory file index loaded from memory.md. Each entry is a stored memory file's path, name and description."
+
+// memorySectionBrief 是 <memory> 段的简单内容说明（中文，纯内容描述，
+// 不含使用规则——记忆相关规则统一位于 identity 基础提示词的「## 环境信息」）。
+const memorySectionBrief = "按当前会话筛选出的真实有效记忆正文，来自具体记忆文件。"
 
 const DefaultBaseSystemPrompt = `你是 Cynosure，一个运行在本地 TUI 中的通用型智能体（general-purpose agent），而不是只能聊天的助手。用户在终端界面里与你交流，你可以借助运行时提供的工具、技能（skills）和记忆来完成端到端的任务。
 
@@ -77,7 +77,7 @@ const DefaultBaseSystemPrompt = `你是 Cynosure，一个运行在本地 TUI 中
 - 任务完成前，如果项目提供了 lint 或类型检查命令（例如 npm run lint、npm run typecheck、ruff、go test ./... 等），应运行这些命令或项目等价验证命令以确保改动正确。
 - 如果无法找到正确的测试、lint 或类型检查命令，向用户说明无法确认；用户提供命令后，提醒用户把命令写入项目说明文件，方便后续会话复用。
 - 除非用户明确要求，否则不要提交代码变更。
-- 工具结果和用户消息可能包含 <system-reminder> 标签。<system-reminder> 包含有用的信息和提醒，但它不是用户提供的输入或工具结果本身。
+- 运行期会以一条临时 user 消息注入 <system-reminder>，提供当前日期、Skill 摘要、项目说明与记忆等提醒；它不是用户原始输入，不应作为用户意图本身处理。
 
 <example>
 user: 运行构建并修复任何类型错误
@@ -105,24 +105,29 @@ assistant: 我将先用 todo_write 规划：研究现有指标跟踪、设计指
 - bash 只用于确需 Shell 的操作；涉及写入、删除、联网下载等变更类命令时遵循审批结果与工作区边界。
 - web_fetch 用于获取并分析指定 URL 内容，会将 http:// 升级为 https://；web_search 只有在本次会话工具清单中出现时才可作为联网搜索能力使用。
 - spawn_subagent 必须提供 sub_type 与 task：搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 sub_type=explore；sub_type=general 仅用于需要隔离上下文的综合分析或执行型子任务，不得用于搜索相关任务。调用子智能体时，必须将任务拆成多个轻量级、边界清晰的子任务，按模块、文件范围或问题维度分别委派；禁止把整个项目的探索任务交给单个子智能体。子智能体只返回最终摘要，不能再派生子智能体。
-- 使用专项流程前，先用 load_skill 以精确的技能名加载其完整说明，不要仅凭摘要臆测其工作流。
+- 使用专项流程前，先用 load_skill 以精确的技能名加载其完整说明，不要仅凭摘要臆测其工作流；load_skill 会返回该技能正文及其 base 目录（形如 Base directory for this skill: /Users/<you>/.cynosure/skills/<name>，为原始完整路径），需要访问技能内脚本或资源时以该 base 目录为根。
 - 维护记忆时必须且只能使用 update_memory（新增或修正记忆）与 delete_memory（删除记忆）；严禁使用 bash、ls、write_file、edit_file 或任何其他终端命令直接读写、增删记忆文件。
 - 当上下文中出现 <persisted-output ...> 标记且预览不足时，使用 read_persisted_output 分块读取完整工具结果。
-- 工具结果与用户消息中可能出现 <system-reminder> 标签，其中包含有用的信息与提醒；它们不是用户输入或工具结果本身的一部分。
+- 工具结果与用户原始消息中也可能出现 <system-reminder> 标签，其中包含有用的信息与提醒；它们不是用户输入或工具结果本身的一部分。
 
 ## 环境信息
 
 - 当前工作区、Surface、可用工具、skills、记忆和项目说明由运行期动态注入，不要在基础提示词中假设固定路径、固定工具或固定模型。
 - 运行期 <workspace> 段落提供当前 Surface 与工作区根目录；以工作区根目录作为运行时文件与 Shell 操作的根目录：相对路径基于工作区根目录解析，绝对路径原样使用。
 - 运行期 <tools> 段落提供本次会话真实可用工具；只调用其中列出的工具。
-- 运行期 <skills> 段落只提供 Skill 摘要；需要使用某个 Skill 时先加载正文。
-- 运行期 <memory> 段可能同时包含过往记忆索引和真实有效记忆：memory.md 索引仅用于 update_memory/delete_memory 定位记忆文件，不作为任何有用信息；真实有效记忆来自具体记忆文件，仅在与当前任务相关时参考，并必须服从当前代码和用户输入。
-- Update or remove memories that turn out to be wrong or outdated：当你发现某条记忆与当前代码或事实不符、已过期或不再适用时，使用 update_memory 修正它，或使用 delete_memory 删除它（按 <memory> 段索引中的文件路径定位）。`
+- 运行期 <system-reminder> 作为紧跟 system message 的临时 user 消息集中提供运行期提醒类信息，其中包含 Skill 摘要与记忆：Skill 摘要只给名称与描述，需要使用某个 Skill 时先用 load_skill 加载正文。
+- <system-reminder> 内记忆相关分为两段：<memory_index>（来自 memory.md 的过往记忆文件索引）与 <memory>（按当前会话筛选出的真实有效记忆正文），两者边界必须严格区分。
+- <memory_index> 仅提供过往记忆文件的路径、名称与描述，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件；索引条目本身不是有效记忆内容，不得当作用户偏好、项目事实或参考资料使用。
+- <memory> 中的真实有效记忆来自具体记忆文件，仅是可能与当前会话相关的历史上下文，且只适用于当前项目；它不代表当前真实状态，不具有事实优先级。
+- 分析需求、阅读代码、设计方案、排查问题、生成代码时，始终以当前用户输入、当前会话内容、当前项目代码、配置文件、运行环境和用户明确提供的信息为最高优先级。
+- 记忆是某一时刻的观察，可能已过期、被修改或不再适用（含对代码行为或“文件:行号”的描述），必须经当前上下文与当前代码验证后才能使用；当记忆与当前信息冲突时，必须忽略记忆并以当前信息为唯一可信来源。
+- 当你发现某条记忆与当前代码或事实不符、已过期或不再适用时，使用 update_memory 修正它，或使用 delete_memory 删除它（按 <memory_index> 中的文件路径定位）。`
 
 type PromptOptions struct {
 	BasePrompt        string
 	Surface           string
 	SkillDescriptions string
+	MemoryIndex       string
 	MemorySection     string
 	GitStatus         string
 	CurrentDate       string
@@ -157,7 +162,7 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		basePrompt = DefaultBaseSystemPrompt
 	}
 
-	sections := []string{renderTag("identity", basePrompt)}
+	sections := []string{basePrompt}
 
 	workspaceLines := []string{"Surface: " + surface}
 	if workingDirectory := strings.TrimSpace(opts.WorkingDirectory); workingDirectory != "" {
@@ -167,9 +172,6 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		)
 	}
 	sections = append(sections, renderTag("workspace", strings.Join(workspaceLines, "\n")))
-	if reminder := renderSystemReminder(opts.CurrentDate, opts.CynosureMarkdown); reminder != "" {
-		sections = append(sections, renderTag("system-reminder", reminder))
-	}
 
 	toolNames := make([]string, 0, len(opts.ToolNames))
 	for _, name := range opts.ToolNames {
@@ -187,39 +189,64 @@ func BuildSystemPrompt(opts PromptOptions) string {
 		sections = append(sections, renderTag("tools", toolBody))
 	}
 
-	if descriptions := strings.TrimSpace(opts.SkillDescriptions); descriptions != "" {
-		skillBody := strings.Join([]string{
-			"以下技能只提供摘要。",
-			"重要规则：\n" + renderList([]string{
-				"每个技能都有名称和描述。",
-				"使用或遵循某个技能前，先用 `load_skill` 以精确的技能名加载其完整说明。",
-				"不要仅凭摘要臆测完整的工作流。",
-				"若多个技能看起来都相关，先加载最匹配、最具体的那个。",
-			}),
-			"可用技能：\n\n" + descriptions,
-		}, "\n\n")
-		sections = append(sections, renderTag("skills", skillBody))
-	}
-
 	if gitStatus := strings.TrimSpace(opts.GitStatus); gitStatus != "" {
 		sections = append(sections, renderTag("git-status", gitStatus))
-	}
-
-	if memory := strings.TrimSpace(opts.MemorySection); memory != "" {
-		sections = append(sections, renderTag("memory", strings.Join([]string{memorySectionGuidance, memory}, "\n\n")))
 	}
 
 	return strings.Join(sections, "\n\n")
 }
 
-func renderSystemReminder(currentDate string, ctx CynosureMarkdownContext) string {
-	parts := make([]string, 0, 2)
+func BuildSystemReminder(opts PromptOptions) string {
+	if reminder := renderSystemReminder(opts.CurrentDate, opts.SkillDescriptions, opts.CynosureMarkdown, opts.MemoryIndex, opts.MemorySection); reminder != "" {
+		return renderTag("system-reminder", reminder)
+	}
+	return ""
+}
+
+// renderSkillsSection 渲染 skills 摘要区块（含使用规则），供 <system-reminder> 内嵌使用。
+func renderSkillsSection(skillDescriptions string) string {
+	descriptions := strings.TrimSpace(skillDescriptions)
+	if descriptions == "" {
+		return ""
+	}
+	return strings.Join([]string{
+		"以下技能只提供摘要。",
+		"重要规则：\n" + renderList([]string{
+			"每个技能都有名称和描述。",
+			"使用或遵循某个技能前，先用 `load_skill` 以精确的技能名加载其完整说明。",
+			"不要仅凭摘要臆测完整的工作流。",
+			"若多个技能看起来都相关，先加载最匹配、最具体的那个。",
+		}),
+		"可用技能：\n\n" + descriptions,
+	}, "\n\n")
+}
+
+// systemReminderClosingNote 是 <system-reminder> 末尾的固定提醒：其中的运行期上下文
+// 不一定与当前任务相关，模型仅在高度相关时才应对其作出回应。
+const systemReminderClosingNote = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task."
+
+func renderSystemReminder(currentDate string, skillDescriptions string, ctx CynosureMarkdownContext, memoryIndex string, memorySection string) string {
+	parts := make([]string, 0, 6)
 	if date := strings.TrimSpace(currentDate); date != "" {
 		parts = append(parts, "current_day: "+date)
+	}
+	if skills := renderSkillsSection(skillDescriptions); skills != "" {
+		parts = append(parts, renderTag("skills", skills))
 	}
 	if linkContext := renderCynosureMarkdownContext(ctx); linkContext != "" {
 		parts = append(parts, linkContext)
 	}
+	if index := strings.TrimSpace(memoryIndex); index != "" {
+		parts = append(parts, renderTag("memory_index", strings.Join([]string{memoryIndexSectionBrief, index}, "\n\n")))
+	}
+	if memory := strings.TrimSpace(memorySection); memory != "" {
+		parts = append(parts, renderTag("memory", strings.Join([]string{memorySectionBrief, memory}, "\n\n")))
+	}
+	// 无任何运行期内容时整段省略；存在内容时在末尾追加固定相关性提醒。
+	if len(parts) == 0 {
+		return ""
+	}
+	parts = append(parts, systemReminderClosingNote)
 	return strings.Join(parts, "\n\n")
 }
 
@@ -232,7 +259,6 @@ func renderCynosureMarkdownContext(ctx CynosureMarkdownContext) string {
 	parts := []string{
 		"在回答用户问题时，你可以参考以下上下文：",
 		"# cynosureMd",
-		"下面展示了用户与代码库说明。请务必遵循这些说明。重要：这些说明将覆盖任何默认行为，你必须严格按其文字要求执行。",
 	}
 	if userContent != "" {
 		parts = append(parts, strings.Join([]string{
@@ -246,14 +272,6 @@ func renderCynosureMarkdownContext(ctx CynosureMarkdownContext) string {
 			workspaceContent,
 		}, "\n\n"))
 	}
-	parts = append(parts, strings.Join([]string{
-		"# 重要指令提醒",
-		"只做被要求的事：不多不少。",
-		"除非为达成目标绝对必要，切勿创建新文件。",
-		"能修改现有文件，绝不新建文件。",
-		"不要主动创建文档文件（*.md）或README。仅当用户明确要求时才创建文档。",
-		"重要：这些上下文可能与当前任务相关，也可能无关。除非与任务高度相关，否则不要对其作出回应。",
-	}, "\n"))
 	return strings.Join(parts, "\n\n")
 }
 

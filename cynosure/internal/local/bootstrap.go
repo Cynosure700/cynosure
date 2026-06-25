@@ -57,7 +57,14 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	builtinSkills, err := loadSkills(cfg.WorkspaceRoot, userSkillsDir)
+	// 运行期只持有内置（嵌入二进制）skill 的固定加载器；用户级 / 工作区级 skill
+	// 由 runtime 每轮从磁盘重载（见 SetUserSkillsDir 与 buildSkillSnapshot）。
+	builtinSkills, err := loadBuiltinSkills()
+	if err != nil {
+		return nil, fmt.Errorf("load cynosure builtin skills: %w", err)
+	}
+	// mergedSkills 仅用于 /skills 启动概览（含来源），合并内置 + 用户 + 工作区。
+	mergedSkills, err := loadSkills(cfg.WorkspaceRoot, userSkillsDir)
 	if err != nil {
 		return nil, fmt.Errorf("load cynosure skills: %w", err)
 	}
@@ -83,6 +90,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	runtimeService.Prompts = functionalPrompts
 	runtimeService.EnableMemory = true
 	runtimeService.SetBuiltinSkills(builtinSkills)
+	runtimeService.SetUserSkillsDir(userSkillsDir)
 	runtimeService.SetBasePrompt(basePrompt)
 	runtimeService.SetCynosureMarkdownContext(cynosureMarkdown)
 	runtimeService.SetGitStatusContext(gitStatus)
@@ -103,7 +111,7 @@ func Bootstrap(ctx context.Context, cwd string) (*Bundle, error) {
 	mcpManager.EnsureWorkspaceSessions(ctx)
 	mcpTools := mcpManager.ToolsForUser(user.ID)
 	mcpSnapshot := mcpManager.Snapshot(user.ID)
-	skills := builtinSkills.Summaries()
+	skills := mergedSkills.Summaries()
 	return &Bundle{Runtime: runtimeService, Store: store, MCP: mcpManager, User: user, Conversation: conversation, CWD: cfg.WorkspaceRoot, SkillCount: len(skills), Skills: skills, MCPToolCount: len(mcpTools), MCPServers: mcpSnapshot.Servers}, nil
 }
 
@@ -111,6 +119,11 @@ func (b *Bundle) Close() {
 	if b != nil && b.MCP != nil {
 		b.MCP.Close()
 	}
+}
+
+// loadBuiltinSkills 仅加载内置（嵌入二进制）skills，作为 runtime 的固定内置加载器。
+func loadBuiltinSkills() (*sessions.SkillLoader, error) {
+	return sessions.LoadSkillsFromFS(assets.BuiltinSkillsFS(), "builtin")
 }
 
 // loadSkills 合并内置（嵌入二进制）、用户级与工作区级 skills。

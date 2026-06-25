@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -15,12 +16,18 @@ type SkillSnapshot struct {
 	WorkspaceSkills *sessions.SkillLoader
 	LocalSkills     *sessions.SkillLoader
 	Merged          *sessions.SkillLoader
+
+	// BuiltinMaterializer 在加载来源为 builtin 的 skill 时被调用，把该 skill 的
+	// 整棵目录树落盘到 ~/.cynosure/system/skills/<name>/ 并返回落盘 base 目录。
+	// 为空时表示不落盘（如单测场景），此时仅返回 skill 正文。
+	BuiltinMaterializer func(name string) (baseDir string, err error)
 }
 
 type LoadedSkill struct {
-	Name   string
-	Source string
-	Entry  *sessions.SkillEntry
+	Name    string
+	Source  string
+	BaseDir string
+	Entry   *sessions.SkillEntry
 }
 
 const skillSnapshotContextKey contextKey = "skill_snapshot"
@@ -58,10 +65,32 @@ func (s *SkillSnapshot) LoadSkill(name string) (LoadedSkill, error) {
 			if source == "" {
 				source = "local"
 			}
-			return LoadedSkill{Name: name, Source: source, Entry: entry}, nil
+			return LoadedSkill{Name: name, Source: source, BaseDir: s.resolveBaseDir(name, source, entry), Entry: entry}, nil
 		}
 	}
 	return LoadedSkill{}, fmt.Errorf("unknown skill %q. Available: %s", name, strings.Join(s.availableSkillNames(), ", "))
+}
+
+// resolveBaseDir 计算 skill 的 base 目录（供模型定位 skill 资源），返回原始完整路径。
+// 来源为 builtin 时，把整棵目录树落盘到 ~/.cynosure/system/skills/<name>/ 并以其为 base；
+// 其它来源使用磁盘上 SKILL.md 的父目录。
+func (s *SkillSnapshot) resolveBaseDir(name, source string, entry *sessions.SkillEntry) string {
+	if source == "builtin" {
+		if s.BuiltinMaterializer != nil {
+			if baseDir, err := s.BuiltinMaterializer(name); err == nil && strings.TrimSpace(baseDir) != "" {
+				return baseDir
+			}
+		}
+		return ""
+	}
+	if entry == nil {
+		return ""
+	}
+	path := strings.TrimSpace(entry.Path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Dir(path)
 }
 
 func (s *SkillSnapshot) availableSkillNames() []string {
@@ -110,10 +139,15 @@ func renderLoadedSkill(loaded LoadedSkill) string {
 		}
 		metadata = append(metadata, key+": "+value)
 	}
-	return fmt.Sprintf("<skill source=\"%s\" name=\"%s\">\n<metadata>\n%s\n</metadata>\n<content>\n%s\n</content>\n</skill>",
+	baseDirLine := ""
+	if baseDir := strings.TrimSpace(loaded.BaseDir); baseDir != "" {
+		baseDirLine = "\nBase directory for this skill: " + baseDir
+	}
+	return fmt.Sprintf("<skill source=\"%s\" name=\"%s\">\n<metadata>\n%s\n</metadata>\n<content>\n%s\n</content>%s\n</skill>",
 		html.EscapeString(loaded.Source),
 		html.EscapeString(loaded.Name),
 		html.EscapeString(strings.Join(metadata, "\n")),
 		entry.Body,
+		baseDirLine,
 	)
 }

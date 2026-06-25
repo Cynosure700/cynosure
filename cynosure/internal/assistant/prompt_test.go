@@ -23,7 +23,7 @@ func TestLoadBaseSystemPromptFromFile(t *testing.T) {
 }
 
 func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{
+	opts := PromptOptions{
 		BasePrompt:       "Custom base prompt.",
 		Surface:          "local TUI",
 		WorkingDirectory: "/workspace",
@@ -35,68 +35,114 @@ func TestBuildSystemPromptUsesLoadedBasePromptAndAppendsDynamicSections(t *testi
 		},
 		ToolNames:         []string{"load_skill", "bash"},
 		SkillDescriptions: "<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
+		MemoryIndex:       "- [简洁](pref.md) — 简洁中文",
 		MemorySection:     "Remember user preference.",
 		GitStatus:         "This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.\n\nCurrent branch: main",
 		CurrentDate:       "2026-06-24",
-	})
+	}
+	prompt := BuildSystemPrompt(opts)
+	reminder := BuildSystemReminder(opts)
 
 	for _, want := range []string{
-		"<identity>",
 		"Custom base prompt.",
-		"</identity>",
 		"<workspace>",
 		"Surface: local TUI",
 		"Workspace root: /workspace",
 		"以工作区根目录作为运行时文件与 Shell 操作的根目录：相对路径基于工作区根目录解析，绝对路径原样使用。",
 		"</workspace>",
-		"<system-reminder>",
-		"current_day: 2026-06-24",
-		"# cynosureMd",
-		"用户全局说明：",
-		"# User Rule\n全局说明",
-		"项目说明：",
-		"# Project Rule\n项目说明",
-		"重要：这些上下文可能与当前任务相关，也可能无关。除非与任务高度相关，否则不要对其作出回应。",
-		"</system-reminder>",
 		"<tools>",
 		"本次会话可用的工具如下：",
 		"- load_skill",
 		"- bash",
 		"</tools>",
-		"<skills>",
-		"以下技能只提供摘要。",
-		"使用或遵循某个技能前，先用 `load_skill` 以精确的技能名加载其完整说明。",
-		"不要仅凭摘要臆测完整的工作流。",
-		"可用技能：\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
 		"<git-status>",
 		"This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
 		"Current branch: main",
 		"</git-status>",
-		"<memory>",
-		"记忆（Memory）段可能同时包含过往记忆索引和真实有效记忆，两者边界必须严格区分。",
-		"memory.md 只提供过往记忆文件索引，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件；索引条目本身不作为任何有用信息",
-		"只有标注为真实有效记忆、且来自具体记忆文件的内容，才可作为历史上下文参考。",
-		"Remember user preference.",
-		"</memory>",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
 		}
 	}
+	for _, forbidden := range []string{
+		"<system-reminder>",
+		"current_day: 2026-06-24",
+		"# cynosureMd",
+		"<memory_index>",
+		"<memory>",
+		"IMPORTANT: this context may or may not be relevant to your tasks.",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("expected system prompt to exclude reminder content %q, got %q", forbidden, prompt)
+		}
+	}
+	for _, want := range []string{
+		"<system-reminder>",
+		"current_day: 2026-06-24",
+		"<skills>",
+		"以下技能只提供摘要。",
+		"使用或遵循某个技能前，先用 `load_skill` 以精确的技能名加载其完整说明。",
+		"不要仅凭摘要臆测完整的工作流。",
+		"可用技能：\n\n<skills>\n<skill>\n<name>demo</name>\n<description>Demo skill</description>\n</skill>\n</skills>",
+		"# cynosureMd",
+		"用户全局说明：",
+		"# User Rule\n全局说明",
+		"项目说明：",
+		"# Project Rule\n项目说明",
+		"<memory_index>",
+		"Past memory file index loaded from memory.md. Each entry is a stored memory file's path, name and description.",
+		"- [简洁](pref.md) — 简洁中文",
+		"</memory_index>",
+		"<memory>",
+		"按当前会话筛选出的真实有效记忆正文，来自具体记忆文件。",
+		"Remember user preference.",
+		"</memory>",
+		"IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
+		"</system-reminder>",
+	} {
+		if !strings.Contains(reminder, want) {
+			t.Fatalf("expected reminder to contain %q, got %q", want, reminder)
+		}
+	}
 	if strings.Contains(prompt, "你是 cynosure") {
 		t.Fatalf("expected custom base prompt to replace compiled default, got %q", prompt)
 	}
-	workspaceEnd := strings.Index(prompt, "</workspace>")
-	reminderStart := strings.Index(prompt, "<system-reminder>")
-	toolsStart := strings.Index(prompt, "<tools>")
-	if !(workspaceEnd < reminderStart && reminderStart < toolsStart) {
-		t.Fatalf("expected link reminder between workspace and tools, got %q", prompt)
+	if strings.Contains(prompt, "<identity>") || strings.Contains(prompt, "</identity>") {
+		t.Fatalf("expected no identity wrapper tags, got %q", prompt)
 	}
+	if !strings.HasPrefix(prompt, "Custom base prompt.\n\n<workspace>") {
+		t.Fatalf("expected base prompt body before workspace section, got %q", prompt)
+	}
+	if strings.Contains(prompt, "# 重要指令提醒") {
+		t.Fatalf("expected no extra cynosureMd reminder block, got %q", prompt)
+	}
+	// 顶层段落顺序：基础提示词正文 → workspace → tools → git-status，git 位于系统提示词最后。
+	workspaceEnd := strings.Index(prompt, "</workspace>")
+	toolsStart := strings.Index(prompt, "<tools>")
+	toolsEnd := strings.Index(prompt, "</tools>")
 	gitStatusStart := strings.Index(prompt, "<git-status>")
 	gitStatusEnd := strings.Index(prompt, "</git-status>")
-	memoryStart := strings.Index(prompt, "<memory>")
-	if !(toolsStart < gitStatusStart && gitStatusStart < gitStatusEnd && gitStatusEnd < memoryStart) {
-		t.Fatalf("expected git-status section after tools and before memory, got %q", prompt)
+	if !(workspaceEnd < toolsStart && toolsStart < toolsEnd && toolsEnd < gitStatusStart) {
+		t.Fatalf("expected tools between workspace and git-status, got %q", prompt)
+	}
+	if !(gitStatusStart < gitStatusEnd && strings.TrimSpace(prompt[gitStatusEnd+len("</git-status>"):]) == "") {
+		t.Fatalf("expected git-status section at the end of system prompt, got %q", prompt)
+	}
+	// skills、memory_index 与 memory 位于临时 user <system-reminder> 内部，顺序为
+	// current_day → skills → cynosureMd → memory_index → memory → 结尾相关性提醒。
+	reminderStart := strings.Index(reminder, "<system-reminder>")
+	reminderEnd := strings.Index(reminder, "</system-reminder>")
+	dayIdx := strings.Index(reminder, "current_day: 2026-06-24")
+	skillsIdx := strings.Index(reminder, "<skills>")
+	mdIdx := strings.Index(reminder, "# cynosureMd")
+	memoryIndexIdx := strings.Index(reminder, "<memory_index>")
+	memoryIdx := strings.Index(reminder, "<memory>")
+	closingIdx := strings.Index(reminder, "IMPORTANT: this context may or may not be relevant to your tasks.")
+	if !(reminderStart < dayIdx && dayIdx < skillsIdx && skillsIdx < mdIdx && mdIdx < memoryIndexIdx && memoryIndexIdx < memoryIdx && memoryIdx < closingIdx && closingIdx < reminderEnd) {
+		t.Fatalf("expected current_day → skills → cynosureMd → memory_index → memory → closing note inside system-reminder, got %q", reminder)
+	}
+	if strings.Contains(reminder, "记忆（Memory）段可能同时包含过往记忆索引") {
+		t.Fatalf("expected memory usage rules to live in identity, not in system-reminder memory section, got %q", reminder)
 	}
 }
 
@@ -122,43 +168,38 @@ func TestBuildSystemPromptRendersGitStatusWithoutMemory(t *testing.T) {
 }
 
 func TestBuildSystemPromptOmitsEmptyCynosureMarkdownContext(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
-	if strings.Contains(prompt, "# cynosureMd") || strings.Contains(prompt, "<system-reminder>") {
-		t.Fatalf("expected empty link markdown context to be omitted, got %q", prompt)
+	reminder := BuildSystemReminder(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	if strings.Contains(reminder, "# cynosureMd") || strings.Contains(reminder, "<system-reminder>") {
+		t.Fatalf("expected empty link markdown context to be omitted, got %q", reminder)
 	}
 }
 
-func TestBuildSystemPromptRendersCurrentDayWithoutCynosureMarkdown(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{
+func TestBuildSystemReminderRendersCurrentDayWithoutCynosureMarkdown(t *testing.T) {
+	reminder := BuildSystemReminder(PromptOptions{
 		BasePrompt:  "Base prompt.",
 		Surface:     "local TUI",
 		CurrentDate: "2026-06-24",
 	})
-	if !strings.Contains(prompt, "<system-reminder>") {
-		t.Fatalf("expected system-reminder section for current_day, got %q", prompt)
+	if !strings.Contains(reminder, "<system-reminder>") {
+		t.Fatalf("expected system-reminder section for current_day, got %q", reminder)
 	}
-	if !strings.Contains(prompt, "current_day: 2026-06-24") {
-		t.Fatalf("expected current_day line, got %q", prompt)
+	if !strings.Contains(reminder, "current_day: 2026-06-24") {
+		t.Fatalf("expected current_day line, got %q", reminder)
 	}
-	if strings.Contains(prompt, "# cynosureMd") {
-		t.Fatalf("expected no cynosureMd content when context empty, got %q", prompt)
-	}
-	workspaceEnd := strings.Index(prompt, "</workspace>")
-	reminderStart := strings.Index(prompt, "<system-reminder>")
-	if !(workspaceEnd < reminderStart) {
-		t.Fatalf("expected system-reminder after workspace, got %q", prompt)
+	if strings.Contains(reminder, "# cynosureMd") {
+		t.Fatalf("expected no cynosureMd content when context empty, got %q", reminder)
 	}
 }
 
-func TestBuildSystemPromptOmitsSystemReminderWhenNoDateOrContext(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
-	if strings.Contains(prompt, "<system-reminder>") || strings.Contains(prompt, "current_day:") {
-		t.Fatalf("expected no system-reminder when neither date nor context present, got %q", prompt)
+func TestBuildSystemReminderOmitsWhenNoDateOrContext(t *testing.T) {
+	reminder := BuildSystemReminder(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	if strings.Contains(reminder, "<system-reminder>") || strings.Contains(reminder, "current_day:") {
+		t.Fatalf("expected no system-reminder when neither date nor context present, got %q", reminder)
 	}
 }
 
-func TestBuildSystemPromptCurrentDayPrecedesCynosureMarkdown(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{
+func TestBuildSystemReminderCurrentDayPrecedesCynosureMarkdown(t *testing.T) {
+	reminder := BuildSystemReminder(PromptOptions{
 		BasePrompt:  "Base prompt.",
 		Surface:     "local TUI",
 		CurrentDate: "2026-06-24",
@@ -167,10 +208,10 @@ func TestBuildSystemPromptCurrentDayPrecedesCynosureMarkdown(t *testing.T) {
 			WorkspaceContent: "# Project Rule",
 		},
 	})
-	dayIdx := strings.Index(prompt, "current_day: 2026-06-24")
-	mdIdx := strings.Index(prompt, "# cynosureMd")
+	dayIdx := strings.Index(reminder, "current_day: 2026-06-24")
+	mdIdx := strings.Index(reminder, "# cynosureMd")
 	if dayIdx < 0 || mdIdx < 0 || dayIdx > mdIdx {
-		t.Fatalf("expected current_day before cynosureMd content, got %q", prompt)
+		t.Fatalf("expected current_day before cynosureMd content, got %q", reminder)
 	}
 }
 
@@ -194,6 +235,22 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 	}
 	if strings.Contains(DefaultBaseSystemPrompt, "记忆（Memory）段可能同时包含过往记忆索引") {
 		t.Fatalf("expected memory guidance to be injected dynamically, not embedded in default base prompt")
+	}
+}
+
+func TestDefaultBaseSystemPromptCarriesMemoryUsageRules(t *testing.T) {
+	for _, want := range []string{
+		"<system-reminder> 内记忆相关分为两段：<memory_index>（来自 memory.md 的过往记忆文件索引）与 <memory>（按当前会话筛选出的真实有效记忆正文）",
+		"<memory_index> 仅提供过往记忆文件的路径、名称与描述，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件",
+		"索引条目本身不是有效记忆内容，不得当作用户偏好、项目事实或参考资料使用",
+		"<memory> 中的真实有效记忆来自具体记忆文件，仅是可能与当前会话相关的历史上下文，且只适用于当前项目",
+		"它不代表当前真实状态，不具有事实优先级",
+		"当记忆与当前信息冲突时，必须忽略记忆并以当前信息为唯一可信来源",
+		"当你发现某条记忆与当前代码或事实不符、已过期或不再适用时，使用 update_memory 修正它，或使用 delete_memory 删除它（按 <memory_index> 中的文件路径定位）",
+	} {
+		if !strings.Contains(DefaultBaseSystemPrompt, want) {
+			t.Fatalf("expected memory usage rules to live in default base prompt, missing %q", want)
+		}
 	}
 }
 
@@ -240,9 +297,60 @@ func TestDefaultBaseSystemPromptGuidesFileAndSearchTools(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptOmitsMemoryGuidanceWhenMemorySectionIsEmpty(t *testing.T) {
-	prompt := BuildSystemPrompt(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
-	if strings.Contains(prompt, "<memory>") || strings.Contains(prompt, "记忆（Memory）段可能同时包含过往记忆索引") {
-		t.Fatalf("expected empty memory section to omit dynamic memory guidance, got %q", prompt)
+func TestBuildSystemPromptOmitsMemorySectionsWhenEmpty(t *testing.T) {
+	reminder := BuildSystemReminder(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	for _, forbidden := range []string{
+		"<memory_index>",
+		"<memory>",
+		"Past memory file index loaded from memory.md.",
+		"按当前会话筛选出的真实有效记忆正文，来自具体记忆文件。",
+	} {
+		if strings.Contains(reminder, forbidden) {
+			t.Fatalf("expected empty memory inputs to omit %q, got %q", forbidden, reminder)
+		}
+	}
+}
+
+func TestBuildSystemReminderRendersMemoryIndexWithoutEffectiveMemory(t *testing.T) {
+	reminder := BuildSystemReminder(PromptOptions{
+		BasePrompt:  "Base prompt.",
+		Surface:     "local TUI",
+		MemoryIndex: "- [简洁](pref.md) — 简洁中文",
+	})
+	if !strings.Contains(reminder, "<memory_index>") || !strings.Contains(reminder, "- [简洁](pref.md) — 简洁中文") {
+		t.Fatalf("expected memory_index section when only index present, got %q", reminder)
+	}
+	if strings.Contains(reminder, "<memory>") {
+		t.Fatalf("expected no effective memory section when memorySection empty, got %q", reminder)
+	}
+}
+
+func TestBuildSystemReminderAppendsClosingRelevanceNoteAtEndOfReminder(t *testing.T) {
+	const note = "IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task."
+	reminder := BuildSystemReminder(PromptOptions{
+		BasePrompt:  "Base prompt.",
+		Surface:     "local TUI",
+		CurrentDate: "2026-06-24",
+	})
+	noteIdx := strings.Index(reminder, note)
+	reminderEnd := strings.Index(reminder, "</system-reminder>")
+	if noteIdx < 0 || reminderEnd < 0 || !(noteIdx < reminderEnd) {
+		t.Fatalf("expected closing relevance note just before </system-reminder>, got %q", reminder)
+	}
+	// 提醒应位于 reminder 内的最后一段内容，<system-reminder> 与 </system-reminder> 之间它后面不再有其它内容。
+	between := reminder[noteIdx+len(note) : reminderEnd]
+	if strings.TrimSpace(between) != "" {
+		t.Fatalf("expected closing note to be the last content in system-reminder, trailing=%q", between)
+	}
+}
+
+func TestBuildSystemReminderOmitsClosingNoteWhenReminderEmpty(t *testing.T) {
+	const note = "IMPORTANT: this context may or may not be relevant to your tasks."
+	reminder := BuildSystemReminder(PromptOptions{BasePrompt: "Base prompt.", Surface: "local TUI"})
+	if strings.Contains(reminder, "<system-reminder>") {
+		t.Fatalf("expected no system-reminder when no runtime context, got %q", reminder)
+	}
+	if strings.Contains(reminder, note) {
+		t.Fatalf("expected no closing relevance note when system-reminder omitted, got %q", reminder)
 	}
 }

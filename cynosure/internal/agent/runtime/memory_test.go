@@ -189,8 +189,9 @@ func TestBuildMemorySection_DisabledReturnsEmpty(t *testing.T) {
 	store := &fakeStore{scannedMemories: []storage.ScannedMemory{{Path: "n.md", Name: "n"}}}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: false}
-	if got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil); got != "" {
-		t.Fatalf("expected empty when disabled, got %q", got)
+	idx, eff := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if idx != "" || eff != "" {
+		t.Fatalf("expected empty when disabled, got idx=%q eff=%q", idx, eff)
 	}
 	if len(llm.reqs) != 0 {
 		t.Fatalf("expected no LLM calls when disabled, got %d", len(llm.reqs))
@@ -201,8 +202,9 @@ func TestBuildMemorySection_NoCandidatesReturnsEmpty(t *testing.T) {
 	store := &fakeStore{}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: true}
-	if got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil); got != "" {
-		t.Fatalf("expected empty when no candidates, got %q", got)
+	idx, eff := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if idx != "" || eff != "" {
+		t.Fatalf("expected empty when no candidates, got idx=%q eff=%q", idx, eff)
 	}
 	if len(llm.reqs) != 0 {
 		t.Fatalf("expected no LLM calls when no candidates, got %d", len(llm.reqs))
@@ -213,16 +215,19 @@ func TestBuildMemorySection_OmitsEmptyMemoryIndex(t *testing.T) {
 	store := &fakeStore{memoryIndex: "# Memory Index\n\n"}
 	llm := &fakeLLMClient{}
 	service := &Service{Store: store, LLM: llm, EnableMemory: true}
-	got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
-	if got != "" {
-		t.Fatalf("expected empty memory section when memory.md has no entries, got %q", got)
+	idx, eff := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if idx != "" {
+		t.Fatalf("expected empty memory index when memory.md has no entries, got %q", idx)
+	}
+	if eff != "" {
+		t.Fatalf("expected empty effective memory when no candidates, got %q", eff)
 	}
 	if len(llm.reqs) != 0 {
 		t.Fatalf("expected no LLM calls when no candidates, got %d", len(llm.reqs))
 	}
 }
 
-func TestBuildMemorySection_InjectsIndexAndSelectedFullContentWithStaleNote(t *testing.T) {
+func TestBuildMemorySection_InjectsIndexAndSelectedFullContent(t *testing.T) {
 	old := time.Now().Add(-47 * 24 * time.Hour)
 	store := &fakeStore{
 		memoryIndex: "# Memory Index\n\n- [简洁](pref.md) — 简洁中文",
@@ -238,27 +243,38 @@ func TestBuildMemorySection_InjectsIndexAndSelectedFullContentWithStaleNote(t *t
 		{Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Content: "[0]"}}}},
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
-	got := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
-	for _, want := range []string{
+	idx, eff := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	// 索引段仅含 memory.md 索引行，使用规则已迁入 identity，不再出现在此处。
+	if !strings.Contains(idx, "- [简洁](pref.md) — 简洁中文") {
+		t.Fatalf("expected memory index to contain index entry, got %q", idx)
+	}
+	for _, forbidden := range []string{
 		"过往记忆索引（memory.md）",
 		"仅用于 update_memory/delete_memory 定位、更新或删除对应记忆文件",
 		"索引条目不是有效记忆内容",
-		"真实有效记忆",
-		"以下内容来自被选中的具体记忆文件，不是 memory.md 索引",
-		"只是可能与当前会话相关的历史上下文",
-		"若与当前用户描述、当前会话上下文或当前项目事实不符，必须以当前描述和当前事实为准",
-		"- [简洁](pref.md) — 简洁中文",
-		"简洁：简洁中文",
-		"完整正文内容",
-		"47 days ago",
-		"point-in-time observations",
 	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("expected memory section to contain %q, got %q", want, got)
+		if strings.Contains(idx, forbidden) {
+			t.Fatalf("expected migrated guidance %q to be absent from memory index, got %q", forbidden, idx)
 		}
 	}
-	if strings.Contains(got, "无关") {
-		t.Fatalf("expected only selected memory injected, got %q", got)
+	// 真实有效记忆段仅含被选中记忆正文，使用规则与过期提示已迁入 identity。
+	for _, want := range []string{"简洁：简洁中文", "完整正文内容", "47 days ago"} {
+		if !strings.Contains(eff, want) {
+			t.Fatalf("expected effective memory to contain %q, got %q", want, eff)
+		}
+	}
+	for _, forbidden := range []string{
+		"真实有效记忆",
+		"以下内容来自被选中的具体记忆文件，不是 memory.md 索引",
+		"若与当前用户描述、当前会话上下文或当前项目事实不符，必须以当前描述和当前事实为准",
+		"point-in-time observations",
+	} {
+		if strings.Contains(eff, forbidden) {
+			t.Fatalf("expected migrated guidance %q to be absent from effective memory, got %q", forbidden, eff)
+		}
+	}
+	if strings.Contains(eff, "无关") {
+		t.Fatalf("expected only selected memory injected, got %q", eff)
 	}
 }
 
@@ -275,19 +291,19 @@ func TestBuildMemorySection_DedupesWithinConversationAndRereadsOnChange(t *testi
 	}}
 	service := &Service{Store: store, Cfg: config.AppConfig{}, LLM: llm, EnableMemory: true}
 
-	first := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	_, first := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
 	if !strings.Contains(first, "正文v1") {
 		t.Fatalf("expected first injection to include body, got %q", first)
 	}
-	// Same mtime: should be deduped (no memory block).
-	second := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
-	if strings.Contains(second, "当前项目记忆") {
+	// Same mtime: should be deduped (no effective memory block).
+	_, second := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	if second != "" {
 		t.Fatalf("expected dedup to skip already-injected memory, got %q", second)
 	}
 	// File changed: new mtime + new content should re-inject.
 	store.scannedMemories[0].ModTime = t0.Add(time.Minute)
 	store.memoryFiles["pref.md"] = storage.Memory{Type: MemoryTypePreference, Name: "简洁", Description: "d", Body: "正文v2"}
-	third := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
+	_, third := service.buildMemorySection(context.Background(), "conv", storage.User{ID: "u1"}, nil)
 	if !strings.Contains(third, "正文v2") {
 		t.Fatalf("expected re-read updated body on mtime change, got %q", third)
 	}

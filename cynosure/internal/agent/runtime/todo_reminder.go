@@ -8,7 +8,7 @@ import (
 
 const (
 	todoWriteReminderThreshold = 10
-	todoWriteReminderText      = "The task tools haven't been used recently. If you're the type of person who likes to use task tracking to keep track of your progress, you can use todo_write to add new tasks and todo_write to update task status (set to in_progress when starting, completed when done). Please consider cleaning up the task list if it is not needed."
+	todoWriteReminderText      = "<system-reminder> "+ "/n" + "The task tools haven't been used recently. If you're the type of person who likes to use task tracking to keep track of your progress, you can use todo_write to add new tasks and todo_write to update task status (set to in_progress when starting, completed when done). Please consider cleaning up the task list if it is not needed." + "/n" + "</system-reminder>"		
 )
 
 func toolCallsInclude(toolCalls []openai.ToolCall, name string) bool {
@@ -21,7 +21,7 @@ func toolCallsInclude(toolCalls []openai.ToolCall, name string) bool {
 }
 
 func todoWriteReminderMessage() openai.ChatCompletionMessage {
-	return openai.ChatCompletionMessage{Role: "system", Content: todoWriteReminderText}
+	return openai.ChatCompletionMessage{Role: "user", Content: todoWriteReminderText}
 }
 
 // todosAllCompleted 在存在待办且全部为 completed 时返回 true。收尾阶段（无 pending /

@@ -8,7 +8,7 @@
 - **本地代码工具**：支持 `bash`、`read_file`、`write_file`、`edit_file`、`multi_edit`、`grep`、`glob`、`ls`、`web_fetch`、`web_search`、`todo_write`、`todo_list`、`load_skill`、`spawn_subagent`、`read_persisted_output`、`update_memory`、`delete_memory`。
 - **工作区与权限边界**：默认工作区是启动命令所在目录或 `--cwd` 指定目录；不再有静态的“禁止越界工作区”硬校验，越权风险统一由命令权限审批在执行前拦截。
 - **命令权限审批**：查询/搜索类工具直接执行；`bash`、`write_file`、`edit_file`、`multi_edit` 等变更类操作在执行前向用户申请权限，用户可选择放行一次、放行并记住规则、或拒绝；拒绝时立即结束本轮且不做记忆与历史收尾。
-- **Skill 系统**：启动时读取 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文。
+- **Skill 系统**：内置 Skill 随二进制嵌入；每轮对话实时重载 `~/.cynosure/skills` 与 `<cwd>/.cynosure/skills`；模型可通过 `load_skill` 按需加载正文，加载结果含 Skill 的 base 目录，内置 Skill 会落盘到 `~/.cynosure/system/skills/<name>/`。
 - **工作区 MCP**：启动时读取 `<cwd>/.cynosure/.mcp.json` 并自动连接；发现到的工具以 `mcp__{server}__{tool}` 形式加入模型工具列表。
 - **项目级记忆**：启动时读取 `~/.cynosure/memory/<workspace>/memory.md`，由模型按当前对话筛选有用记忆；每条长期记忆是一个独立 Markdown 文件，仅对当前项目有效。
 - **历史会话恢复**：对话历史持久化到 `~/.cynosure/session/{workspace}/{session_id}/`，可在同一项目目录通过 `/resume` 选择恢复。
@@ -80,7 +80,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 ### 本地存储边界
 
 - **项目级文件**：`<cwd>/.cynosure/skills` 与 `<cwd>/.cynosure/.mcp.json` 分别提供工作区 Skills 与 MCP 配置；`<cwd>/.cynosure/settings.json` 保存工作区命令权限配置（`permissions.defaultMode` 与 `permissions.allowedRules`）。
-- **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{workspace}/{session_id}/` 保存历史会话。
+- **用户级文件**：`~/.cynosure/settings.json` 保存 LLM 配置，`~/.cynosure/skills` 保存用户级 Skills，`~/.cynosure/system/skills/` 保存 `load_skill` 落盘的内置 Skill 副本，`~/.cynosure/memory/` 保存项目记忆，`~/.cynosure/task_outputs/` 保存工具输出日志和大结果落盘文件，`~/.cynosure/session/{workspace}/{session_id}/` 保存历史会话。
 - **运行期内存**：本地 Store 使用内存 map 和锁维护当前进程状态；上下文摘要只保存在内存中，进程退出后不恢复。
 
 ### `~/.cynosure/config.json` 示例（可选）
@@ -208,7 +208,7 @@ Enter 发送 · Esc 中断 · Ctrl+C 退出 · /help · 工具 3 · 上下文 72
 - `/help`：显示所有可用的斜杠命令。
 - `/clear`：开启全新对话并清空当前上下文。
 - `/cwd`：显示当前工作区。
-- `/skills`：显示已加载的 Skill 列表。
+- `/skills`：显示已加载的 Skill 列表（名称、来源类型与描述，不含磁盘路径）。
 - `/mcp`：显示 MCP server 状态和工具数量。
 - `/resume`：查看并恢复当前工作区的历史会话。
 - `/cancel`：在恢复历史会话选择中取消当前选择。
@@ -217,17 +217,15 @@ Enter 发送 · Esc 中断 · Ctrl+C 退出 · /help · 工具 3 · 上下文 72
 
 ## 系统提示词
 
-每轮请求模型前，`assistant.BuildSystemPrompt` 会把基础 identity 提示词与运行期动态段落拼成最终 system prompt：
+每轮请求模型前，Cynosure 会分别构造 system prompt 与一条临时运行期提醒消息：
 
 - `<identity>`：基础提示词，来自嵌入二进制的 `assets/system_prompt.md`，若存在 `~/.cynosure/system_prompt.md` 则优先使用该覆盖文件。内容参考 `cn/system.md` 的分域设计，并按 Cynosure 当前能力划分为 `定义角色`、`安全性声明`、`帮助文档`、`输出风格`、`任务管理`、`工具调用`、`环境信息` 七类；其中工具与环境部分只描述 Cynosure 当前真实存在的能力和运行期动态注入边界。
 - `<workspace>`：注入 Surface 与当前工作目录。
-- `<system-reminder>`：首行注入 `current_day: <YYYY-MM-DD>`，每轮对话用当前日期实时刷新；在存在 `CYNOSURE.MD` 时再追加用户级与工作区级说明，以及重要指令提醒。当日期与 `CYNOSURE.MD` 均缺失时整段省略。
 - `<tools>`：注入本次会话实际可用的工具名清单（含 MCP 工具）。
-- `<skills>`：注入加载到的 Skill 摘要，模型按需 `load_skill` 加载正文。
-- `<git-status>`：在工作区是 Git 仓库时，注入对话开始时采集的 Git 快照（当前分支、主分支、工作区变更状态、最近 5 条提交、Git 用户名）；`status` 超过 2000 字符会截断并提示。该段落位于 `<memory>` 之前；非 Git 仓库、Git 未安装或采集失败时整段省略。快照在进程启动时采集一次，会话过程中不刷新，相关代码见 `internal/gitcontext`。
-- `<memory>`：开启记忆时注入按当前对话筛选出的项目记忆。
+- `<git-status>`：在工作区是 Git 仓库时，注入对话开始时采集的 Git 快照（当前分支、主分支、工作区变更状态、最近 5 条提交、Git 用户名）；`status` 超过 2000 字符会截断并提示。该段落位于 system prompt 最后、`<tools>` 之后；非 Git 仓库、Git 未安装或采集失败时整段省略。快照在进程启动时采集一次，会话过程中不刷新，相关代码见 `internal/gitcontext`。
+- `<system-reminder>`：不再写入 system prompt，而是作为紧跟 system message 的临时 user message 注入；它不写入会话历史。内容依次包含：首行 `current_day: <YYYY-MM-DD>`（每轮用当前日期实时刷新）、`<skills>` Skill 摘要（模型按需 `load_skill` 加载正文）、`CYNOSURE.MD` 用户级与工作区级说明及重要指令提醒（仅在存在时）、`<memory_index>` 来自 `memory.md` 的过往记忆文件索引（仅在索引有条目时，配一句英文内容简述）、`<memory>` 按当前对话筛选出的真实有效记忆正文（仅在开启记忆且筛选到记忆时，配一句中文内容简述），以及末尾固定的相关性提醒 `IMPORTANT: this context may or may not be relevant to your tasks...`（仅在该段有任意内容时追加）。各段为空时分别省略，全部缺失时整条临时消息省略。每段只附该段内容的简短说明，记忆如何使用的规则统一写在 `<identity>` 基础提示词的 `环境信息` 章节中。
 
-基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述段落在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<skills>`、`<memory>` 与 `<system-reminder>` 为准，避免把静态提示词当成固定工作区配置。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
+基础提示词只描述行为约束，不写死工具列表、工作目录、Skill 等动态信息——这些由上述 system prompt 段落与临时 `<system-reminder>` 消息在运行期注入。`任务管理` 章节强调在复杂或多步骤软件工程任务中频繁使用 `todo_write` 规划、拆解、逐项更新和验证，并在上下文裁剪/压缩后用 `todo_list` 查询当前待办状态；`环境信息` 章节会要求模型以运行期 `<workspace>`、`<tools>`、`<git-status>` 与 `<system-reminder>`（含 Skill 摘要与记忆）为准，避免把静态提示词当成固定工作区配置，并集中规定记忆如何使用：`<memory_index>` 仅用于 `update_memory`/`delete_memory` 定位记忆文件、不作有效内容，`<memory>` 真实有效记忆仅是当前项目的历史上下文、无事实优先级、可能过期、与当前信息冲突时以当前信息为准。相关代码见 `internal/assistant/prompt.go` 与 `internal/agent/runtime/prompt_builder.go`。
 
 基础提示词会要求模型只使用 `<tools>` 中实际列出的工具：内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；文件名匹配使用 `glob`，目录浏览使用 `ls`；`read_file` 可直接读取本地文件系统中的文件，用户提供文件路径时默认路径有效，读取不存在的用户提供路径由工具返回错误，非用户直接提供的路径必须先确认文件存在再读取；文件修改优先使用 `edit_file`、`multi_edit`，创建新文件或完整重写才使用 `write_file`，且写入既有文件前必须先 `read_file`；`bash` 仅用于确需 shell 的操作并遵循审批与工作区边界；`todo_write` 用于维护任务清单，`todo_list` 用于只读查询当前任务状态；`spawn_subagent` 必须提供 `sub_type` 与 `task`，搜索、文件定位、代码探索、实现梳理、证据收集等搜索相关任务必须使用 `sub_type=explore`，`sub_type=general` 仅用于需要隔离上下文的综合分析或执行型子任务；`read_persisted_output` 仅用于读取上下文压缩产生的落盘结果。维护记忆时必须且只能使用 `update_memory`（新增或修正记忆）与 `delete_memory`（删除记忆），严禁用 `bash`、`ls`、`write_file`、`edit_file` 或其他终端命令直接读写记忆文件。
 
@@ -299,21 +297,27 @@ Enter 发送 · Esc 中断 · Ctrl+C 退出 · /help · 工具 3 · 上下文 72
 
 - 用户级 Skill 从 `~/.cynosure/skills` 加载。
 - 工作区级 Skill 从 `<cwd>/.cynosure/skills` 加载。
+- 内置 Skill（来源 `builtin`）随二进制 `go:embed` 嵌入，启动时固定加载。
 - 支持 `skill.md` 和 `SKILL.md` 作为 Skill 入口文件。
 - 工作区级同名 Skill 覆盖用户级 Skill；同一级目录内重复 Skill 名称会导致启动失败。
-- 每轮对话生成 Skill snapshot，system prompt 与 `load_skill` 工具使用同一份 snapshot。
-- system prompt 只注入 Skill 摘要；模型需要正文时通过 `load_skill` 按需加载。
+- **每轮对话实时重载非内置 Skill**：除内置 Skill 外，用户级与工作区级 Skill 在每轮对话生成 snapshot 时从磁盘重新扫描，对话进行中新增/修改/删除磁盘 Skill 会在下一轮即时生效；内置 Skill 来自固定嵌入加载器，无需重载。system prompt 与 `load_skill` 工具使用同一份 snapshot。
+- 临时 `<system-reminder>` 消息内只注入 Skill 摘要；模型需要正文时通过 `load_skill` 按需加载。
+- **`load_skill` 返回 base 目录**：加载后除返回 Skill 正文与元数据外，还会附带该 Skill 的 base 目录（形如 `Base directory for this skill: /Users/<you>/.cynosure/skills/<name>`，为原始完整路径，不缩写家目录），便于模型定位 Skill 内的脚本与资源。
+- **内置 Skill 落盘**：`load_skill` 加载来源为 `builtin` 的 Skill 时，会把该 Skill 的整棵目录树落盘到 `~/.cynosure/system/skills/<name>/`（目录已存在则跳过，不覆盖本地改动），并以该落盘目录作为 base 目录。
+- `/skills` 命令只展示每个 Skill 的名称、来源类型（`当前项目`/`家目录`/`系统内置`）与描述，不展示磁盘路径。
 
 示例：
 
 ```text
-~/.cynosure/skills/code-review/skill.md
-<cwd>/.cynosure/skills/project-helper/SKILL.md
+~/.cynosure/skills/code-review/skill.md          # 家目录（user）
+<cwd>/.cynosure/skills/project-helper/SKILL.md    # 当前项目（workspace）
+~/.cynosure/system/skills/skill-creator/SKILL.md  # 系统内置（builtin）落盘副本
 ```
 
 相关代码：
 
 - `internal/sessions/skill.go`
+- `internal/sessions/skill_materialize.go`
 - `internal/agent/runtime/prompt_builder.go`
 - `internal/tools/load_skill.go`
 

@@ -97,8 +97,14 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		return storage.Message{}, err
 	}
 	state.SkillSnapshot = snapshot
-	state.SystemPrompt = s.buildSystemPrompt(ctx, conversation, user, snapshot, state.History, memoryOn)
-	state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
+	memoryIndex := ""
+	memorySection := ""
+	if memoryOn {
+		memoryIndex, memorySection = s.buildMemorySection(ctx, conversation.ID, user, state.History)
+	}
+	state.SystemPrompt = s.buildSystemPromptWithMemory(user, snapshot, memoryIndex, memorySection)
+	state.SystemReminder = s.buildSystemReminderWithMemory(user, snapshot, memoryIndex, memorySection)
+	state.Messages = buildOpenAIMessagesWithReminder(state.SystemPrompt, state.SystemReminder, state.ModelHistory)
 	toolDefs := s.toolDefinitionsForUser(ctx, user.ID)
 	round := 0
 	roundsSinceTodoWrite := 0
@@ -119,10 +125,10 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			return storage.Message{}, err
 		}
 		state.ModelHistory = modelHistory
-		state.Messages = buildOpenAIMessages(state.SystemPrompt, state.ModelHistory)
+		state.Messages = buildOpenAIMessagesWithReminder(state.SystemPrompt, state.SystemReminder, state.ModelHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
 		estimator := compression.DefaultTokenEstimator{}
-		state.LastContextTokens = estimator.EstimateRequestTokens(state.SystemPrompt, state.ModelHistory, toolDefs)
+		state.LastContextTokens = estimator.EstimateRequestTokens(estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder), state.ModelHistory, toolDefs)
 		state.LastContextBudget = estimator.ContextTokenBudget()
 		emitMeta(state)
 		req := openai.ChatCompletionRequest{
@@ -160,7 +166,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
 			finalHistoryForEstimate := append(cloneMessages(state.ModelHistory), finalAssistant)
 			finalEstimator := compression.DefaultTokenEstimator{}
-			state.LastContextTokens = finalEstimator.EstimateRequestTokens(state.SystemPrompt, finalHistoryForEstimate, toolDefs)
+			state.LastContextTokens = finalEstimator.EstimateRequestTokens(estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder), finalHistoryForEstimate, toolDefs)
 			state.LastContextBudget = finalEstimator.ContextTokenBudget()
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}
 			if err := s.hookManager().RunStop(ctx, stopCtx); err != nil {

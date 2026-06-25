@@ -55,10 +55,11 @@ type LoopState struct {
 	// 携带压缩产物（摘要前言、占位符、persisted-output 标记、被裁剪的消息）。
 	ModelHistory []storage.Message
 
-	SkillSnapshot *agenttools.SkillSnapshot
-	SystemPrompt  string
-	Messages      []openai.ChatCompletionMessage
-	Todos         []agenttools.TodoItem
+	SkillSnapshot  *agenttools.SkillSnapshot
+	SystemPrompt   string
+	SystemReminder string
+	Messages       []openai.ChatCompletionMessage
+	Todos          []agenttools.TodoItem
 
 	ToolCallCount     int // 累计工具调用次数
 	LastContextTokens int // 最近一轮发送给模型的上下文 token

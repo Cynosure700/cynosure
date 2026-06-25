@@ -1846,11 +1846,18 @@ func TestRespondToConversation_IncludesLocalSkillsInPrompt(t *testing.T) {
 	if !contains(systemPrompt, "本次会话可用的工具如下：\n\n- load_skill") {
 		t.Fatalf("expected load_skill to be listed in prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
-		t.Fatalf("expected builtin skill description in prompt, got %q", systemPrompt)
+	if contains(systemPrompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
+		t.Fatalf("expected skill descriptions to be outside system prompt, got %q", systemPrompt)
 	}
-	if !contains(systemPrompt, "<name>user-skill</name>\n<description>User description</description>") {
-		t.Fatalf("expected user skill description in prompt, got %q", systemPrompt)
+	reminder := llm.lastReq.Messages[1]
+	if reminder.Role != "user" || !contains(reminder.Content, "<system-reminder>") {
+		t.Fatalf("expected second request message to be system reminder, got %#v", reminder)
+	}
+	if !contains(reminder.Content, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
+		t.Fatalf("expected builtin skill description in reminder, got %q", reminder.Content)
+	}
+	if !contains(reminder.Content, "<name>user-skill</name>\n<description>User description</description>") {
+		t.Fatalf("expected user skill description in reminder, got %q", reminder.Content)
 	}
 }
 
@@ -1865,6 +1872,26 @@ func TestBuildOpenAIMessagesCarriesHistoryReasoningContent(t *testing.T) {
 	}
 	if messages[2].Content != "回答" || messages[2].ReasoningContent != "历史推理" {
 		t.Fatalf("expected assistant history message to carry reasoning content, got %#v", messages[2])
+	}
+}
+
+func TestBuildOpenAIMessagesInsertsEphemeralSystemReminderAfterSystem(t *testing.T) {
+	messages := buildOpenAIMessagesWithReminder("system prompt", "<system-reminder>\ncurrent_day: 2026-06-25\n</system-reminder>", []storage.Message{
+		{Role: "user", Content: "问题"},
+		{Role: "assistant", Content: "回答"},
+	})
+
+	if len(messages) != 4 {
+		t.Fatalf("expected system, reminder, and 2 history messages, got %d", len(messages))
+	}
+	if messages[0].Role != "system" || messages[0].Content != "system prompt" {
+		t.Fatalf("expected first message to be system prompt, got %#v", messages[0])
+	}
+	if messages[1].Role != "user" || !strings.Contains(messages[1].Content, "<system-reminder>") || !strings.Contains(messages[1].Content, "current_day: 2026-06-25") {
+		t.Fatalf("expected second message to be ephemeral user system-reminder, got %#v", messages[1])
+	}
+	if messages[2].Role != "user" || messages[2].Content != "问题" {
+		t.Fatalf("expected history to follow reminder unchanged, got %#v", messages[2])
 	}
 }
 
@@ -1909,17 +1936,20 @@ func TestRespondToConversation_LoadsHistoricalToolResultBeforeAgentLoop(t *testi
 		t.Fatalf("expected llm to be called once, got %d", llm.calls)
 	}
 	reqMessages := llm.reqs[0].Messages
-	if len(reqMessages) != 6 {
-		t.Fatalf("expected system, 4 historical messages, and current user message, got %#v", reqMessages)
+	if len(reqMessages) != 7 {
+		t.Fatalf("expected system, reminder, 4 historical messages, and current user message, got %#v", reqMessages)
 	}
-	if len(reqMessages[2].ToolCalls) != 1 || reqMessages[2].ToolCalls[0].ID != "tool_1" || reqMessages[2].ToolCalls[0].Function.Name != "load_skill" {
-		t.Fatalf("expected historical assistant tool call before agent loop, got %#v", reqMessages[2])
+	if reqMessages[1].Role != "user" || !contains(reqMessages[1].Content, "<system-reminder>") {
+		t.Fatalf("expected reminder immediately after system prompt, got %#v", reqMessages[1])
 	}
-	if reqMessages[3].Role != "tool" || reqMessages[3].ToolCallID != "tool_1" || reqMessages[3].Content == "" {
-		t.Fatalf("expected historical tool result before agent loop, got %#v", reqMessages[3])
+	if len(reqMessages[3].ToolCalls) != 1 || reqMessages[3].ToolCalls[0].ID != "tool_1" || reqMessages[3].ToolCalls[0].Function.Name != "load_skill" {
+		t.Fatalf("expected historical assistant tool call before agent loop, got %#v", reqMessages[3])
 	}
-	if reqMessages[5].Role != "user" || reqMessages[5].Content != "继续" {
-		t.Fatalf("expected current user message after loaded history, got %#v", reqMessages[5])
+	if reqMessages[4].Role != "tool" || reqMessages[4].ToolCallID != "tool_1" || reqMessages[4].Content == "" {
+		t.Fatalf("expected historical tool result before agent loop, got %#v", reqMessages[4])
+	}
+	if reqMessages[6].Role != "user" || reqMessages[6].Content != "继续" {
+		t.Fatalf("expected current user message after loaded history, got %#v", reqMessages[6])
 	}
 }
 
@@ -1956,7 +1986,8 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 		"builtin-skill": {Meta: map[string]string{"description": "Builtin description"}, Body: "builtin body", Path: "builtin://builtin-skill"},
 	})
 
-	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader), "")
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader), "", "")
+	reminder := service.buildSystemReminderWithMemory(storage.User{ID: "usr_6", Username: "frank"}, agenttools.NewSkillSnapshot(nil, loader), "", "")
 	if !contains(prompt, "Workspace root: "+cfg.WorkspaceRoot) {
 		t.Fatalf("expected prompt to include workspace root, got %q", prompt)
 	}
@@ -1966,8 +1997,11 @@ func TestBuildSystemPrompt_DoesNotRequireToolRegistry(t *testing.T) {
 	if contains(prompt, "本次会话可用的工具如下：") {
 		t.Fatalf("expected prompt without tool registry to omit tool list, got %q", prompt)
 	}
-	if !contains(prompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
-		t.Fatalf("expected prompt to include skill descriptions, got %q", prompt)
+	if contains(prompt, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
+		t.Fatalf("expected prompt to exclude skill descriptions, got %q", prompt)
+	}
+	if !contains(reminder, "<name>builtin-skill</name>\n<description>Builtin description</description>") {
+		t.Fatalf("expected reminder to include skill descriptions, got %q", reminder)
 	}
 }
 
@@ -1981,7 +2015,11 @@ func TestBuildSystemPromptIncludesCynosureMarkdownContext(t *testing.T) {
 		WorkspaceContent: "# Project Rule\n项目说明",
 	})
 
-	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_link", Username: "link-user"}, nil, "")
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_link", Username: "link-user"}, nil, "", "")
+	reminder := service.buildSystemReminderWithMemory(storage.User{ID: "usr_link", Username: "link-user"}, nil, "", "")
+	if contains(prompt, "\n<system-reminder>\n") || contains(prompt, "# cynosureMd") {
+		t.Fatalf("expected system prompt to exclude system-reminder context, got %q", prompt)
+	}
 	for _, want := range []string{
 		"<system-reminder>",
 		"# cynosureMd",
@@ -1990,8 +2028,8 @@ func TestBuildSystemPromptIncludesCynosureMarkdownContext(t *testing.T) {
 		"项目说明：",
 		"# Project Rule\n项目说明",
 	} {
-		if !contains(prompt, want) {
-			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		if !contains(reminder, want) {
+			t.Fatalf("expected reminder to contain %q, got %q", want, reminder)
 		}
 	}
 }
@@ -2001,7 +2039,7 @@ func TestBuildSystemPromptIncludesGitStatusContext(t *testing.T) {
 	service := &Service{Cfg: cfg}
 	service.SetGitStatusContext("This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.\n\nCurrent branch: main\n\nGit user: dunxing.7")
 
-	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_git", Username: "git-user"}, nil, "")
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_git", Username: "git-user"}, nil, "", "")
 	for _, want := range []string{
 		"<git-status>",
 		"This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
@@ -2019,15 +2057,19 @@ func TestBuildSystemPromptInjectsCurrentDayEveryTurn(t *testing.T) {
 	cfg := testAppConfig(t)
 	service := &Service{Cfg: cfg}
 
-	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_day", Username: "day-user"}, nil, "")
+	prompt := service.buildSystemPromptWithMemory(storage.User{ID: "usr_day", Username: "day-user"}, nil, "", "")
+	reminder := service.buildSystemReminderWithMemory(storage.User{ID: "usr_day", Username: "day-user"}, nil, "", "")
 	today := time.Now().Format("2006-01-02")
+	if contains(prompt, "\n<system-reminder>\n") || contains(prompt, "current_day: ") {
+		t.Fatalf("expected system prompt to exclude current_day reminder, got %q", prompt)
+	}
 	for _, want := range []string{
 		"<system-reminder>",
 		"current_day: " + today,
 		"</system-reminder>",
 	} {
-		if !contains(prompt, want) {
-			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		if !contains(reminder, want) {
+			t.Fatalf("expected reminder to contain %q, got %q", want, reminder)
 		}
 	}
 }
@@ -2049,6 +2091,110 @@ func TestBuildSkillSnapshotUsesLocalSkillsWithoutStoreLookup(t *testing.T) {
 	}
 	if loaded.Source != "workspace" || loaded.Entry.Body != "local body" {
 		t.Fatalf("loaded = source %q body %q, want workspace local body", loaded.Source, loaded.Entry.Body)
+	}
+}
+
+func TestBuildSkillSnapshotReloadsWorkspaceSkillsEachCall(t *testing.T) {
+	cfg := testAppConfig(t)
+	service := &Service{Cfg: cfg, BuiltinSkills: sessions.NewSkillLoader()}
+
+	skillDir := config.WorkspaceCynosureSkillsDir(cfg.WorkspaceRoot)
+	dynDir := filepath.Join(skillDir, "dyn-skill")
+	if err := os.MkdirAll(dynDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: dyn-skill\ndescription: Dynamic\n---\n\ndyn body"
+	if err := os.WriteFile(filepath.Join(dynDir, "SKILL.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := service.buildSkillSnapshot(context.Background(), "usr")
+	if err != nil {
+		t.Fatalf("first snapshot: %v", err)
+	}
+	loaded, err := first.LoadSkill("dyn-skill")
+	if err != nil {
+		t.Fatalf("expected dyn-skill loaded on first snapshot: %v", err)
+	}
+	if loaded.Source != "workspace" || loaded.Entry.Body != "dyn body" {
+		t.Fatalf("loaded = source %q body %q, want workspace dyn body", loaded.Source, loaded.Entry.Body)
+	}
+
+	// 对话进行中删除磁盘 skill，下一轮快照应不再包含它。
+	if err := os.RemoveAll(dynDir); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.buildSkillSnapshot(context.Background(), "usr")
+	if err != nil {
+		t.Fatalf("second snapshot: %v", err)
+	}
+	if _, err := second.LoadSkill("dyn-skill"); err == nil {
+		t.Fatal("expected dyn-skill absent after removal, but it was still loaded")
+	}
+}
+
+func TestBuildSkillSnapshotReloadsUserSkillsEachCall(t *testing.T) {
+	cfg := testAppConfig(t)
+	userSkillsDir := filepath.Join(t.TempDir(), "user-skills")
+	service := &Service{Cfg: cfg, BuiltinSkills: sessions.NewSkillLoader()}
+	service.SetUserSkillsDir(userSkillsDir)
+
+	// 初次快照：用户目录为空。
+	empty, err := service.buildSkillSnapshot(context.Background(), "usr")
+	if err != nil {
+		t.Fatalf("empty snapshot: %v", err)
+	}
+	if _, err := empty.LoadSkill("user-skill"); err == nil {
+		t.Fatal("expected no user-skill before file is written")
+	}
+
+	// 写入用户级 skill 后，下一轮快照应包含它且来源为 user。
+	skillDir := filepath.Join(userSkillsDir, "user-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: user-skill\ndescription: User level\n---\n\nuser body"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, err := service.buildSkillSnapshot(context.Background(), "usr")
+	if err != nil {
+		t.Fatalf("next snapshot: %v", err)
+	}
+	loaded, err := next.LoadSkill("user-skill")
+	if err != nil {
+		t.Fatalf("expected user-skill loaded after write: %v", err)
+	}
+	if loaded.Source != "user" || loaded.Entry.Body != "user body" {
+		t.Fatalf("loaded = source %q body %q, want user user body", loaded.Source, loaded.Entry.Body)
+	}
+}
+
+func TestBuildSkillSnapshotMaterializesBuiltinSkillOnLoad(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg := testAppConfig(t)
+	builtin := sessions.NewSkillLoader()
+	builtin.LoadFromEntries(map[string]*sessions.SkillEntry{
+		"skill-creator": {Meta: map[string]string{"description": "Builtin"}, Body: "embedded body", Source: "builtin", Path: "skill-creator/SKILL.md"},
+	})
+	service := &Service{Cfg: cfg, BuiltinSkills: builtin}
+
+	snapshot, err := service.buildSkillSnapshot(context.Background(), "usr")
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	loaded, err := snapshot.LoadSkill("skill-creator")
+	if err != nil {
+		t.Fatalf("load builtin skill: %v", err)
+	}
+	wantBase := filepath.Join(home, ".cynosure", "system", "skills", "skill-creator")
+	if loaded.BaseDir != wantBase {
+		t.Fatalf("BaseDir = %q, want %q", loaded.BaseDir, wantBase)
+	}
+	// 整棵目录树应已落盘到 ~/.cynosure/system/skills/skill-creator/。
+	if _, err := os.Stat(filepath.Join(home, ".cynosure", "system", "skills", "skill-creator", "SKILL.md")); err != nil {
+		t.Fatalf("expected builtin skill materialized to disk: %v", err)
 	}
 }
 
