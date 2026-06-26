@@ -1,0 +1,16 @@
+cynosure/internal/tools/definitions.go
+  h_3b65c6a993f880 194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6ff0819cf0f00e5b77a898ba8a7b26acd7821030",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
