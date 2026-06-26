@@ -191,7 +191,7 @@ var baseToolSpecs = []ToolSpec{
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number + tab prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_string must be unique unless the tool explicitly supports replacing all occurrences. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
+						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_string must be unique unless the tool explicitly supports replacing all occurrences. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
 						"new_string":  strParam("The text to replace old_string with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 						"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
 					},
