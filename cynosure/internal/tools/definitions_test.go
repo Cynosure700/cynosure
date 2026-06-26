@@ -86,6 +86,9 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 			"If the user provides a path to a file, assume that path is valid",
 			"It is okay to read a user-provided file path that does not exist",
 			"For paths inferred by you rather than provided by the user, confirm the file exists before reading",
+			"offset",
+			"1-based starting line",
+			"line number + tab",
 		},
 		"write_file": {
 			"Writes a file to the local filesystem",
@@ -98,14 +101,18 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 		"edit_file": {
 			"Performs exact string replacements in files",
 			"MUST use read_file first",
+			"You must use your `Read` tool at least once in the conversation before editing.",
 			"preserve the exact indentation",
+			"line number + tab",
 			"old_text must be unique",
 			"Prefer multi_edit",
 		},
 		"multi_edit": {
 			"Performs multiple exact string replacements in one file",
 			"MUST use read_file first",
+			"You must use your `Read` tool at least once in the conversation before editing.",
 			"preserve the exact indentation",
+			"line number + tab",
 			"old_string must be unique",
 			"applied sequentially and atomically",
 		},
@@ -151,6 +158,28 @@ func TestFileToolSchemasRequireFilePathNotPath(t *testing.T) {
 		}
 		if containsAnyString(required, "path") {
 			t.Fatalf("%s schema should not require path, got %#v", name, required)
+		}
+	}
+}
+
+func TestReadFileSchemaExposesOffsetAndLimitAsOptionalLineControls(t *testing.T) {
+	schema := schemaMapForTool(t, "read_file")
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("read_file schema properties missing or wrong type: %#v", schema["properties"])
+	}
+	for _, name := range []string{"file_path", "offset", "limit"} {
+		if _, ok := properties[name]; !ok {
+			t.Fatalf("read_file schema should expose %s, got properties %#v", name, properties)
+		}
+	}
+	required, ok := schema["required"].([]any)
+	if !ok {
+		t.Fatalf("read_file schema required missing or wrong type: %#v", schema["required"])
+	}
+	for _, name := range []string{"offset", "limit"} {
+		if containsAnyString(required, name) {
+			t.Fatalf("read_file schema should not require %s, got %#v", name, required)
 		}
 	}
 }

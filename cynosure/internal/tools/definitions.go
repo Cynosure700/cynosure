@@ -94,11 +94,12 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"command"},
 	}),
-	toolSpec("read_file", "Reads a file from the local filesystem. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a user-provided file path that does not exist; an error will be returned. For paths inferred by you rather than provided by the user, confirm the file exists before reading.", map[string]any{
+	toolSpec("read_file", "Reads a file from the local filesystem and returns line-numbered content using the format line number + tab + content. You can access any file directly by using this tool. Assume this tool is able to read all files on the machine. If the user provides a path to a file, assume that path is valid. It is okay to read a user-provided file path that does not exist; an error will be returned. For paths inferred by you rather than provided by the user, confirm the file exists before reading.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"file_path": strParam("Path to the file to read. If the user provides a path to a file, assume that path is valid; missing user-provided files are okay and will return an error. For inferred paths, confirm the file exists before reading."),
-			"limit":     intParam("Maximum number of lines to read"),
+			"offset":    intParam("Optional 1-based starting line number. Defaults to 1."),
+			"limit":     intParam("Optional number of lines to read. Defaults to reading from offset through the end of the file."),
 		},
 		"required": []string{"file_path"},
 	}),
@@ -110,11 +111,11 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"file_path", "content"},
 	}),
-	toolSpec("edit_file", "Performs exact string replacements in files. You MUST use read_file first in the conversation before editing. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_text or new_text. ALWAYS prefer editing existing files in the codebase. Prefer multi_edit when making several edits to the same file. NEVER write new files unless explicitly required. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked. The edit will fail if old_text is not unique in the file; provide a larger string with more surrounding context to make old_text must be unique.", map[string]any{
+	toolSpec("edit_file", "Performs exact string replacements in files. You MUST use read_file first in the conversation before editing. You must use your `Read` tool at least once in the conversation before editing. When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. Never include the line number prefix in old_text or new_text. ALWAYS prefer editing existing files in the codebase. Prefer multi_edit when making several edits to the same file. NEVER write new files unless explicitly required. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked. If the old_text is not unique, expand the surrounding context until it uniquely identifies the target.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"file_path": strParam("Path to the file to edit"),
-			"old_text":  strParam("Exact text to find and replace. Must match file contents exactly, preserve indentation, exclude read_file line number prefixes, and old_text must be unique unless the tool explicitly supports replacing all occurrences."),
+			"old_text":  strParam("Exact text to find and replace. old_text must match the file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_text must be unique within the file. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
 			"new_text":  strParam("Text to replace old_text with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 		},
 		"required": []string{"file_path", "old_text", "new_text"},
@@ -145,11 +146,11 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"todos"},
 	}),
-	// toolSpec("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
-	// 	"type":                 "object",
-	// 	"properties":           map[string]any{},
-	// 	"additionalProperties": false,
-	// }),
+	toolSpec("todo_list", "Read the current task plan and todo status without modifying it. Use this when you need to recover or confirm task state after context compression.", map[string]any{
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"additionalProperties": false,
+	}),
 	toolSpec("grep", "A powerful search tool for content search in any size codebase. ALWAYS use grep for search tasks. NEVER invoke grep or rg as a bash command; this tool is optimized for Cynosure permissions and workspace access. Supports Go regular expression syntax, e.g. log.*Error or function\\s+\\w+. Filter files with the glob parameter, e.g. *.go or **/*.ts. Output modes: content shows matching lines, files_with_matches shows only file paths (default), and count shows match counts. Pattern syntax uses Go regular expression syntax in this project; literal braces and other regexp metacharacters need escaping when they should be matched literally.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -180,7 +181,7 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"path"},
 	}),
-	toolSpec("multi_edit", "Performs multiple exact string replacements in one file. You MUST use read_file first in the conversation before editing. Prefer multi_edit over edit_file when making several edits to the same file. When editing text from read_file output, preserve the exact indentation after any line number prefix; never include the line number prefix in old_string or new_string. Each old_string must be unique unless replace_all is true. Edits are applied sequentially and atomically: if any edit fails, none are applied. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked.", map[string]any{
+	toolSpec("multi_edit", "Performs multiple exact string replacements in one file. You must use your `Read` tool at least once in the conversation before editing. Prefer multi_edit over edit_file when making several edits to the same file. When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. Never include the line number prefix in old_string or new_string. old_string must be unique unless the tool explicitly supports replacing all occurrences. If the old_string is not unique, expand the surrounding context until it uniquely identifies the target. Edits are applied sequentially and atomically: if any edit fails, none are applied. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"file_path": strParam("The absolute path to the file to modify (must be absolute, not relative)."),
@@ -190,7 +191,7 @@ var baseToolSpecs = []ToolSpec{
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace and indentation, exclude read_file line number prefixes, and old_string must be unique unless replace_all is true."),
+						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number + tab prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_string must be unique unless the tool explicitly supports replacing all occurrences. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
 						"new_string":  strParam("The text to replace old_string with. Preserve surrounding style and avoid emojis unless explicitly requested."),
 						"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
 					},

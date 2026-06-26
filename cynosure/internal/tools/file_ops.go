@@ -12,10 +12,10 @@ import (
 const maxReadLen = 50000
 
 func RunRead(path string, limit int) (string, error) {
-	return RunReadFromRoot("", path, limit)
+	return RunReadFromRoot("", path, 1, limit)
 }
 
-func RunReadFromRoot(root, path string, limit int) (string, error) {
+func RunReadFromRoot(root, path string, offset, limit int) (string, error) {
 	resolved, err := safety.SafePathFromRoot(root, path)
 	if err != nil {
 		return "", err
@@ -30,12 +30,24 @@ func RunReadFromRoot(root, path string, limit int) (string, error) {
 		return "(empty file)", nil
 	}
 
-	lines := strings.Split(string(data), "\n")
-	if limit > 0 && limit < len(lines) {
-		lines = append(lines[:limit], fmt.Sprintf("... (%d more lines)", len(lines)-limit))
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if offset < 1 {
+		offset = 1
+	}
+	start := offset - 1
+	if start > len(lines) {
+		return "", nil
+	}
+	end := len(lines)
+	if limit > 0 && start+limit < end {
+		end = start + limit
+	}
+	numbered := make([]string, 0, end-start)
+	for i, line := range lines[start:end] {
+		numbered = append(numbered, fmt.Sprintf("%d\t%s", start+i+1, line))
 	}
 
-	result := strings.Join(lines, "\n")
+	result := strings.Join(numbered, "\n")
 	if len(result) > maxReadLen {
 		result = result[:maxReadLen]
 	}

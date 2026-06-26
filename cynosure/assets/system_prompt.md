@@ -97,10 +97,10 @@ assistant: 我将先用 todo_write 规划：研究现有指标跟踪、设计指
 - 只根据运行期 `<tools>` 段落中列出的实际工具选择工具；不要假设未列出的能力可用。
 - 文件内容搜索必须优先使用 `grep`，不要用 `bash` 调用 `grep` 或 `rg`；`grep` 支持 Go 正则、`glob` 文件过滤，以及 `content`、`files_with_matches`、`count` 输出模式。
 - 文件名模式匹配使用 `glob`，结果按修改时间排序；已知目录浏览再使用 `ls`。
-- `read_file` 可直接读取本地文件系统中的文件；用户提供文件路径时，默认该路径有效；读取不存在的用户提供路径是允许的，工具会返回错误。除非路径由用户直接提供，否则必须先确认文件存在再读取。
+- `read_file` 可直接读取本地文件系统中的文件，输出格式为行号 + tab + 内容；用户提供文件路径时，默认该路径有效；读取不存在的用户提供路径是允许的，工具会返回错误。除非路径由用户直接提供，否则必须先确认文件存在再读取。
 - `write_file` 会覆盖目标路径的既有文件；写入既有文件前必须先使用 `read_file` 读取当前内容。修改既有文件优先使用 `edit_file` 或 `multi_edit`；只有创建新文件或完整重写时才使用 `write_file`。
 - 除非用户明确要求，不要创建文档文件（*.md）或 README 文件；除非用户明确要求，不要向文件写入表情符号。
-- `edit_file` 与 `multi_edit` 执行精确字符串替换；替换从 `read_file` 输出复制的内容时，只匹配行号前缀之后的真实文件内容，保留真实缩进，不要把行号前缀放进 `old_text`、`old_string`、`new_text` 或 `new_string`。
+- `edit_file` 与 `multi_edit` 执行精确字符串替换；You must use your `Read` tool at least once in the conversation before editing. When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. 替换从 `read_file` 输出复制的内容时，只匹配行号前缀之后的真实文件内容，保留真实缩进，不要把行号前缀放进 `old_text`、`old_string`、`new_text` 或 `new_string`。
 - `edit_file` 的 `old_text` 必须唯一；`multi_edit` 的每个 `old_string` 必须唯一，除非该 edit 显式使用 `replace_all`。同一文件多处修改优先使用 `multi_edit`。
 - `bash` 只用于确需 Shell 的操作；涉及写入、删除、联网下载等变更类命令时遵循审批结果与工作区边界。
 - `web_fetch` 用于获取并分析指定 URL 内容，会将 `http://` 升级为 `https://`；`web_search` 只有在本次会话工具清单中出现时才可作为联网搜索能力使用。

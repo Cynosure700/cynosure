@@ -19,8 +19,46 @@ func TestHandleRead_UsesWorkspaceRootForRelativePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "hello workspace" {
+	if result != "1\thello workspace" {
 		t.Fatalf("expected workspace file content, got %q", result)
+	}
+}
+
+func TestHandleRead_ReturnsLineNumbersByDefault(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "note.txt")
+	if err := os.WriteFile(file, []byte("alpha\n\tbeta\n\nomega\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	result, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "note.txt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "1\talpha\n2\t\tbeta\n3\t\n4\tomega"
+	if result != want {
+		t.Fatalf("expected numbered file content\nwant: %q\n got: %q", want, result)
+	}
+}
+
+func TestHandleRead_AppliesOneBasedOffsetAndLimit(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "note.txt")
+	if err := os.WriteFile(file, []byte("one\ntwo\nthree\nfour\n"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	result, err := handleRead(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{
+		"file_path": "note.txt",
+		"offset":    float64(2),
+		"limit":     float64(2),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "2\ttwo\n3\tthree"
+	if result != want {
+		t.Fatalf("expected offset-limited numbered content\nwant: %q\n got: %q", want, result)
 	}
 }
 

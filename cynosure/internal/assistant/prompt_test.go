@@ -272,6 +272,7 @@ func TestDefaultBaseSystemPromptRequiresExploreForSearchSubagents(t *testing.T) 
 func TestDefaultBaseSystemPromptGuidesFileAndSearchTools(t *testing.T) {
 	for _, want := range []string{
 		"read_file 可直接读取本地文件系统中的文件",
+		"输出格式为行号 + tab + 内容",
 		"用户提供文件路径时，默认该路径有效",
 		"读取不存在的用户提供路径是允许的",
 		"除非路径由用户直接提供，否则必须先确认文件存在再读取",
@@ -280,7 +281,9 @@ func TestDefaultBaseSystemPromptGuidesFileAndSearchTools(t *testing.T) {
 		"修改既有文件优先使用 edit_file 或 multi_edit",
 		"除非用户明确要求，不要创建文档文件（*.md）或 README 文件",
 		"edit_file 与 multi_edit 执行精确字符串替换",
+		"You must use your `Read` tool at least once in the conversation before editing.",
 		"替换从 read_file 输出复制的内容时，只匹配行号前缀之后的真实文件内容",
+		"The line number prefix format is: line number + tab.",
 		"文件内容搜索必须优先使用 grep，不要用 bash 调用 grep 或 rg",
 		"文件名模式匹配使用 glob，结果按修改时间排序",
 	} {

@@ -56,7 +56,7 @@ Tool rules:
 - Use glob when you need to find files by name patterns.
 - glob returns matching file paths sorted by modification time.
 - Use ls only on known existing directories.
-- read_file can directly read files from the local filesystem. It is okay to read a caller-provided file path that does not exist; the tool will return an error. For paths you infer rather than paths provided by the caller, confirm the file exists before reading it.
+- read_file can directly read files from the local filesystem and returns content as line number + tab + content. It is okay to read a caller-provided file path that does not exist; the tool will return an error. For paths you infer rather than paths provided by the caller, confirm the file exists before reading it.
 - Use read_persisted_output only when a <persisted-output ...> marker appears and its preview is insufficient; read it in chunks by id, offset, and limit.
 - Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail).
 - Read the minimum amount of content needed.

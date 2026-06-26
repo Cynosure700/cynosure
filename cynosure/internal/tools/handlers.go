@@ -113,6 +113,10 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("file_path is required")
 	}
+	offset := 1
+	if o, ok := args["offset"].(float64); ok {
+		offset = int(o)
+	}
 	limit := 0
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
@@ -121,7 +125,7 @@ func handleRead(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return RunReadFromRoot(root, resolvedPath, limit)
+	return RunReadFromRoot(root, resolvedPath, offset, limit)
 }
 
 func handleWrite(ctx context.Context, args map[string]any) (string, error) {
