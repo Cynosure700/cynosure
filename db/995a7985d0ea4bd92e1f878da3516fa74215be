@@ -1,0 +1,14 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "db995a7985d0ea4bd92e1f878da3516fa74215be",
+  "prompts": {},
+  "humans": {
+    "h_3b65c6a993f880": {
+      "author": "dunxing.7 <dunxing.7@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
