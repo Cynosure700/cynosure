@@ -64,9 +64,12 @@ func TestHandleRead_AppliesOneBasedOffsetAndLimit(t *testing.T) {
 
 func TestHandleWrite_UsesWorkspaceRootForRelativePath(t *testing.T) {
 	root := t.TempDir()
-	_, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "nested/out.txt", "content": "created"})
+	result, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "nested/out.txt", "content": "created"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "File created successfully at: nested/out.txt" {
+		t.Fatalf("expected created result, got %q", result)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "nested", "out.txt"))
 	if err != nil {
@@ -77,6 +80,22 @@ func TestHandleWrite_UsesWorkspaceRootForRelativePath(t *testing.T) {
 	}
 }
 
+func TestHandleWrite_ReportsExistingFileUpdate(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "out.txt")
+	if err := os.WriteFile(file, []byte("before"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	result, err := handleWrite(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "out.txt", "content": "after"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "The file out.txt has been updated successfully." {
+		t.Fatalf("expected update result, got %q", result)
+	}
+}
+
 func TestHandleEdit_UsesWorkspaceRootForRelativePath(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "edit.txt")
@@ -84,9 +103,12 @@ func TestHandleEdit_UsesWorkspaceRootForRelativePath(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	_, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "edit.txt", "old_text": "before", "new_text": "after"})
+	result, err := handleEdit(WithRuntimeEnv(context.Background(), RuntimeEnv{WorkspaceRoot: root}), map[string]any{"file_path": "edit.txt", "old_text": "before", "new_text": "after"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "The file edit.txt has been updated successfully." {
+		t.Fatalf("expected edit result, got %q", result)
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {

@@ -638,7 +638,7 @@ func TestRenderCacheReusesUnchangedMessageRenders(t *testing.T) {
 	app.messages = []Message{{Role: "assistant", Content: "你好"}}
 
 	app.renderCachedMessage(app.messages[0])
-	key := messageRenderKey(app.messages[0], app.messageWidth())
+	key := app.messageRenderKey(app.messages[0], app.messageWidth())
 	if _, ok := app.renderCache.entries[key]; !ok {
 		t.Fatal("expected first render to populate the cache")
 	}
@@ -676,7 +676,7 @@ func TestRefreshViewportPrunesStaleRenderCacheEntries(t *testing.T) {
 	if len(model.renderCache.entries) != len(model.messages) {
 		t.Fatalf("cache entries = %d, want pruned down to the %d live messages", len(model.renderCache.entries), len(model.messages))
 	}
-	key := messageRenderKey(model.messages[0], model.messageWidth())
+	key := model.messageRenderKey(model.messages[0], model.messageWidth())
 	if _, ok := model.renderCache.entries[key]; !ok {
 		t.Fatal("expected the current message render to remain cached after pruning")
 	}
@@ -1280,6 +1280,173 @@ func TestReadFileToolMessageAlignsMultilineContent(t *testing.T) {
 		if !found {
 			t.Fatalf("rendered lines = %#v, want line containing %q", lines, want)
 		}
+	}
+}
+
+func TestWriteFileToolMessageRendersFileContentPreview(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	rawArgs := `{"file_path":"src/foo.ts","content":"import React from 'react'\nimport { useState } from 'react'\n\nconst a = 1\nconst b = 2\nconst c = 3\nconst d = 4\nconst e = 5\nconst f = 6\nconst g = 7\nconst h = 8\nconst i = 9\nconst j = 10\nconst k = 11\nconst l = 12"}`
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:    "write_file",
+		RawArgs: rawArgs,
+		Status:  "success",
+	}}
+
+	rendered := plainTerminalText(app.renderMessage(msg))
+
+	for _, want := range []string{
+		"● ✓ Wrote 15 lines to src/foo.ts",
+		"  1│ import React from 'react'",
+		"  2│ import { useState } from 'react'",
+		"  3│",
+		" 10│ const g = 7",
+		"... +5 lines  [Ctrl+O to expand]",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, "const h = 8") {
+		t.Fatalf("rendered = %q, should truncate write content after 10 lines", rendered)
+	}
+	if strings.Contains(rendered, "✓ write(") || strings.Contains(rendered, "success ·") {
+		t.Fatalf("rendered = %q, should use specialized write display instead of generic tool display", rendered)
+	}
+}
+
+func TestCtrlOExpandsAllWriteAndEditFileToolMessages(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.height = 40
+	app.generation = 1
+	writeArgs1 := `{"file_path":"src/foo.ts","content":"import React from 'react'\nimport { useState } from 'react'\n\nconst a = 1\nconst b = 2\nconst c = 3\nconst d = 4\nconst e = 5\nconst f = 6\nconst g = 7\nconst h = 8\nconst i = 9\nconst j = 10\nconst k = 11\nconst l = 12"}`
+	writeArgs2 := `{"file_path":"src/bar.ts","content":"line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11"}`
+	editArgs := `{"file_path":"src/edit.ts","old_text":"old 1\nold 2\nold 3\nold 4\nold 5\nold 6\nold 7\nold 8\nold 9\nold 10\nold 11","new_text":"new 1\nnew 2\nnew 3\nnew 4\nnew 5\nnew 6\nnew 7\nnew 8\nnew 9\nnew 10\nnew 11"}`
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_write_1",
+		"tool_name":    "write_file",
+		"raw_args":     writeArgs1,
+		"status":       "success",
+	}})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_write_2",
+		"tool_name":    "write_file",
+		"raw_args":     writeArgs2,
+		"status":       "success",
+	}})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_edit",
+		"tool_name":    "edit_file",
+		"raw_args":     editArgs,
+		"status":       "success",
+	}})
+	model := updated.(Model)
+
+	collapsed := plainTerminalText(model.renderMessages())
+	for _, forbidden := range []string{"const h = 8", "line 11", "old 11", "new 11"} {
+		if strings.Contains(collapsed, forbidden) {
+			t.Fatalf("collapsed render = %q, should hide %q before expansion", collapsed, forbidden)
+		}
+	}
+	if got := strings.Count(collapsed, "[Ctrl+O to expand]"); got != 3 {
+		t.Fatalf("collapsed render = %q, want 3 expand hints, got %d", collapsed, got)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	model = updated.(Model)
+	expanded := plainTerminalText(model.renderMessages())
+	for _, want := range []string{
+		" 11│ const h = 8",
+		" 15│ const l = 12",
+		" 11│ line 11",
+		`-11│ old 11`,
+		`+11│ new 11`,
+		"[Ctrl+O to collapse]",
+	} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded render = %q, want %q", expanded, want)
+		}
+	}
+	if strings.Contains(expanded, "[Ctrl+O to expand]") {
+		t.Fatalf("expanded render = %q, should hide expand truncation hint", expanded)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	model = updated.(Model)
+	collapsedAgain := plainTerminalText(model.renderMessages())
+	for _, forbidden := range []string{"const h = 8", "line 11", "old 11", "new 11"} {
+		if strings.Contains(collapsedAgain, forbidden) {
+			t.Fatalf("collapsed-again render = %q, should hide %q after collapse", collapsedAgain, forbidden)
+		}
+	}
+	if got := strings.Count(collapsedAgain, "[Ctrl+O to expand]"); got != 3 {
+		t.Fatalf("collapsed-again render = %q, want 3 expand hints, got %d", collapsedAgain, got)
+	}
+}
+
+func TestEditFileToolMessageRendersDiffPreview(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	rawArgs := `{"file_path":"src/foo.ts","old_text":"const old = \"hello\"\nreturn false","new_text":"const new = \"world\"\nreturn true\nconsole.log(\"done\")"}`
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:    "edit_file",
+		RawArgs: rawArgs,
+		Status:  "success",
+	}}
+
+	renderedWithANSI := app.renderMessage(msg)
+	rendered := plainTerminalText(renderedWithANSI)
+
+	for _, want := range []string{
+		"● ✓ Added 3 lines, removed 2 lines",
+		`- 1│ const old = "hello"`,
+		`+ 1│ const new = "world"`,
+		"...",
+		"- 2│ return false",
+		"+ 2│ return true",
+		`+ 3│ console.log("done")`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, "✓ edit(") || strings.Contains(rendered, "success ·") {
+		t.Fatalf("rendered = %q, should use specialized edit display instead of generic tool display", rendered)
+	}
+	if !strings.Contains(renderedWithANSI, string(tuiPalette.coral)) || !strings.Contains(renderedWithANSI, string(tuiPalette.mint)) {
+		t.Fatalf("rendered = %q, want removed and added lines colored", renderedWithANSI)
+	}
+}
+
+func TestWriteAndEditFileToolMessagesKeepGenericDisplayBeforeSuccess(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	for _, tt := range []struct {
+		name   string
+		status string
+		want   string
+	}{
+		{name: "write_file", status: "running", want: "● ⏺ write("},
+		{name: "edit_file", status: "error", want: "● ✗ edit("},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := Message{Role: "tool", ToolCall: &ToolCallView{
+				Name:          tt.name,
+				RawArgs:       `{"file_path":"src/foo.ts","content":"x","old_text":"x","new_text":"y"}`,
+				Status:        tt.status,
+				ResultPreview: "Error: failed",
+			}}
+
+			rendered := plainTerminalText(app.renderMessage(msg))
+
+			if !strings.Contains(rendered, tt.want) {
+				t.Fatalf("rendered = %q, want generic display %q", rendered, tt.want)
+			}
+			if strings.Contains(rendered, "Wrote 1 line") || strings.Contains(rendered, "Added 1 line") {
+				t.Fatalf("rendered = %q, should not use success preview for status %q", rendered, tt.status)
+			}
+		})
 	}
 }
 

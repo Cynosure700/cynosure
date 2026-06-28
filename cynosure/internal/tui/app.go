@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -117,6 +119,7 @@ type Model struct {
 	thinkingStartedAt time.Time
 	thinkingNow       time.Time
 	workingStarted    bool
+	fileToolsExpanded bool
 	renderCache       *messageRenderCache
 }
 
@@ -202,6 +205,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancel()
 				m.generation++
 				m.running = false
+				return m, nil
+			}
+		case "ctrl+o":
+			if m.toggleFileToolExpansion() {
+				m.refreshViewport()
 				return m, nil
 			}
 		}
@@ -825,6 +833,49 @@ func (m *Model) updateToolCallDone(data any) {
 	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
 }
 
+func (m *Model) toggleFileToolExpansion() bool {
+	for i := range m.messages {
+		if m.isExpandableToolMessage(i) {
+			m.fileToolsExpanded = !m.fileToolsExpanded
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) isExpandableToolMessage(index int) bool {
+	if index < 0 || index >= len(m.messages) {
+		return false
+	}
+	msg := m.messages[index]
+	if msg.Role != "tool" || msg.ToolCall == nil {
+		return false
+	}
+	tool := msg.ToolCall
+	if strings.TrimSpace(tool.Status) != "success" {
+		return false
+	}
+	if isWriteFileTool(tool.Name) {
+		args, ok := parseWriteFileArgs(tool.RawArgs)
+		if !ok {
+			return false
+		}
+		return len(splitDisplayLines(args.Content)) > fileToolPreviewMaxLines
+	}
+	if isEditFileTool(tool.Name) {
+		args, ok := parseEditFileArgs(tool.RawArgs)
+		if !ok {
+			return false
+		}
+		return len(buildEditDiffLines(args.OldText, args.NewText)) > fileToolPreviewMaxLines
+	}
+	return false
+}
+
+func (m Model) isFileToolExpanded() bool {
+	return m.fileToolsExpanded
+}
+
 func (m *Model) clearToolCallGroup(data any) {
 	groupID := eventString(data, "ephemeral_group_id")
 	if strings.TrimSpace(groupID) == "" {
@@ -886,7 +937,7 @@ func (m *Model) pruneRenderCache() {
 	live := make(map[string]struct{}, len(m.messages))
 	width := m.messageWidth()
 	for _, msg := range m.messages {
-		live[messageRenderKey(msg, width)] = struct{}{}
+		live[m.messageRenderKey(msg, width)] = struct{}{}
 	}
 	for key := range m.renderCache.entries {
 		if _, ok := live[key]; !ok {
@@ -956,7 +1007,7 @@ func (m Model) renderCachedMessage(msg Message) string {
 	if m.renderCache == nil {
 		return m.renderMessageAt(msg)
 	}
-	key := messageRenderKey(msg, m.messageWidth())
+	key := m.messageRenderKey(msg, m.messageWidth())
 	if cached, ok := m.renderCache.entries[key]; ok {
 		return cached
 	}
@@ -966,7 +1017,7 @@ func (m Model) renderCachedMessage(msg Message) string {
 }
 
 // messageRenderKey 捕获所有会影响一条消息渲染输出的字段。
-func messageRenderKey(msg Message, width int) string {
+func (m Model) messageRenderKey(msg Message, width int) string {
 	var b strings.Builder
 	b.WriteString(strconv.Itoa(width))
 	b.WriteByte('\x00')
@@ -987,6 +1038,10 @@ func messageRenderKey(msg Message, width int) string {
 		}
 		if tool.SuppressResult {
 			b.WriteByte('1')
+		}
+		b.WriteByte('\x00')
+		if m.fileToolsExpanded {
+			b.WriteByte('E')
 		}
 	}
 	return b.String()
@@ -1062,6 +1117,16 @@ func (m Model) renderToolMessage(msg Message) string {
 	if isTodoWriteTool(tool.Name) {
 		return m.renderTodoWriteToolMessage(tool, status)
 	}
+	if isWriteFileTool(tool.Name) {
+		if rendered, ok := m.renderWriteFileToolMessage(tool, status); ok {
+			return rendered
+		}
+	}
+	if isEditFileTool(tool.Name) {
+		if rendered, ok := m.renderEditFileToolMessage(tool, status); ok {
+			return rendered
+		}
+	}
 	name := displayToolName(tool.Name, tool.RawArgs)
 	line := name
 	if args := toolArgsDisplay(tool.RawArgs, tool.ArgsPreview); args != "" {
@@ -1132,6 +1197,217 @@ func (m Model) renderTodoWriteToolMessage(tool *ToolCallView, status string) str
 	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
 }
 
+const fileToolPreviewMaxLines = 10
+
+type writeFileDisplayArgs struct {
+	FilePath string `json:"file_path"`
+	Content  string `json:"content"`
+}
+
+func (m Model) renderWriteFileToolMessage(tool *ToolCallView, status string) (string, bool) {
+	if status != "success" {
+		return "", false
+	}
+	args, ok := parseWriteFileArgs(tool.RawArgs)
+	if !ok {
+		return "", false
+	}
+	lines := splitDisplayLines(args.Content)
+	highlightedLines := highlightCodeLines(args.FilePath, lines)
+	bodyLines := []string{fmt.Sprintf("%s Wrote %d %s to %s", toolIcon(status), len(lines), pluralizeLine(len(lines)), args.FilePath)}
+	previewLineCount := min(len(lines), fileToolPreviewMaxLines)
+	if m.isFileToolExpanded() {
+		previewLineCount = len(lines)
+	}
+	for i := 0; i < previewLineCount; i++ {
+		bodyLines = append(bodyLines, formatWritePreviewLine(i+1, highlightedLines[i]))
+	}
+	if omitted := len(lines) - previewLineCount; omitted > 0 {
+		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
+	} else if m.isFileToolExpanded() && len(lines) > fileToolPreviewMaxLines {
+		bodyLines = append(bodyLines, "[Ctrl+O to collapse]")
+	}
+	body := strings.Join(bodyLines, "\n")
+	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3)), true
+}
+
+func parseWriteFileArgs(rawArgs string) (writeFileDisplayArgs, bool) {
+	var args writeFileDisplayArgs
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err != nil {
+		return args, false
+	}
+	return args, strings.TrimSpace(args.FilePath) != ""
+}
+
+func formatWritePreviewLine(lineNumber int, content string) string {
+	return fmt.Sprintf("%3d│ %s", lineNumber, content)
+}
+
+func highlightCodeLines(filePath string, lines []string) []string {
+	source := strings.Join(lines, "\n")
+	var b strings.Builder
+	lexerName := ""
+	if lexer := lexers.Match(filePath); lexer != nil {
+		lexerName = lexer.Config().Name
+	}
+	if err := quick.Highlight(&b, source, lexerName, "terminal16m", "monokai"); err != nil {
+		return lines
+	}
+	rendered := strings.TrimSuffix(b.String(), "\n")
+	if rendered == "" && len(lines) == 1 && lines[0] == "" {
+		return []string{""}
+	}
+	highlighted := strings.Split(rendered, "\n")
+	if len(highlighted) < len(lines) {
+		highlighted = append(highlighted, lines[len(highlighted):]...)
+	}
+	if len(highlighted) > len(lines) {
+		highlighted = highlighted[:len(lines)]
+	}
+	return highlighted
+}
+
+type editFileDisplayArgs struct {
+	FilePath string `json:"file_path"`
+	OldText  string `json:"old_text"`
+	NewText  string `json:"new_text"`
+}
+
+type editDiffLine struct {
+	Kind   rune
+	Number int
+	Text   string
+}
+
+func (m Model) renderEditFileToolMessage(tool *ToolCallView, status string) (string, bool) {
+	if status != "success" {
+		return "", false
+	}
+	args, ok := parseEditFileArgs(tool.RawArgs)
+	if !ok {
+		return "", false
+	}
+	lines := buildEditDiffLines(args.OldText, args.NewText)
+	added, removed := countEditDiffLines(lines)
+	bodyLines := []string{fmt.Sprintf("%s Added %d %s, removed %d %s", toolIcon(status), added, pluralizeLine(added), removed, pluralizeLine(removed))}
+	previewLines := lines
+	if !m.isFileToolExpanded() && len(lines) > fileToolPreviewMaxLines {
+		previewLines = lines[:fileToolPreviewMaxLines]
+	}
+	for _, line := range previewLines {
+		bodyLines = append(bodyLines, renderEditDiffLine(line, status))
+	}
+	if omitted := len(lines) - len(previewLines); omitted > 0 {
+		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
+	} else if m.isFileToolExpanded() && len(lines) > fileToolPreviewMaxLines {
+		bodyLines = append(bodyLines, "[Ctrl+O to collapse]")
+	}
+	body := strings.Join(bodyLines, "\n")
+	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3)), true
+}
+
+func parseEditFileArgs(rawArgs string) (editFileDisplayArgs, bool) {
+	var args editFileDisplayArgs
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err != nil {
+		return args, false
+	}
+	return args, strings.TrimSpace(args.FilePath) != ""
+}
+
+func buildEditDiffLines(oldText, newText string) []editDiffLine {
+	oldLines := splitDisplayLines(oldText)
+	newLines := splitDisplayLines(newText)
+	prefix := commonPrefixLineCount(oldLines, newLines)
+	suffix := commonSuffixLineCount(oldLines, newLines, prefix)
+
+	lines := make([]editDiffLine, 0, len(oldLines)+len(newLines)+1)
+	appendContext := func(idx int) {
+		lines = append(lines, editDiffLine{Kind: ' ', Number: idx + 1, Text: oldLines[idx]})
+	}
+	for i := 0; i < prefix; i++ {
+		appendContext(i)
+	}
+	for i := prefix; i < len(oldLines)-suffix; i++ {
+		lines = append(lines, editDiffLine{Kind: '-', Number: i + 1, Text: oldLines[i]})
+	}
+	if prefix < len(oldLines)-suffix && prefix < len(newLines)-suffix {
+		lines = append(lines, editDiffLine{Kind: '…'})
+	}
+	for i := prefix; i < len(newLines)-suffix; i++ {
+		lines = append(lines, editDiffLine{Kind: '+', Number: i + 1, Text: newLines[i]})
+	}
+	for i := len(oldLines) - suffix; i < len(oldLines); i++ {
+		appendContext(i)
+	}
+	return lines
+}
+
+func commonPrefixLineCount(a, b []string) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+func commonSuffixLineCount(a, b []string, prefix int) int {
+	maxSuffix := min(len(a), len(b)) - prefix
+	for i := 0; i < maxSuffix; i++ {
+		if a[len(a)-1-i] != b[len(b)-1-i] {
+			return i
+		}
+	}
+	return maxSuffix
+}
+
+func countEditDiffLines(lines []editDiffLine) (int, int) {
+	added, removed := 0, 0
+	for _, line := range lines {
+		switch line.Kind {
+		case '+':
+			added++
+		case '-':
+			removed++
+		}
+	}
+	return added, removed
+}
+
+func renderEditDiffLine(line editDiffLine, status string) string {
+	if line.Kind == '…' {
+		return "..."
+	}
+	text := fmt.Sprintf("%c%2d│ %s", line.Kind, line.Number, line.Text)
+	restore := ansiForeground(toolTextColorForStatus(status))
+	switch line.Kind {
+	case '+':
+		return ansiForeground(tuiPalette.mint) + text + restore
+	case '-':
+		return ansiForeground(tuiPalette.coral) + text + restore
+	case ' ':
+		return ansiForeground(tuiPalette.muted) + text + restore
+	default:
+		return text
+	}
+}
+
+func splitDisplayLines(text string) []string {
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return []string{""}
+	}
+	return lines
+}
+
+func pluralizeLine(n int) string {
+	if n == 1 {
+		return "line"
+	}
+	return "lines"
+}
+
 type todoDisplayItem struct {
 	Content string `json:"content"`
 	Status  string `json:"status"`
@@ -1161,6 +1437,16 @@ func parseTodoWriteTodos(rawArgs string) ([]todoDisplayItem, bool) {
 func isTodoWriteTool(name string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
 	return normalized == "todowrite"
+}
+
+func isWriteFileTool(name string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
+	return normalized == "writefile"
+}
+
+func isEditFileTool(name string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
+	return normalized == "editfile"
 }
 
 func toolArgsDisplay(rawArgs, fallback string) string {

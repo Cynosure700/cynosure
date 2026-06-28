@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,6 +65,13 @@ func RunWriteFromRoot(root, path, content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	exists := true
+	if _, err := os.Stat(resolved); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("failed to inspect file: %w", err)
+		}
+		exists = false
+	}
 
 	dir := filepath.Dir(resolved)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -74,7 +82,10 @@ func RunWriteFromRoot(root, path, content string) (string, error) {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return fmt.Sprintf("Wrote %d bytes to %s", len(content), path), nil
+	if exists {
+		return fmt.Sprintf("The file %s has been updated successfully.", path), nil
+	}
+	return fmt.Sprintf("File created successfully at: %s", path), nil
 }
 
 func RunEdit(path, oldText, newText string) (string, error) {
@@ -102,7 +113,7 @@ func RunEditFromRoot(root, path, oldText, newText string) (string, error) {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return fmt.Sprintf("Edited %s", path), nil
+	return fmt.Sprintf("The file %s has been updated successfully.", path), nil
 }
 
 // Edit 是供 RunMultiEditFromRoot 使用的单次查找替换操作。

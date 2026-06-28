@@ -50,7 +50,7 @@ func TestDispatchNewToolsEndToEnd(t *testing.T) {
 		"file_path": filepath.Join(root, "created.txt"),
 		"content":   "created content\n",
 	})
-	if err != nil || !strings.Contains(res.Output, "Wrote") {
+	if err != nil || !strings.Contains(res.Output, "File created successfully at:") {
 		t.Fatalf("write_file dispatch failed: out=%q err=%v", res.Output, err)
 	}
 
@@ -60,7 +60,7 @@ func TestDispatchNewToolsEndToEnd(t *testing.T) {
 		"old_text":  "created",
 		"new_text":  "updated",
 	})
-	if err != nil || !strings.Contains(res.Output, "Edited") {
+	if err != nil || !strings.Contains(res.Output, "has been updated successfully") {
 		t.Fatalf("edit_file dispatch failed: out=%q err=%v", res.Output, err)
 	}
 

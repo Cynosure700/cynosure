@@ -134,11 +134,11 @@ func handleWrite(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("file_path is required")
 	}
-	root, resolvedPath, err := resolvePathFromContext(ctx, path)
+	root, _, err := resolvePathFromContext(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	return RunWriteFromRoot(root, resolvedPath, content)
+	return RunWriteFromRoot(root, path, content)
 }
 
 func handleEdit(ctx context.Context, args map[string]any) (string, error) {
@@ -148,11 +148,11 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("file_path is required")
 	}
-	root, resolvedPath, err := resolvePathFromContext(ctx, path)
+	root, _, err := resolvePathFromContext(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	return RunEditFromRoot(root, resolvedPath, oldText, newText)
+	return RunEditFromRoot(root, path, oldText, newText)
 }
 
 func handleMultiEdit(ctx context.Context, args map[string]any) (string, error) {
