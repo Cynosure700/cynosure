@@ -717,14 +717,18 @@ func TestModelAssistantFinalEventKeepsContentAndMeta(t *testing.T) {
 		t.Fatalf("rendered messages = %q, reasoning_content must never be displayed", rendered)
 	}
 	view := plainTerminalText(model.View())
-	for _, want := range []string{"工具 2", "上下文 45%"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view = %q, want it to contain %q", view, want)
-		}
+	if model.toolCallCount != 2 {
+		t.Fatalf("toolCallCount = %d, want metadata to keep updating internally", model.toolCallCount)
+	}
+	if strings.Contains(view, "工具 2") {
+		t.Fatalf("view = %q, should not display tool call count", view)
+	}
+	if !strings.Contains(view, "上下文 45%") {
+		t.Fatalf("view = %q, want context status to remain visible", view)
 	}
 }
 
-func TestModelMetaEventUpdatesLiveStatus(t *testing.T) {
+func TestModelMetaEventUpdatesContextStatusWithoutDisplayingToolCount(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1
 	app.running = true
@@ -733,10 +737,14 @@ func TestModelMetaEventUpdatesLiveStatus(t *testing.T) {
 	model := updated.(Model)
 
 	view := model.View()
-	for _, want := range []string{"工具 3", "上下文 72%"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view = %q, want it to contain %q", view, want)
-		}
+	if model.toolCallCount != 3 {
+		t.Fatalf("toolCallCount = %d, want metadata to keep updating internally", model.toolCallCount)
+	}
+	if strings.Contains(view, "工具 3") {
+		t.Fatalf("view = %q, should not display tool call count", view)
+	}
+	if !strings.Contains(view, "上下文 72%") {
+		t.Fatalf("view = %q, want context status to remain visible", view)
 	}
 }
 
@@ -1656,10 +1664,13 @@ func TestViewUsesClaudeLikeSeparatedTerminalRegions(t *testing.T) {
 	app.refreshViewport()
 
 	view := plainTerminalText(app.View())
-	for _, want := range []string{"cynosure", "/tmp/project", "› hello", "你好", "工具 0", "上下文 --", "╭", "╰"} {
+	for _, want := range []string{"cynosure", "/tmp/project", "› hello", "你好", "上下文 --", "╭", "╰"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view = %q, want it to contain %q", view, want)
 		}
+	}
+	if strings.Contains(view, "工具 0") {
+		t.Fatalf("view = %q, should not display tool call count", view)
 	}
 }
 

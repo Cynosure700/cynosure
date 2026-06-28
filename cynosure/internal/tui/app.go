@@ -1809,7 +1809,7 @@ func isTerminalProbeResponseInput(msg tea.KeyMsg) bool {
 
 func (m Model) renderLiveStatus() string {
 	if m.width > 0 && m.width < 70 {
-		parts := []string{"Enter", "Esc 中断", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
+		parts := []string{"Enter", "Esc 中断", "/help"}
 		if m.contextBudget > 0 {
 			parts = append(parts, fmt.Sprintf("上下文 %d%%", min(100, m.contextTokens*100/m.contextBudget)))
 		} else {
@@ -1817,7 +1817,7 @@ func (m Model) renderLiveStatus() string {
 		}
 		return strings.Join(parts, " · ")
 	}
-	parts := []string{"Enter 发送", "Esc 中断", "Ctrl+C 退出", "/help", fmt.Sprintf("工具 %d", m.toolCallCount)}
+	parts := []string{"Enter 发送", "Esc 中断", "Ctrl+C 退出", "/help"}
 	if m.contextBudget > 0 {
 		parts = append(parts, fmt.Sprintf("上下文 %d%% · %s/%s", min(100, m.contextTokens*100/m.contextBudget), compactNumber(m.contextTokens), compactNumber(m.contextBudget)))
 	} else {
