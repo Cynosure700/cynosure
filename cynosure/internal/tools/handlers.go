@@ -156,30 +156,83 @@ func handleEdit(ctx context.Context, args map[string]any) (string, error) {
 }
 
 func handleMultiEdit(ctx context.Context, args map[string]any) (string, error) {
+	files, err := multiEditFilesFromArgs(args)
+	if err != nil {
+		return "", err
+	}
+	results := make([]string, 0, len(files))
+	for _, file := range files {
+		root, _, err := resolvePathFromContext(ctx, file.Path)
+		if err != nil {
+			return "", err
+		}
+		result, err := RunMultiEditFromRoot(root, file.Path, file.Edits)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, result)
+	}
+	return strings.Join(results, "\n"), nil
+}
+
+type multiEditFile struct {
+	Path  string
+	Edits []Edit
+}
+
+func multiEditFilesFromArgs(args map[string]any) ([]multiEditFile, error) {
+	if rawFiles, ok := args["files"].([]any); ok {
+		if len(rawFiles) == 0 {
+			return nil, fmt.Errorf("files is required")
+		}
+		files := make([]multiEditFile, 0, len(rawFiles))
+		for i, raw := range rawFiles {
+			m, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("file %d is not an object", i+1)
+			}
+			file, err := multiEditFileFromMap(m, fmt.Sprintf("file %d", i+1))
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, file)
+		}
+		return files, nil
+	}
+	file, err := multiEditFileFromMap(args, "")
+	if err != nil {
+		return nil, err
+	}
+	return []multiEditFile{file}, nil
+}
+
+func multiEditFileFromMap(args map[string]any, label string) (multiEditFile, error) {
 	path, _ := args["file_path"].(string)
 	if path == "" {
-		return "", fmt.Errorf("file_path is required")
+		if label != "" {
+			return multiEditFile{}, fmt.Errorf("%s file_path is required", label)
+		}
+		return multiEditFile{}, fmt.Errorf("file_path is required")
 	}
 	rawEdits, ok := args["edits"].([]any)
 	if !ok || len(rawEdits) == 0 {
-		return "", fmt.Errorf("edits is required")
+		if label != "" {
+			return multiEditFile{}, fmt.Errorf("%s edits is required", label)
+		}
+		return multiEditFile{}, fmt.Errorf("edits is required")
 	}
 	edits := make([]Edit, 0, len(rawEdits))
 	for i, raw := range rawEdits {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("edit %d is not an object", i+1)
+			return multiEditFile{}, fmt.Errorf("edit %d is not an object", i+1)
 		}
 		oldStr, _ := m["old_string"].(string)
 		newStr, _ := m["new_string"].(string)
 		replaceAll, _ := m["replace_all"].(bool)
 		edits = append(edits, Edit{OldString: oldStr, NewString: newStr, ReplaceAll: replaceAll})
 	}
-	root, resolvedPath, err := resolvePathFromContext(ctx, path)
-	if err != nil {
-		return "", err
-	}
-	return RunMultiEditFromRoot(root, resolvedPath, edits)
+	return multiEditFile{Path: path, Edits: edits}, nil
 }
 
 func handleGrep(ctx context.Context, args map[string]any) (string, error) {

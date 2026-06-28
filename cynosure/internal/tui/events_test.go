@@ -1393,6 +1393,45 @@ func TestCtrlOExpandsAllWriteAndEditFileToolMessages(t *testing.T) {
 	}
 }
 
+func TestCtrlOExpandsMultiEditToolMessages(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	app.height = 40
+	app.generation = 1
+	multiEditArgs := `{"files":[{"file_path":"src/multi.ts","edits":[{"old_string":"old 1\nold 2\nold 3\nold 4\nold 5\nold 6\nold 7\nold 8\nold 9\nold 10\nold 11","new_string":"new 1\nnew 2\nnew 3\nnew 4\nnew 5\nnew 6\nnew 7\nnew 8\nnew 9\nnew 10\nnew 11"}]}]}`
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_multi_edit",
+		"tool_name":    "multi_edit",
+		"raw_args":     multiEditArgs,
+		"status":       "success",
+	}})
+	model := updated.(Model)
+
+	collapsed := plainTerminalText(model.renderMessages())
+	if strings.Contains(collapsed, "old 11") || strings.Contains(collapsed, "new 11") {
+		t.Fatalf("collapsed render = %q, should hide long multi_edit diff before expansion", collapsed)
+	}
+	if !strings.Contains(collapsed, "[Ctrl+O to expand]") {
+		t.Fatalf("collapsed render = %q, want expand hint", collapsed)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	model = updated.(Model)
+	expanded := plainTerminalText(model.renderMessages())
+	for _, want := range []string{
+		`-11│ old 11`,
+		`+11│ new 11`,
+		"[Ctrl+O to collapse]",
+	} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded render = %q, want %q", expanded, want)
+		}
+	}
+	if strings.Contains(expanded, "[Ctrl+O to expand]") {
+		t.Fatalf("expanded render = %q, should hide expand hint after Ctrl+O", expanded)
+	}
+}
+
 func TestEditFileToolMessageRendersDiffPreview(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 120
@@ -1421,6 +1460,47 @@ func TestEditFileToolMessageRendersDiffPreview(t *testing.T) {
 	}
 	if strings.Contains(rendered, "✓ edit(") || strings.Contains(rendered, "success ·") {
 		t.Fatalf("rendered = %q, should use specialized edit display instead of generic tool display", rendered)
+	}
+	if !strings.Contains(renderedWithANSI, string(tuiPalette.coral)) || !strings.Contains(renderedWithANSI, string(tuiPalette.mint)) {
+		t.Fatalf("rendered = %q, want removed and added lines colored", renderedWithANSI)
+	}
+}
+
+func TestMultiEditToolMessageRendersDiffPreviewByFile(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	rawArgs := `{"files":[{"file_path":"src/foo.ts","edits":[{"old_string":"const old = \"hello\"","new_string":"const new = \"world\""},{"old_string":"return false","new_string":"return true"}]},{"file_path":"src/bar.ts","edits":[{"old_string":"name = \"old\"","new_string":"name = \"new\""}]}]}`
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:    "multi_edit",
+		RawArgs: rawArgs,
+		Status:  "success",
+	}}
+
+	renderedWithANSI := app.renderMessage(msg)
+	rendered := plainTerminalText(renderedWithANSI)
+
+	for _, want := range []string{
+		"● ✓ src/foo.ts: Added 2 lines, removed 2 lines",
+		`- 1│ const old = "hello"`,
+		`+ 1│ const new = "world"`,
+		"- 1│ return false",
+		"+ 1│ return true",
+		"● ✓ src/bar.ts: Added 1 line, removed 1 line",
+		`- 1│ name = "old"`,
+		`+ 1│ name = "new"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want %q", rendered, want)
+		}
+	}
+	if !strings.Contains(rendered, "\n\n● ✓ src/bar.ts") {
+		t.Fatalf("rendered = %q, want a blank line between multi_edit file blocks", rendered)
+	}
+	if got := len(ansiBlueForegroundPattern.FindAllString(renderedWithANSI, -1)); got != 2 {
+		t.Fatalf("rendered = %q, want one blue bullet per edited file, got %d", renderedWithANSI, got)
+	}
+	if strings.Contains(rendered, "✓ multi_edit(") || strings.Contains(rendered, "success ·") {
+		t.Fatalf("rendered = %q, should use specialized multi_edit display instead of generic tool display", rendered)
 	}
 	if !strings.Contains(renderedWithANSI, string(tuiPalette.coral)) || !strings.Contains(renderedWithANSI, string(tuiPalette.mint)) {
 		t.Fatalf("rendered = %q, want removed and added lines colored", renderedWithANSI)

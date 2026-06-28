@@ -108,13 +108,14 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 			"Prefer multi_edit",
 		},
 		"multi_edit": {
-			"Performs multiple exact string replacements in one file",
+			"Performs multiple exact string replacements in one or more files",
 			"MUST use read_file first",
 			"You must use your `Read` tool at least once in the conversation before editing.",
+			"Use file_path + edits for a single file, or files for multiple files",
 			"preserve the exact indentation",
 			"line number + tab",
 			"old_string must be unique",
-			"applied sequentially and atomically",
+			"applied sequentially and atomically per file",
 		},
 	} {
 		description, ok := toolsByName[name]
@@ -132,6 +133,39 @@ func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 	if strings.Contains(toolsByName["read_file"], "Only read confirmed existing files") ||
 		strings.Contains(schemasByName["read_file"], "do not read user-provided missing files") {
 		t.Fatalf("read_file guidance should allow direct reads of user-provided paths and missing-file errors, got description=%q schema=%q", toolsByName["read_file"], schemasByName["read_file"])
+	}
+}
+
+func TestMultiEditSchemaSupportsSingleAndMultipleFiles(t *testing.T) {
+	schema := schemaMapForTool(t, "multi_edit")
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi_edit schema properties missing or wrong type: %#v", schema["properties"])
+	}
+	for _, name := range []string{"file_path", "edits", "files"} {
+		if _, ok := properties[name]; !ok {
+			t.Fatalf("multi_edit schema should expose %s, got properties %#v", name, properties)
+		}
+	}
+	files, ok := properties["files"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi_edit files schema missing or wrong type: %#v", properties["files"])
+	}
+	items, ok := files["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi_edit files items missing or wrong type: %#v", files["items"])
+	}
+	fileProperties, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("multi_edit files item properties missing or wrong type: %#v", items["properties"])
+	}
+	for _, name := range []string{"file_path", "edits"} {
+		if _, ok := fileProperties[name]; !ok {
+			t.Fatalf("multi_edit files item should expose %s, got properties %#v", name, fileProperties)
+		}
+	}
+	if required, ok := schema["required"].([]any); ok && len(required) > 0 {
+		t.Fatalf("multi_edit schema should not require single-file fields when files is used, got %#v", required)
 	}
 }
 

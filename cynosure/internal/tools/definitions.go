@@ -86,6 +86,23 @@ func stringArrayParam(desc string) map[string]any {
 	}
 }
 
+func multiEditEditsParam(desc string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": desc,
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_string must be unique unless the tool explicitly supports replacing all occurrences. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
+				"new_string":  strParam("The text to replace old_string with. Preserve surrounding style and avoid emojis unless explicitly requested."),
+				"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
+			},
+			"required": []string{"old_string", "new_string"},
+		},
+		"minItems": 1,
+	}
+}
+
 var baseToolSpecs = []ToolSpec{
 	toolSpec("bash", "Execute a shell command via bash -c. The command runs in the workspace root, and relative path arguments are interpreted under it.", map[string]any{
 		"type": "object",
@@ -181,26 +198,25 @@ var baseToolSpecs = []ToolSpec{
 		},
 		"required": []string{"path"},
 	}),
-	toolSpec("multi_edit", "Performs multiple exact string replacements in one file. You MUST use read_file first in the conversation before editing. You must use your `Read` tool at least once in the conversation before editing. Prefer multi_edit over edit_file when making several edits to the same file. When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. Never include the line number prefix in old_string or new_string. old_string must be unique unless the tool explicitly supports replacing all occurrences. If the old_string is not unique, expand the surrounding context until it uniquely identifies the target. Edits are applied sequentially and atomically: if any edit fails, none are applied. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked.", map[string]any{
+	toolSpec("multi_edit", "Performs multiple exact string replacements in one or more files. You MUST use read_file first in the conversation before editing. You must use your `Read` tool at least once in the conversation before editing. Prefer multi_edit over edit_file when making several edits to the same file. Use file_path + edits for a single file, or files for multiple files. When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + tab. Never include the line number prefix in old_string or new_string. old_string must be unique unless the tool explicitly supports replacing all occurrences. If the old_string is not unique, expand the surrounding context until it uniquely identifies the target. Edits are applied sequentially and atomically per file: if any edit for a file fails, that file is not changed. Only use emojis if the user explicitly requests it; avoid adding emojis to files unless asked.", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"file_path": strParam("The absolute path to the file to modify (must be absolute, not relative)."),
-			"edits": map[string]any{
+			"file_path": strParam("Path to a single file to modify. Use with edits for the legacy single-file form."),
+			"edits":     multiEditEditsParam("Array of edit operations to perform sequentially on the single file."),
+			"files": map[string]any{
 				"type":        "array",
-				"description": "Array of edit operations to perform sequentially on the file.",
+				"description": "Array of file edit groups for editing multiple files in one tool call. Each file result is returned separately.",
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"old_string":  strParam("The text to replace. It must match file contents exactly, including whitespace, indentation, and line breaks. If copying from Read tool output, preserve the exact indentation after the line number prefix and do not include the line number prefix. The line number prefix format is: line number + tab. old_string must be unique unless the tool explicitly supports replacing all occurrences. If it is not unique, expand the surrounding context until it uniquely identifies the target."),
-						"new_string":  strParam("The text to replace old_string with. Preserve surrounding style and avoid emojis unless explicitly requested."),
-						"replace_all": boolParam("Replace all occurrences of old_string. Optional, defaults to false."),
+						"file_path": strParam("Path to the file to modify."),
+						"edits":     multiEditEditsParam("Array of edit operations to perform sequentially on this file."),
 					},
-					"required": []string{"old_string", "new_string"},
+					"required": []string{"file_path", "edits"},
 				},
 				"minItems": 1,
 			},
 		},
-		"required": []string{"file_path", "edits"},
 	}),
 	toolSpec("web_fetch", "Fetch content from a URL and process it with an AI model. Fetches the URL, converts HTML to text, and runs the prompt over the content. Use this to retrieve and analyze web content.", map[string]any{
 		"type": "object",

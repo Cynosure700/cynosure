@@ -72,7 +72,7 @@ func TestDispatchNewToolsEndToEnd(t *testing.T) {
 			map[string]any{"old_string": "beta", "new_string": "BETA"},
 		},
 	})
-	if err != nil || !strings.Contains(res.Output, "Applied 2 edits") {
+	if err != nil || !strings.Contains(res.Output, "has been updated successfully") {
 		t.Fatalf("multi_edit dispatch failed: out=%q err=%v", res.Output, err)
 	}
 

@@ -113,7 +113,7 @@ func RunEditFromRoot(root, path, oldText, newText string) (string, error) {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return fmt.Sprintf("The file %s has been updated successfully.", path), nil
+	return editSuccessMessage(path), nil
 }
 
 // Edit 是供 RunMultiEditFromRoot 使用的单次查找替换操作。
@@ -153,7 +153,11 @@ func RunMultiEditFromRoot(root, path string, edits []Edit) (string, error) {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return fmt.Sprintf("Applied %d edits to %s", len(edits), path), nil
+	return editSuccessMessage(path), nil
+}
+
+func editSuccessMessage(path string) string {
+	return fmt.Sprintf("The file %s has been updated successfully.", path)
 }
 
 // applyEdit 在内存中执行单次查找替换；当 oldText 为空、等于 newText、

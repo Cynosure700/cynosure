@@ -869,6 +869,22 @@ func (m Model) isExpandableToolMessage(index int) bool {
 		}
 		return len(buildEditDiffLines(args.OldText, args.NewText)) > fileToolPreviewMaxLines
 	}
+	if isMultiEditTool(tool.Name) {
+		files, ok := parseMultiEditDisplayFiles(tool.RawArgs)
+		if !ok {
+			return false
+		}
+		lineCount := 0
+		for _, file := range files {
+			for _, change := range file.Changes {
+				lineCount += len(buildEditDiffLines(change.Old, change.New))
+				if lineCount > fileToolPreviewMaxLines {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	return false
 }
 
@@ -1127,6 +1143,11 @@ func (m Model) renderToolMessage(msg Message) string {
 			return rendered
 		}
 	}
+	if isMultiEditTool(tool.Name) {
+		if rendered, ok := m.renderMultiEditToolMessage(tool, status); ok {
+			return rendered
+		}
+	}
 	name := displayToolName(tool.Name, tool.RawArgs)
 	line := name
 	if args := toolArgsDisplay(tool.RawArgs, tool.ArgsPreview); args != "" {
@@ -1273,6 +1294,22 @@ type editFileDisplayArgs struct {
 	NewText  string `json:"new_text"`
 }
 
+type multiEditDisplayArgs struct {
+	FilePath string                 `json:"file_path"`
+	Edits    []multiEditDisplayEdit `json:"edits"`
+	Files    []multiEditDisplayFile `json:"files"`
+}
+
+type multiEditDisplayFile struct {
+	FilePath string                 `json:"file_path"`
+	Edits    []multiEditDisplayEdit `json:"edits"`
+}
+
+type multiEditDisplayEdit struct {
+	OldString string `json:"old_string"`
+	NewString string `json:"new_string"`
+}
+
 type editDiffLine struct {
 	Kind   rune
 	Number int
@@ -1287,23 +1324,29 @@ func (m Model) renderEditFileToolMessage(tool *ToolCallView, status string) (str
 	if !ok {
 		return "", false
 	}
-	lines := buildEditDiffLines(args.OldText, args.NewText)
-	added, removed := countEditDiffLines(lines)
-	bodyLines := []string{fmt.Sprintf("%s Added %d %s, removed %d %s", toolIcon(status), added, pluralizeLine(added), removed, pluralizeLine(removed))}
-	previewLines := lines
-	if !m.isFileToolExpanded() && len(lines) > fileToolPreviewMaxLines {
-		previewLines = lines[:fileToolPreviewMaxLines]
+	bodyLines := buildEditPreviewBodyLines(toolIcon(status), "", []editDisplayChange{{Old: args.OldText, New: args.NewText}}, status, m.isFileToolExpanded())
+	return m.renderFileToolBody(bodyLines, status), true
+}
+
+func (m Model) renderMultiEditToolMessage(tool *ToolCallView, status string) (string, bool) {
+	if status != "success" {
+		return "", false
 	}
-	for _, line := range previewLines {
-		bodyLines = append(bodyLines, renderEditDiffLine(line, status))
+	files, ok := parseMultiEditDisplayFiles(tool.RawArgs)
+	if !ok {
+		return "", false
 	}
-	if omitted := len(lines) - len(previewLines); omitted > 0 {
-		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
-	} else if m.isFileToolExpanded() && len(lines) > fileToolPreviewMaxLines {
-		bodyLines = append(bodyLines, "[Ctrl+O to collapse]")
+	blocks := make([]string, 0, len(files))
+	for _, file := range files {
+		bodyLines := buildEditPreviewBodyLines(toolIcon(status), file.FilePath, file.Changes, status, m.isFileToolExpanded())
+		blocks = append(blocks, m.renderFileToolBody(bodyLines, status))
 	}
+	return strings.Join(blocks, "\n\n"), true
+}
+
+func (m Model) renderFileToolBody(bodyLines []string, status string) string {
 	body := strings.Join(bodyLines, "\n")
-	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3)), true
+	return renderToolBullet() + toolStyleForStatus(status).Render(wrapText(body, m.messageWidth()-3))
 }
 
 func parseEditFileArgs(rawArgs string) (editFileDisplayArgs, bool) {
@@ -1312,6 +1355,79 @@ func parseEditFileArgs(rawArgs string) (editFileDisplayArgs, bool) {
 		return args, false
 	}
 	return args, strings.TrimSpace(args.FilePath) != ""
+}
+
+type editDisplayFile struct {
+	FilePath string
+	Changes  []editDisplayChange
+}
+
+type editDisplayChange struct {
+	Old string
+	New string
+}
+
+func parseMultiEditDisplayFiles(rawArgs string) ([]editDisplayFile, bool) {
+	var args multiEditDisplayArgs
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawArgs)), &args); err != nil {
+		return nil, false
+	}
+	if len(args.Files) > 0 {
+		files := make([]editDisplayFile, 0, len(args.Files))
+		for _, file := range args.Files {
+			parsed, ok := multiEditDisplayFileToEditDisplay(file.FilePath, file.Edits)
+			if !ok {
+				return nil, false
+			}
+			files = append(files, parsed)
+		}
+		return files, true
+	}
+	file, ok := multiEditDisplayFileToEditDisplay(args.FilePath, args.Edits)
+	if !ok {
+		return nil, false
+	}
+	return []editDisplayFile{file}, true
+}
+
+func multiEditDisplayFileToEditDisplay(filePath string, edits []multiEditDisplayEdit) (editDisplayFile, bool) {
+	if strings.TrimSpace(filePath) == "" || len(edits) == 0 {
+		return editDisplayFile{}, false
+	}
+	changes := make([]editDisplayChange, 0, len(edits))
+	for _, edit := range edits {
+		changes = append(changes, editDisplayChange{Old: edit.OldString, New: edit.NewString})
+	}
+	return editDisplayFile{FilePath: filePath, Changes: changes}, true
+}
+
+func buildEditPreviewBodyLines(icon, filePath string, changes []editDisplayChange, status string, expanded bool) []string {
+	diffLines := make([]editDiffLine, 0)
+	for _, change := range changes {
+		diffLines = append(diffLines, buildEditDiffLines(change.Old, change.New)...)
+	}
+	added, removed := countEditDiffLines(diffLines)
+	summary := fmt.Sprintf("Added %d %s, removed %d %s", added, pluralizeLine(added), removed, pluralizeLine(removed))
+	if strings.TrimSpace(filePath) != "" {
+		summary = filePath + ": " + summary
+	}
+	if icon != "" {
+		summary = icon + " " + summary
+	}
+	bodyLines := []string{summary}
+	previewLines := diffLines
+	if !expanded && len(diffLines) > fileToolPreviewMaxLines {
+		previewLines = diffLines[:fileToolPreviewMaxLines]
+	}
+	for _, line := range previewLines {
+		bodyLines = append(bodyLines, renderEditDiffLine(line, status))
+	}
+	if omitted := len(diffLines) - len(previewLines); omitted > 0 {
+		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
+	} else if expanded && len(diffLines) > fileToolPreviewMaxLines {
+		bodyLines = append(bodyLines, "[Ctrl+O to collapse]")
+	}
+	return bodyLines
 }
 
 func buildEditDiffLines(oldText, newText string) []editDiffLine {
@@ -1447,6 +1563,11 @@ func isWriteFileTool(name string) bool {
 func isEditFileTool(name string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
 	return normalized == "editfile"
+}
+
+func isMultiEditTool(name string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), "_", ""))
+	return normalized == "multiedit"
 }
 
 func toolArgsDisplay(rawArgs, fallback string) string {
