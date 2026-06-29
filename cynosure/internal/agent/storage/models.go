@@ -57,7 +57,13 @@ type Message struct {
 	ToolCallID       string            `json:"tool_call_id,omitempty"`
 	ToolCalls        []MessageToolCall `json:"tool_calls,omitempty"`
 	Meta             *MessageMeta      `json:"meta,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
+	// EditLineStarts 仅用于 TUI 展示 edit_file/multi_edit 的 diff 真实行号：
+	// [文件索引][该文件内改动索引] = new_string 在文件中的 1-based 起始行。
+	// 在工具执行后（文件内容最新）计算并随展示历史持久化，使 /resume 在文件
+	// 后续被改动甚至进程重启后仍能还原准确行号。它绝不进入发送给模型的消息
+	// （buildOpenAIMessages 不拷贝该字段），只做持久化与展示用途。
+	EditLineStarts [][]int   `json:"edit_line_starts,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // MessageMeta 记录助手回复的元信息，仅对最终 assistant 消息填充。

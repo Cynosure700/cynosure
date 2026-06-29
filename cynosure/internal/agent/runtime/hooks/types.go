@@ -93,6 +93,10 @@ type ToolExecutionOutcome struct {
 	Result string                `json:"result"`
 	Audit  ToolExecutionAudit    `json:"-"`
 	Todos  []agenttools.TodoItem `json:"-"`
+	// EditLineStarts 仅用于 TUI 展示 edit_file/multi_edit 的 diff 真实行号，
+	// 在工具执行后立即计算（此刻文件内容最新）。`json:"-"` 确保它不进入发送
+	// 给模型的 tool 消息内容，只用于事件下发与展示历史持久化。
+	EditLineStarts [][]int `json:"-"`
 }
 
 type ToolExecutionAudit struct {

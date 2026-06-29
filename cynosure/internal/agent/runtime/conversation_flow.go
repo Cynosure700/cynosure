@@ -254,6 +254,9 @@ func (s *Service) executeToolCallBatch(ctx context.Context, state *LoopState, ca
 			} else {
 				toolCtx.Outcome = s.executeToolCall(ctx, execCtx, toolCtx.Name, toolCtx.RawArgs, toolCtx.Outcome.Audit)
 			}
+			// 工具刚执行完，文件内容最新，此刻计算 edit_file/multi_edit 的 diff 真实
+			// 行号，供事件下发与展示历史持久化（不进入模型上下文）。
+			toolCtx.Outcome.EditLineStarts = editLineStartsForToolCtx(state, toolCtx)
 			// 并行执行时谁先完成谁先更新展示信息，无需等待整批完成。
 			// 落库/历史追加仍在 wg.Wait() 之后串行进行，避免数据竞争。
 			emitToolCallDoneWithOptions(state, toolCtx, opts)
@@ -322,11 +325,23 @@ func emitToolCallDoneWithOptions(state *LoopState, toolCtx *ToolUseContext, opts
 		"result_preview": previewToolResult(toolCtx.Outcome),
 		"audit_summary":  toolCtx.Outcome.AuditSummary(),
 	}
+	if len(toolCtx.Outcome.EditLineStarts) > 0 {
+		payload["edit_line_starts"] = toolCtx.Outcome.EditLineStarts
+	}
 	applyToolEventOptions(payload, opts)
 	if opts.SuppressResultUI {
 		delete(payload, "result_preview")
 	}
 	_ = state.Writer.Event(toolCallDoneEvent, payload)
+}
+
+// editLineStartsForToolCtx 在工具执行完成后计算 edit_file/multi_edit 的 diff 真实
+// 行号。仅对成功的编辑类工具计算，工作区根目录取自运行时环境；其它情况返回 nil。
+func editLineStartsForToolCtx(state *LoopState, toolCtx *ToolUseContext) [][]int {
+	if state == nil || toolCtx == nil || toolCtx.Outcome.Status != "success" {
+		return nil
+	}
+	return agenttools.EditFileLineStarts(state.RuntimeEnv().WorkspaceRoot, toolCtx.Name, toolCtx.RawArgs)
 }
 
 func applyToolEventOptions(payload map[string]any, opts toolBatchOptions) {

@@ -41,9 +41,15 @@ func persistToolCallHook(ctx context.Context, h *ToolUseContext) error {
 func appendToolMessageHook(ctx context.Context, h *ToolUseContext) error {
 	content := h.Outcome.MessageContent()
 	h.State.Messages = append(h.State.Messages, openai.ChatCompletionMessage{Role: "tool", ToolCallID: h.ToolCall.ID, Content: content})
-	toolMessage := storage.Message{ID: h.State.NextMessageID(), ConversationID: h.State.Conversation.ID, UserID: h.State.User.ID, Role: "tool", Content: content, ToolCallID: h.ToolCall.ID}
-	h.State.History = append(h.State.History, toolMessage)
-	h.State.ModelHistory = append(h.State.ModelHistory, toolMessage)
+	messageID := h.State.NextMessageID()
+	// 展示历史额外携带 edit_file/multi_edit 的 diff 真实行号（exec 时计算），随
+	// 会话历史持久化，供 /resume 在文件后续被改动或进程重启后仍能还原准确行号。
+	// 该字段只留在展示历史 History，不进入 ModelHistory，也不进入发给模型的 openai
+	// 消息（buildOpenAIMessages 不拷贝它），确保不会泄露给大模型。
+	displayMessage := storage.Message{ID: messageID, ConversationID: h.State.Conversation.ID, UserID: h.State.User.ID, Role: "tool", Content: content, ToolCallID: h.ToolCall.ID, EditLineStarts: h.Outcome.EditLineStarts}
+	modelMessage := storage.Message{ID: messageID, ConversationID: h.State.Conversation.ID, UserID: h.State.User.ID, Role: "tool", Content: content, ToolCallID: h.ToolCall.ID}
+	h.State.History = append(h.State.History, displayMessage)
+	h.State.ModelHistory = append(h.State.ModelHistory, modelMessage)
 	appendToolResultLog(ctx, h)
 	return nil
 }
