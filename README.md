@@ -15,6 +15,20 @@ Cynosure 是一个面向本地代码工作的终端 TUI Agent。它以当前目�
 - **上下文压缩**：自动压缩长会话，并把大工具结果落盘后通过 `read_persisted_output` 分段读取。
 - **纯本地运行**：TUI 模式不依赖 Web 服务、数据库、Redis 或 Elasticsearch。
 
+## 系统要求
+
+Cynosure 是一个运行在终端中的 TUI 程序，并依赖系统的 `bash` 来执行命令工具，因此主要适用于类 Unix 系统：
+
+- **macOS**：原生支持。
+- **Linux**：原生支持。
+- **Windows**：不直接支持。命令执行工具依赖 `bash`，需在 WSL 或 Git Bash 等提供 `bash` 的环境中运行。
+
+此外还需要：
+
+- Go 1.26.1 或更高版本（用于构建和安装）。
+- 系统已安装 `bash`（`bash` 工具直接调用系统 `bash`）。
+- 一个 OpenAI 兼容的 LLM 服务（通过 `~/.cynosure/settings.json` 配置）。
+
 ## 安装
 
 ### 安装 Go
