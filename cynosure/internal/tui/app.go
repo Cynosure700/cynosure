@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"cynosure/internal/agent/runtime"
 	"cynosure/internal/agent/storage"
 	"cynosure/internal/logger"
+	"cynosure/internal/safety"
 	"cynosure/internal/sessions"
 )
 
@@ -63,6 +65,11 @@ type ToolCallView struct {
 	EphemeralGroupID string
 	ParentToolCallID string
 	SuppressResult   bool
+	// EditLineStarts 缓存每个被编辑文件、每处改动在真实文件中的 1-based 起始行，
+	// 仅用于编辑类工具（edit_file/multi_edit）的 TUI diff 行号展示。
+	// 维度：[文件索引][该文件内改动索引] = 起始行；0 或缺失表示未知，渲染回退为 1。
+	// 形状与 parseMultiEditDisplayFiles 返回的 []editDisplayFile 一一对应。
+	EditLineStarts [][]int
 }
 
 type palette struct {
@@ -533,7 +540,7 @@ func (m *Model) handleResumeSelection(text string) bool {
 	m.session.Conversation = conv
 	m.resumeSelecting = false
 	m.resumeCandidates = nil
-	m.messages = messagesForDisplay(history)
+	m.messages = messagesForDisplay(history, m.session.CWD)
 	m.appendMessage("system", fmt.Sprintf("已恢复历史会话：%s", conv.SessionID))
 	return true
 }
@@ -564,7 +571,7 @@ const resumeToolResultPreviewMaxLines = 3
 // user/system/error 文本、assistant 文本，以及每次工具调用对应的工具行（含状态
 // 图标与结果预览）。工具结果通过 tool_call_id 与 assistant 的 ToolCalls 关联，
 // 因此即便 tool 结果消息排在 assistant 之后，也能在工具行上正确回填状态与预览。
-func messagesForDisplay(history []storage.Message) []Message {
+func messagesForDisplay(history []storage.Message, workspaceRoot string) []Message {
 	if len(history) == 0 {
 		return nil
 	}
@@ -586,7 +593,7 @@ func messagesForDisplay(history []storage.Message) []Message {
 				messages = append(messages, Message{Role: msg.Role, Content: msg.Content, ReasoningContent: msg.ReasoningContent})
 			}
 			for _, call := range msg.ToolCalls {
-				messages = append(messages, reconstructToolCallMessage(call, toolResults[call.ID]))
+				messages = append(messages, reconstructToolCallMessage(call, toolResults[call.ID], workspaceRoot))
 			}
 		}
 	}
@@ -595,8 +602,9 @@ func messagesForDisplay(history []storage.Message) []Message {
 
 // reconstructToolCallMessage 由 assistant 的工具调用及其结果消息重建工具行视图，
 // 字段映射与实时 emitToolCallStart/Done 一致：RawArgs 携带原始参数（渲染时解析
-// 为参数预览），Status/ResultPreview 来源于持久化的工具结果消息。
-func reconstructToolCallMessage(call storage.MessageToolCall, resultContent string) Message {
+// 为参数预览），Status/ResultPreview 来源于持久化的工具结果消息。编辑类工具在
+// success 时按当前 workspace 文件回算真实行号，使 /resume 与实时展示一致。
+func reconstructToolCallMessage(call storage.MessageToolCall, resultContent string, workspaceRoot string) Message {
 	view := ToolCallView{
 		ID:      call.ID,
 		Name:    call.Function.Name,
@@ -610,6 +618,7 @@ func reconstructToolCallMessage(call storage.MessageToolCall, resultContent stri
 		}
 		view.ResultPreview = preview
 	}
+	view.EditLineStarts = editLineStartsForTool(workspaceRoot, view.Name, view.RawArgs, view.Status)
 	return Message{Role: "tool", ToolCall: &view}
 }
 
@@ -805,6 +814,32 @@ func (m *Model) insertToolCallMessage(tool ToolCallView) {
 	m.messages[insertAt] = msg
 }
 
+// editLineStartsForTool 为编辑类工具（edit_file/multi_edit）在 success 时计算每处
+// 改动在真实文件中的起始行，供 diff 行号展示。非编辑工具或解析失败返回 nil（渲染回退 1）。
+func editLineStartsForTool(workspaceRoot, name, rawArgs, status string) [][]int {
+	if strings.TrimSpace(status) != "success" {
+		return nil
+	}
+	var files []editDisplayFile
+	switch {
+	case isEditFileTool(name):
+		args, ok := parseEditFileArgs(rawArgs)
+		if !ok {
+			return nil
+		}
+		files = []editDisplayFile{{FilePath: args.FilePath, Changes: []editDisplayChange{{Old: args.OldText, New: args.NewText}}}}
+	case isMultiEditTool(name):
+		parsed, ok := parseMultiEditDisplayFiles(rawArgs)
+		if !ok {
+			return nil
+		}
+		files = parsed
+	default:
+		return nil
+	}
+	return computeEditLineStarts(workspaceRoot, files)
+}
+
 func (m *Model) updateToolCallDone(data any) {
 	tool := toolCallViewFromEvent(data)
 	if tool.ID == "" && tool.Name == "" {
@@ -824,12 +859,14 @@ func (m *Model) updateToolCallDone(data any) {
 			m.messages[i].ToolCall.EphemeralGroupID = firstNonEmpty(tool.EphemeralGroupID, m.messages[i].ToolCall.EphemeralGroupID)
 			m.messages[i].ToolCall.ParentToolCallID = firstNonEmpty(tool.ParentToolCallID, m.messages[i].ToolCall.ParentToolCallID)
 			m.messages[i].ToolCall.SuppressResult = tool.SuppressResult || m.messages[i].ToolCall.SuppressResult
+			m.messages[i].ToolCall.EditLineStarts = editLineStartsForTool(m.session.CWD, m.messages[i].ToolCall.Name, m.messages[i].ToolCall.RawArgs, m.messages[i].ToolCall.Status)
 			return
 		}
 	}
 	if tool.Scope == "subagent" && strings.TrimSpace(tool.EphemeralGroupID) != "" {
 		return
 	}
+	tool.EditLineStarts = editLineStartsForTool(m.session.CWD, tool.Name, tool.RawArgs, tool.Status)
 	m.messages = append(m.messages, Message{Role: "tool", ToolCall: &tool})
 }
 
@@ -867,7 +904,8 @@ func (m Model) isExpandableToolMessage(index int) bool {
 		if !ok {
 			return false
 		}
-		return len(buildEditDiffLines(args.OldText, args.NewText)) > fileToolPreviewMaxLines
+		// 仅用于行数判断，行号不影响行数，故 startLine 传 0（回退 1）。
+		return len(buildEditDiffLines(args.OldText, args.NewText, 0)) > fileToolPreviewMaxLines
 	}
 	if isMultiEditTool(tool.Name) {
 		files, ok := parseMultiEditDisplayFiles(tool.RawArgs)
@@ -877,7 +915,7 @@ func (m Model) isExpandableToolMessage(index int) bool {
 		lineCount := 0
 		for _, file := range files {
 			for _, change := range file.Changes {
-				lineCount += len(buildEditDiffLines(change.Old, change.New))
+				lineCount += len(buildEditDiffLines(change.Old, change.New, 0))
 				if lineCount > fileToolPreviewMaxLines {
 					return true
 				}
@@ -1324,7 +1362,7 @@ func (m Model) renderEditFileToolMessage(tool *ToolCallView, status string) (str
 	if !ok {
 		return "", false
 	}
-	bodyLines := buildEditPreviewBodyLines(toolIcon(status), "", []editDisplayChange{{Old: args.OldText, New: args.NewText}}, status, m.isFileToolExpanded())
+	bodyLines := buildEditPreviewBodyLines(toolIcon(status), "", []editDisplayChange{{Old: args.OldText, New: args.NewText}}, editLineStartsForFile(tool.EditLineStarts, 0), status, m.isFileToolExpanded())
 	return m.renderFileToolBody(bodyLines, status), true
 }
 
@@ -1337,11 +1375,20 @@ func (m Model) renderMultiEditToolMessage(tool *ToolCallView, status string) (st
 		return "", false
 	}
 	blocks := make([]string, 0, len(files))
-	for _, file := range files {
-		bodyLines := buildEditPreviewBodyLines(toolIcon(status), file.FilePath, file.Changes, status, m.isFileToolExpanded())
+	for fileIdx, file := range files {
+		bodyLines := buildEditPreviewBodyLines(toolIcon(status), file.FilePath, file.Changes, editLineStartsForFile(tool.EditLineStarts, fileIdx), status, m.isFileToolExpanded())
 		blocks = append(blocks, m.renderFileToolBody(bodyLines, status))
 	}
 	return strings.Join(blocks, "\n\n"), true
+}
+
+// editLineStartsForFile 取出第 fileIdx 个文件的每处改动起始行；越界返回 nil，
+// 由 buildEditDiffLines 回退为 1。
+func editLineStartsForFile(starts [][]int, fileIdx int) []int {
+	if fileIdx < 0 || fileIdx >= len(starts) {
+		return nil
+	}
+	return starts[fileIdx]
 }
 
 func (m Model) renderFileToolBody(bodyLines []string, status string) string {
@@ -1401,10 +1448,61 @@ func multiEditDisplayFileToEditDisplay(filePath string, edits []multiEditDisplay
 	return editDisplayFile{FilePath: filePath, Changes: changes}, true
 }
 
-func buildEditPreviewBodyLines(icon, filePath string, changes []editDisplayChange, status string, expanded bool) []string {
+// computeEditLineStarts 读取每个被编辑文件的当前磁盘内容，定位每处改动的 new_string
+// 在文件中的 1-based 起始行，返回与 files 形状一致的 [][]int。任何无法确定的位置
+// （路径越界、文件读取失败、new_string 未命中）置 0，渲染时回退为 1。
+//
+// 仅用于 TUI diff 行号展示，不参与模型上下文、工具结果或持久化。编辑工具完成后
+// 文件已写盘且含 new_string，故实时调用时通常可精确定位。
+func computeEditLineStarts(workspaceRoot string, files []editDisplayFile) [][]int {
+	starts := make([][]int, len(files))
+	for fileIdx, file := range files {
+		starts[fileIdx] = make([]int, len(file.Changes))
+		content, ok := readEditedFileContent(workspaceRoot, file.FilePath)
+		if !ok {
+			continue
+		}
+		for changeIdx, change := range file.Changes {
+			starts[fileIdx][changeIdx] = lineStartOfSubstring(content, change.New)
+		}
+	}
+	return starts
+}
+
+// readEditedFileContent 在 workspace 边界内读取文件当前内容；失败返回 ok=false。
+func readEditedFileContent(workspaceRoot, filePath string) (string, bool) {
+	resolved, err := safety.SafePathFromRoot(workspaceRoot, filePath)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+// lineStartOfSubstring 返回 needle 在 content 中首次出现位置的 1-based 起始行，
+// 未命中或 needle 为空时返回 0（表示未知）。
+func lineStartOfSubstring(content, needle string) int {
+	if needle == "" {
+		return 0
+	}
+	idx := strings.Index(content, needle)
+	if idx < 0 {
+		return 0
+	}
+	return 1 + strings.Count(content[:idx], "\n")
+}
+
+func buildEditPreviewBodyLines(icon, filePath string, changes []editDisplayChange, startLines []int, status string, expanded bool) []string {
 	diffLines := make([]editDiffLine, 0)
-	for _, change := range changes {
-		diffLines = append(diffLines, buildEditDiffLines(change.Old, change.New)...)
+	for i, change := range changes {
+		startLine := 0
+		if i < len(startLines) {
+			startLine = startLines[i]
+		}
+		diffLines = append(diffLines, buildEditDiffLines(change.Old, change.New, startLine)...)
 	}
 	added, removed := countEditDiffLines(diffLines)
 	summary := fmt.Sprintf("Added %d %s, removed %d %s", added, pluralizeLine(added), removed, pluralizeLine(removed))
@@ -1430,30 +1528,44 @@ func buildEditPreviewBodyLines(icon, filePath string, changes []editDisplayChang
 	return bodyLines
 }
 
-func buildEditDiffLines(oldText, newText string) []editDiffLine {
+// buildEditDiffLines 构建一处编辑的 diff 行，并按两套参照系编号：
+// 删除行（-）使用原文件行号，新增行（+）使用新文件行号，上下文行使用新文件行号。
+// startLine 是该编辑匹配区域在文件中的 1-based 起始行；<=0 时回退为 1（行号未知）。
+// 因前缀在新旧文件中完全一致，删除块与新增块的起始行相同，均为 startLine，
+// 之后各自按行数自增，从而在尾段因 old/new 行数不同而自然分叉。
+func buildEditDiffLines(oldText, newText string, startLine int) []editDiffLine {
 	oldLines := splitDisplayLines(oldText)
 	newLines := splitDisplayLines(newText)
 	prefix := commonPrefixLineCount(oldLines, newLines)
 	suffix := commonSuffixLineCount(oldLines, newLines, prefix)
 
-	lines := make([]editDiffLine, 0, len(oldLines)+len(newLines)+1)
-	appendContext := func(idx int) {
-		lines = append(lines, editDiffLine{Kind: ' ', Number: idx + 1, Text: oldLines[idx]})
+	if startLine <= 0 {
+		startLine = 1
 	}
+	oldNo := startLine // 原文件行号游标
+	newNo := startLine // 新文件行号游标
+
+	lines := make([]editDiffLine, 0, len(oldLines)+len(newLines)+1)
 	for i := 0; i < prefix; i++ {
-		appendContext(i)
+		lines = append(lines, editDiffLine{Kind: ' ', Number: newNo, Text: oldLines[i]})
+		oldNo++
+		newNo++
 	}
 	for i := prefix; i < len(oldLines)-suffix; i++ {
-		lines = append(lines, editDiffLine{Kind: '-', Number: i + 1, Text: oldLines[i]})
+		lines = append(lines, editDiffLine{Kind: '-', Number: oldNo, Text: oldLines[i]})
+		oldNo++
 	}
 	if prefix < len(oldLines)-suffix && prefix < len(newLines)-suffix {
 		lines = append(lines, editDiffLine{Kind: '…'})
 	}
 	for i := prefix; i < len(newLines)-suffix; i++ {
-		lines = append(lines, editDiffLine{Kind: '+', Number: i + 1, Text: newLines[i]})
+		lines = append(lines, editDiffLine{Kind: '+', Number: newNo, Text: newLines[i]})
+		newNo++
 	}
 	for i := len(oldLines) - suffix; i < len(oldLines); i++ {
-		appendContext(i)
+		lines = append(lines, editDiffLine{Kind: ' ', Number: newNo, Text: oldLines[i]})
+		oldNo++
+		newNo++
 	}
 	return lines
 }

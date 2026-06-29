@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -2267,5 +2269,156 @@ func TestStreamResetWithoutLiveAssistantIsNoop(t *testing.T) {
 	model := updated.(Model)
 	if len(model.messages) != 1 || model.messages[0].Role != "user" {
 		t.Fatalf("messages = %#v, want non-assistant tail preserved on reset", model.messages)
+	}
+}
+
+func TestEditFileToolMessageRendersRealFileLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	// 编辑完成后磁盘上的文件内容：new_text 落在第 5 行起。
+	edited := "prefix1\nprefix2\nprefix3\nprefix4\nconst new = \"world\"\nreturn true\nconsole.log(\"done\")\nsuffix1\n"
+	if err := os.WriteFile(filepath.Join(dir, "foo.ts"), []byte(edited), 0o644); err != nil {
+		t.Fatalf("write edited file: %v", err)
+	}
+	app := NewModel(nil, SessionInfo{CWD: dir})
+	app.width = 120
+	app.generation = 1
+	app.running = true
+	rawArgs := `{"file_path":"foo.ts","old_text":"const old = \"hello\"\nreturn false","new_text":"const new = \"world\"\nreturn true\nconsole.log(\"done\")"}`
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_edit",
+		"tool_name":    "edit_file",
+		"raw_args":     rawArgs,
+		"status":       "success",
+	}})
+	rendered := plainTerminalText(updated.(Model).renderMessages())
+
+	for _, want := range []string{
+		// 删除行使用原文件行号（5、6），新增行使用新文件行号（5、6、7）。
+		`- 5│ const old = "hello"`,
+		"- 6│ return false",
+		`+ 5│ const new = "world"`,
+		"+ 6│ return true",
+		`+ 7│ console.log("done")`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want real-file line number %q", rendered, want)
+		}
+	}
+	// 不应再出现"从 1 开始"的旧行号。
+	for _, forbidden := range []string{`- 1│ const old = "hello"`, `+ 1│ const new = "world"`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("rendered = %q, should not number diff from snippet-relative line 1 (%q)", rendered, forbidden)
+		}
+	}
+}
+
+func TestMultiEditToolMessageRendersRealFileLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	// 两处编辑完成后的最终文件：alpha new 在第 2 行，beta new 在第 6 行。
+	edited := "header\nalpha new\nmid1\nmid2\nmid3\nbeta new\nfooter\n"
+	if err := os.WriteFile(filepath.Join(dir, "multi.ts"), []byte(edited), 0o644); err != nil {
+		t.Fatalf("write edited file: %v", err)
+	}
+	app := NewModel(nil, SessionInfo{CWD: dir})
+	app.width = 120
+	app.generation = 1
+	app.running = true
+	rawArgs := `{"files":[{"file_path":"multi.ts","edits":[{"old_string":"alpha old","new_string":"alpha new"},{"old_string":"beta old","new_string":"beta new"}]}]}`
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_multi",
+		"tool_name":    "multi_edit",
+		"raw_args":     rawArgs,
+		"status":       "success",
+	}})
+	rendered := plainTerminalText(updated.(Model).renderMessages())
+
+	for _, want := range []string{
+		"- 2│ alpha old",
+		"+ 2│ alpha new",
+		"- 6│ beta old",
+		"+ 6│ beta new",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want per-edit real-file line number %q", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, "- 1│ beta old") || strings.Contains(rendered, "+ 1│ beta new") {
+		t.Fatalf("rendered = %q, second edit should not restart numbering at 1", rendered)
+	}
+}
+
+func TestEditFileToolMessageFallsBackToLineOneWhenFileMissing(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: t.TempDir()})
+	app.width = 120
+	app.generation = 1
+	app.running = true
+	// 文件不存在 / new_text 无法定位时，行号回退为 1，且渲染不应 panic。
+	rawArgs := `{"file_path":"does-not-exist.ts","old_text":"const old = \"hello\"","new_text":"const new = \"world\""}`
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_done", Data: map[string]any{
+		"tool_call_id": "tool_edit",
+		"tool_name":    "edit_file",
+		"raw_args":     rawArgs,
+		"status":       "success",
+	}})
+	rendered := plainTerminalText(updated.(Model).renderMessages())
+
+	for _, want := range []string{`- 1│ const old = "hello"`, `+ 1│ const new = "world"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want fallback line number %q when file is missing", rendered, want)
+		}
+	}
+}
+
+func TestResumeEditFileToolMessageRendersRealFileLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	edited := "prefix1\nprefix2\nprefix3\nprefix4\nconst new = \"world\"\nsuffix1\n"
+	if err := os.WriteFile(filepath.Join(dir, "foo.ts"), []byte(edited), 0o644); err != nil {
+		t.Fatalf("write edited file: %v", err)
+	}
+	history := []storage.Message{
+		{Role: "user", Content: "改一行"},
+		{Role: "assistant", Content: "好的", ToolCalls: []storage.MessageToolCall{
+			{ID: "call_1", Type: "function", Function: storage.MessageFunctionCall{Name: "edit_file", Arguments: `{"file_path":"foo.ts","old_text":"const old = \"hello\"","new_text":"const new = \"world\""}`}},
+		}},
+		{Role: "tool", ToolCallID: "call_1", Content: `{"status":"success","result":"The file foo.ts has been updated successfully."}`},
+	}
+	resumer := &fakeSessionResumer{
+		sessions: []storage.ResumableSession{{SessionID: "session-1", Title: "会话", UpdatedAt: time.Now(), MessageCount: len(history)}},
+		conv:     storage.Conversation{ID: "conv_1", SessionID: "session-1", UserID: "local-user", Title: "会话"},
+		history:  history,
+	}
+	app := NewModel(nil, SessionInfo{CWD: dir, User: storage.User{ID: "local-user"}, Resumer: resumer})
+	app.width = 120
+	app.handleSlashCommand("/resume")
+	if handled := app.handleResumeSelection("1"); !handled {
+		t.Fatal("resume selection was not handled")
+	}
+
+	rendered := plainTerminalText(app.renderMessages())
+	for _, want := range []string{`- 5│ const old = "hello"`, `+ 5│ const new = "world"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("resumed render = %q, want real-file line number %q consistent with live display", rendered, want)
+		}
+	}
+}
+
+func TestWriteFileToolMessageUsesWholeFileLineNumbers(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 120
+	rawArgs := `{"file_path":"src/foo.ts","content":"line one\nline two\nline three"}`
+	msg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:    "write_file",
+		RawArgs: rawArgs,
+		Status:  "success",
+	}}
+
+	rendered := plainTerminalText(app.renderMessage(msg))
+	for _, want := range []string{"  1│ line one", "  2│ line two", "  3│ line three"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered = %q, want whole-file write line number %q", rendered, want)
+		}
 	}
 }
