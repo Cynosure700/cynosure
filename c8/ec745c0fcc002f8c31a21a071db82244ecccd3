@@ -1,0 +1,14 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c8ec745c0fcc002f8c31a21a071db82244ecccd3",
+  "prompts": {},
+  "humans": {
+    "h_a9698455ef5056": {
+      "author": "Cynosure700 <793105221@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
