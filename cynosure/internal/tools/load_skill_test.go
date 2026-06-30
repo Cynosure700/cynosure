@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"cynosure/internal/sessions"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
 )
 
 func TestLoadSkillReturnsBaseDirForDiskSkill(t *testing.T) {

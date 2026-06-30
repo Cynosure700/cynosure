@@ -5,12 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"cynosure/internal/agent/mcp"
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
-	"cynosure/internal/llm"
-	"cynosure/internal/sessions"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/mcp"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/llm"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
 )
 
 type EventWriter interface {

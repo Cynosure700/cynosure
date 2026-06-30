@@ -8,8 +8,8 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
 )
 
 func TestParseExtractedMemories_ValidAndDropsInvalid(t *testing.T) {

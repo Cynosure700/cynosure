@@ -14,9 +14,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
-	"cynosure/internal/idgen"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/idgen"
 )
 
 const memoryIndexHeader = "# Memory Index\n"

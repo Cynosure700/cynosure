@@ -8,13 +8,13 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/assets"
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/assistant"
-	"cynosure/internal/config"
-	"cynosure/internal/sessions"
-	agenttools "cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/assets"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/assistant"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 func (s *Service) buildSystemPrompt(ctx context.Context, conversation storage.Conversation, user storage.User, snapshot *agenttools.SkillSnapshot, history []storage.Message, memoryOn bool) string {

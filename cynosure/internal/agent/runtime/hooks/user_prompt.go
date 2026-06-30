@@ -3,7 +3,7 @@ package hooks
 import (
 	"context"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 func appendUserMessageHook(ctx context.Context, h *UserPromptSubmitContext) error {

@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"cynosure/internal/cli"
+	"github.com/Cynosure700/cynosure/cynosure/internal/cli"
 )
 
 func main() {

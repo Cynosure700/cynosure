@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/idgen"
-	"cynosure/internal/textutil"
-	agenttools "cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/idgen"
+	"github.com/Cynosure700/cynosure/cynosure/internal/textutil"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 const toolResultCompressionStrategyName = "tool_result_compression"

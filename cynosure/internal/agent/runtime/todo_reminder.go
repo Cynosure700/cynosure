@@ -5,7 +5,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 	"strings"
 
-	agenttools "cynosure/internal/tools"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 const (

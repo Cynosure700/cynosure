@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/textutil"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/textutil"
 )
 
 type fakeStore struct {

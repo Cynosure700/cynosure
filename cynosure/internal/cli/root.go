@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"cynosure/internal/local"
-	"cynosure/internal/tui"
+	"github.com/Cynosure700/cynosure/cynosure/internal/local"
+	"github.com/Cynosure700/cynosure/cynosure/internal/tui"
 )
 
 type Options struct {

@@ -12,12 +12,12 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/idgen"
-	"cynosure/internal/llm"
-	"cynosure/internal/logger"
-	agenttools "cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/idgen"
+	"github.com/Cynosure700/cynosure/cynosure/internal/llm"
+	"github.com/Cynosure700/cynosure/cynosure/internal/logger"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 const (

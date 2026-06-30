@@ -6,7 +6,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 func TestBuildBuiltinStdioTransportRejectsEmptyCommand(t *testing.T) {

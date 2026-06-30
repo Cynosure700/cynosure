@@ -3,7 +3,7 @@ package hooks
 import (
 	"context"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 func persistAssistantStopHook(ctx context.Context, h *StopContext) error {

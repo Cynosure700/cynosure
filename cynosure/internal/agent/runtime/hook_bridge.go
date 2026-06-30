@@ -1,9 +1,9 @@
 package runtime
 
 import (
-	runtimehooks "cynosure/internal/agent/runtime/hooks"
-	"cynosure/internal/agent/storage"
-	agenttools "cynosure/internal/tools"
+	runtimehooks "github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/hooks"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 type UserPromptSubmitHook = runtimehooks.UserPromptSubmitHook

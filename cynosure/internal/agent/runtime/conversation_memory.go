@@ -10,9 +10,9 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/idgen"
-	"cynosure/internal/logger"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/idgen"
+	"github.com/Cynosure700/cynosure/cynosure/internal/logger"
 )
 
 type extractedConversationMemory struct {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 const messageWindowCompressionStrategyName = "message_window_compression"

@@ -20,12 +20,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"cynosure/internal/agent/mcp"
-	"cynosure/internal/agent/runtime"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/logger"
-	"cynosure/internal/sessions"
-	"cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/mcp"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/logger"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
+	"github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 type SessionInfo struct {

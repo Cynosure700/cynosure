@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"cynosure/internal/local"
+	"github.com/Cynosure700/cynosure/cynosure/internal/local"
 )
 
 type textEventWriter struct {

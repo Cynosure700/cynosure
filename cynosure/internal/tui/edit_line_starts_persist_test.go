@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 // TestEditFileToolMessagePrefersEventLineStartsOverRecompute 验证：当 tool_call_done

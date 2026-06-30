@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"cynosure/internal/sessions"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
 )
 
 type SkillSnapshot struct {

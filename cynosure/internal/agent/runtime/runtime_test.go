@@ -16,12 +16,12 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
-	llmpkg "cynosure/internal/llm"
-	"cynosure/internal/sessions"
-	agenttools "cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	llmpkg "github.com/Cynosure700/cynosure/cynosure/internal/llm"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 type fakeStore struct {

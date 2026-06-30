@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"cynosure/internal/safety"
+	"github.com/Cynosure700/cynosure/cynosure/internal/safety"
 )
 
 // EditFileLineStarts 计算编辑类工具（edit_file/multi_edit）每个文件、每处改动

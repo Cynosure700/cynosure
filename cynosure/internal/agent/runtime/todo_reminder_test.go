@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"cynosure/internal/config"
-	agenttools "cynosure/internal/tools"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
 
 func newTodoWriteRegistry(t *testing.T) *ToolRegistry {

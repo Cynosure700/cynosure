@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 func (s *Store) AppendToolResultLog(ctx context.Context, entry storage.ToolResultLogEntry) error {

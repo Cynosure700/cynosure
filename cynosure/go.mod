@@ -1,4 +1,4 @@
-module cynosure
+module github.com/Cynosure700/cynosure/cynosure
 
 go 1.26.1
 

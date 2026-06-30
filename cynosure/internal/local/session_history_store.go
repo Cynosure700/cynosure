@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
 )
 
 type SessionHistoryStore struct {

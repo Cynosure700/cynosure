@@ -7,8 +7,8 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 // summarizeHistoryForContext 执行一次非工具的 LLM 调用，对请求态历史进行摘要。

@@ -12,9 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"cynosure/internal/agent/mcp"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/sessions"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/mcp"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/sessions"
 )
 
 var ansiEscapePattern = regexp.MustCompile("\x1b\\[[0-9;]*m")

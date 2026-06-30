@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"cynosure/internal/safety"
+	"github.com/Cynosure700/cynosure/cynosure/internal/safety"
 )
 
 const maxReadLen = 50000

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"cynosure/internal/agent/runtime/compression"
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/config"
-	"cynosure/internal/textutil"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/config"
+	"github.com/Cynosure700/cynosure/cynosure/internal/textutil"
 )
 
 func compToolMsg(id, status, result string) storage.Message {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"cynosure/assets"
+	"github.com/Cynosure700/cynosure/cynosure/assets"
 )
 
 type FunctionalPrompts struct {

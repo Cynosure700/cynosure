@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"cynosure/internal/agent/storage"
-	"cynosure/internal/idgen"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/idgen"
 )
 
 type Store struct {

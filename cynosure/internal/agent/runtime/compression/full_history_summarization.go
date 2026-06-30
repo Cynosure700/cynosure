@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 const fullHistorySummarizationStrategyName = "full_history_summarization"

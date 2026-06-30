@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"cynosure/internal/safety"
+	"github.com/Cynosure700/cynosure/cynosure/internal/safety"
 )
 
 // validatedWorkspaceRootFromContext 返回工作区根目录，即 Agent 启动时的工作目录。

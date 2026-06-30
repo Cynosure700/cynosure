@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"cynosure/internal/agent/runtime"
-	"cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime"
+	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
 
 func TestStoreMaintainsConversationHistory(t *testing.T) {

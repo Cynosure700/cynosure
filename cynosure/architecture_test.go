@@ -21,7 +21,7 @@ func TestNoLegacyServicePackageOrImports(t *testing.T) {
 		if readErr != nil {
 			return readErr
 		}
-		forbiddenImport := "cynosure/internal/" + "web/"
+		forbiddenImport := "github.com/Cynosure700/cynosure/cynosure/internal/" + "web/"
 		if strings.Contains(string(data), forbiddenImport) {
 			t.Fatalf("%s still imports legacy service package", path)
 		}
