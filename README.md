@@ -49,7 +49,7 @@ go version
 执行以下命令安装：
 
 ```bash
-go install github.com/example/cynosure/cynosure@latest
+go install github.com/Cynosure700/cynosure/cynosure@latest
 ```
 
 安装后，`cynosure` 会进入 `GOBIN`，默认通常是 `~/go/bin`。请确保该目录已加入 `PATH`。
