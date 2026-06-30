@@ -1,0 +1,71 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The fix is to make the `ordering_parts` regex match across multiple lines by adding the `re.DOTALL` flag, so `.` matches newline characters too.
+[tool:start] 
+[tool:done]  success
+Now let me check if there are existing tests for this and run them.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The default python3 is too new (3.14, missing `cgi`). Let me find a compatible Python.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Python 3.11 works. Let me run the ordering tests.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+All 23 ordering tests pass. Let me also verify the fix works with a quick reproduction of the multiline RawSQL scenario described in the issue.
+[tool:start] 
+[tool:done]  success
+The fix works as intended. With the old regex, the multiline RawSQL clauses `sql2` and `sql3` both reduced to the same `'\t\t\t\t\t else null end'`, causing one to be incorrectly treated as a duplicate and dropped. With `re.DOTALL`, the full SQL of each clause is captured, so they're correctly distinguished.
+
+## Summary
+
+**Bug:** In `SQLCompiler.get_order_by()`, the `ordering_parts` regex `re.compile(r'(.*)\s(ASC|DESC)(.*)')` was used to strip the `ASC`/`DESC` direction so duplicate ordering clauses could be detected. Because `.` doesn't match newlines by default, multiline `RawSQL` ordering expressions only had their *last line* captured — so two different raw clauses sharing the same final line were wrongly treated as duplicates, and one was silently dropped from the query.
+
+**Fix:** Added the `re.DOTALL` flag so `.` matches newline characters, making the regex capture the entire SQL expression (not just the trailing line) for duplicate comparison.
+
+Changed file:
+- `django/db/models/sql/compiler.py:35` — `self.ordering_parts = re.compile(r'(.*)\s(ASC|DESC)(.*)', re.DOTALL)`
+
+All 23 tests in `tests/ordering` pass. The git diff is ready.The fix works as intended. With the old regex, the multiline RawSQL clauses `sql2` and `sql3` both reduced to the same `'\t\t\t\t\t else null end'`, causing one to be incorrectly treated as a duplicate and dropped. With `re.DOTALL`, the full SQL of each clause is captured, so they're correctly distinguished.
+
+## Summary
+
+**Bug:** In `SQLCompiler.get_order_by()`, the `ordering_parts` regex `re.compile(r'(.*)\s(ASC|DESC)(.*)')` was used to strip the `ASC`/`DESC` direction so duplicate ordering clauses could be detected. Because `.` doesn't match newlines by default, multiline `RawSQL` ordering expressions only had their *last line* captured — so two different raw clauses sharing the same final line were wrongly treated as duplicates, and one was silently dropped from the query.
+
+**Fix:** Added the `re.DOTALL` flag so `.` matches newline characters, making the regex capture the entire SQL expression (not just the trailing line) for duplicate comparison.
+
+Changed file:
+- `django/db/models/sql/compiler.py:35` — `self.ordering_parts = re.compile(r'(.*)\s(ASC|DESC)(.*)', re.DOTALL)`
+
+All 23 tests in `tests/ordering` pass. The git diff is ready.

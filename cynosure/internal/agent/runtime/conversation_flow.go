@@ -127,7 +127,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 		state.ModelHistory = modelHistory
 		state.Messages = buildOpenAIMessagesWithReminder(state.SystemPrompt, state.SystemReminder, state.ModelHistory)
 		roundsSinceTodoWrite = maybeAppendTodoWriteReminder(state, s.Tools, roundsSinceTodoWrite)
-		estimator := compression.DefaultTokenEstimator{}
+		estimator := compression.DefaultTokenEstimator{ModelID: s.Cfg.LLM.ModelID}
 		state.LastContextTokens = estimator.EstimateRequestTokens(estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder), state.ModelHistory, toolDefs)
 		state.LastContextBudget = estimator.ContextTokenBudget()
 		emitMeta(state)
@@ -165,7 +165,7 @@ func (s *Service) RespondToConversation(ctx context.Context, conversation storag
 			// token 用量，覆盖请求前的估算值，确保存储与下发的都是最终用量。
 			finalAssistant := storage.Message{Role: "assistant", Content: msg.Content, ReasoningContent: msg.ReasoningContent, ToolCalls: openAIToolCallsToStorage(msg.ToolCalls)}
 			finalHistoryForEstimate := append(cloneMessages(state.ModelHistory), finalAssistant)
-			finalEstimator := compression.DefaultTokenEstimator{}
+			finalEstimator := compression.DefaultTokenEstimator{ModelID: s.Cfg.LLM.ModelID}
 			state.LastContextTokens = finalEstimator.EstimateRequestTokens(estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder), finalHistoryForEstimate, toolDefs)
 			state.LastContextBudget = finalEstimator.ContextTokenBudget()
 			stopCtx := &StopContext{State: state, ModelMessage: msg, Content: fallbackAssistantContent(msg.Content), ReasoningContent: cumulativeReasoning.String()}

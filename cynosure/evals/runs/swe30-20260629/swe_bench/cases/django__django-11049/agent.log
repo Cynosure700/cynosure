@@ -1,0 +1,97 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+Let me check the forms.DurationField for help_text.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now let me make the changes. First the model field error message:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Wait, I accidentally removed the quotes around the value. Let me fix that:
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Good, the quotes are preserved. Now let me add help_text to the form field. Let me check the formfield method of the model DurationField:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now add the help_text to the formfield method:
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Let me verify the current state:
+[tool:start] 
+[tool:done]  success
+Let me check the forms tests for DurationField to see what's expected:
+[tool:start] 
+[tool:done]  success
+Now let me update the test for the error message format:
+[tool:start] 
+[tool:done]  success
+Let me run the relevant tests:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The Python 3.14 environment is incompatible with this old Django version (the `cgi` module was removed). The code change itself is correct and minimal. Let me verify the final state of all changes:
+[tool:start] 
+[tool:done]  success
+The changes are complete. Here's a summary of what changed:
+
+## Summary
+
+The bug was that `DurationField`'s invalid-format error message showed the wrong expected format. The message claimed durations follow `[DD] [HH:[MM:]]ss[.uuuuuu]` (implying hours are required if minutes are present), but the actual parsing behavior treats seconds as mandatory while minutes and hours are progressively optional — so the correct format is `[DD] [[HH:]MM:]ss[.uuuuuu]`.
+
+### Changes made
+
+1. **`django/db/models/fields/__init__.py`** (DurationField):
+   - Corrected the `invalid` error message format from `[DD] [HH:[MM:]]ss[.uuuuuu]` to `[DD] [[HH:]MM:]ss[.uuuuuu]`.
+   - Added a default `help_text` to the `formfield()` method (`Enter a duration in the format: [DD] [[HH:]MM:]ss[.uuuuuu].`), as suggested in the issue, since the syntax isn't self-explanatory.
+
+2. **`tests/model_fields/test_durationfield.py`**:
+   - Updated `TestValidation.test_invalid_string` to expect the corrected format string.
+
+The git diff is ready. Note: I couldn't run the test suite because the environment only has Python 3.14, which removed the `cgi` module that this older Django version imports — a pre-existing environment incompatibility unrelated to the change.The changes are complete. Here's a summary of what changed:
+
+## Summary
+
+The bug was that `DurationField`'s invalid-format error message showed the wrong expected format. The message claimed durations follow `[DD] [HH:[MM:]]ss[.uuuuuu]` (implying hours are required if minutes are present), but the actual parsing behavior treats seconds as mandatory while minutes and hours are progressively optional — so the correct format is `[DD] [[HH:]MM:]ss[.uuuuuu]`.
+
+### Changes made
+
+1. **`django/db/models/fields/__init__.py`** (DurationField):
+   - Corrected the `invalid` error message format from `[DD] [HH:[MM:]]ss[.uuuuuu]` to `[DD] [[HH:]MM:]ss[.uuuuuu]`.
+   - Added a default `help_text` to the `formfield()` method (`Enter a duration in the format: [DD] [[HH:]MM:]ss[.uuuuuu].`), as suggested in the issue, since the syntax isn't self-explanatory.
+
+2. **`tests/model_fields/test_durationfield.py`**:
+   - Updated `TestValidation.test_invalid_string` to expect the corrected format string.
+
+The git diff is ready. Note: I couldn't run the test suite because the environment only has Python 3.14, which removed the `cgi` module that this older Django version imports — a pre-existing environment incompatibility unrelated to the change.

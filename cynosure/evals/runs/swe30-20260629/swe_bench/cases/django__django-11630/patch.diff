@@ -1,0 +1,95 @@
+diff --git a/django/core/checks/model_checks.py b/django/core/checks/model_checks.py
+index 5c2266ca1d..9233da68c6 100644
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,8 @@ from collections import defaultdict
+ from itertools import chain
+ 
+ from django.apps import apps
+-from django.core.checks import Error, Tags, register
++from django.conf import settings
++from django.core.checks import Error, Tags, Warning, register
+ 
+ 
+ @register(Tags.models)
+@@ -37,14 +38,12 @@ def check_all_models(app_configs=None, **kwargs):
+             constraints[model_constraint.name].append(model._meta.label)
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
+-            errors.append(
+-                Error(
+-                    "db_table '%s' is used by multiple models: %s."
+-                    % (db_table, ', '.join(db_table_models[db_table])),
+-                    obj=db_table,
+-                    id='models.E028',
+-                )
+-            )
++            model_labels_str = ', '.join(model_labels)
++            msg = "db_table '%s' is used by multiple models: %s." % (db_table, model_labels_str)
++            if settings.DATABASE_ROUTERS:
++                errors.append(Warning(msg, obj=db_table, id='models.W028'))
++            else:
++                errors.append(Error(msg, obj=db_table, id='models.E028'))
+     for index_name, model_labels in indexes.items():
+         if len(model_labels) > 1:
+             model_labels = set(model_labels)
+diff --git a/docs/ref/checks.txt b/docs/ref/checks.txt
+index 99f4e1d316..f7ba313edf 100644
+--- a/docs/ref/checks.txt
++++ b/docs/ref/checks.txt
+@@ -305,6 +305,11 @@ Models
+   ``primary_key=True``.
+ * **models.W027**: ``<database>`` does not support check constraints.
+ * **models.E028**: ``db_table`` ``<db_table>`` is used by multiple models:
++  ``<model list>``. This is raised as an error when no database routers are
++  configured, and as a warning (``models.W028``) when database routers are
++  configured, as it then cannot be determined with certainty that it's an
++  error.
++* **models.W028**: ``db_table`` ``<db_table>`` is used by multiple models:
+   ``<model list>``.
+ * **models.E029**: index name ``<index>`` is not unique for model ``<model>``.
+ * **models.E030**: index name ``<index>`` is not unique amongst models:
+diff --git a/tests/check_framework/test_model_checks.py b/tests/check_framework/test_model_checks.py
+index 79177e38f7..fdf9ffe7a3 100644
+--- a/tests/check_framework/test_model_checks.py
++++ b/tests/check_framework/test_model_checks.py
+@@ -1,7 +1,7 @@
+ from django.core import checks
+-from django.core.checks import Error
++from django.core.checks import Error, Warning
+ from django.db import models
+-from django.test import SimpleTestCase, TestCase, skipUnlessDBFeature
++from django.test import SimpleTestCase, TestCase, override_settings, skipUnlessDBFeature
+ from django.test.utils import (
+     isolate_apps, modify_settings, override_system_checks,
+ )
+@@ -50,6 +50,29 @@ class DuplicateDBTableTests(SimpleTestCase):
+             )
+         ])
+ 
++    @override_settings(DATABASE_ROUTERS=[object()])
++    @modify_settings(INSTALLED_APPS={'append': 'basic'})
++    @isolate_apps('basic', 'check_framework', kwarg_name='apps')
++    def test_collision_with_database_routers(self, apps):
++        class Model1(models.Model):
++            class Meta:
++                app_label = 'basic'
++                db_table = 'test_table'
++
++        class Model2(models.Model):
++            class Meta:
++                app_label = 'check_framework'
++                db_table = 'test_table'
++
++        self.assertEqual(checks.run_checks(app_configs=apps.get_app_configs()), [
++            Warning(
++                "db_table 'test_table' is used by multiple models: "
++                "basic.Model1, check_framework.Model2.",
++                obj='test_table',
++                id='models.W028',
++            )
++        ])
++
+     def test_no_collision_for_unmanaged_models(self):
+         class Unmanaged(models.Model):
+             class Meta:

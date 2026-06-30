@@ -1,0 +1,34 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 25c3b44250..82a1519eee 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -143,6 +143,9 @@ def iter_modules_and_files(modules, extra_files):
+             # The module could have been removed, don't fail loudly if this
+             # is the case.
+             continue
++        except ValueError:
++            # Network filesystems may return null bytes in path.
++            continue
+         results.add(resolved_path)
+     return frozenset(results)
+ 
+diff --git a/tests/utils_tests/test_autoreload.py b/tests/utils_tests/test_autoreload.py
+index 1ea019ac7a..971451b3bf 100644
+--- a/tests/utils_tests/test_autoreload.py
++++ b/tests/utils_tests/test_autoreload.py
+@@ -140,6 +140,15 @@ class TestIterModulesAndFiles(SimpleTestCase):
+         fake_main = types.ModuleType('__main__')
+         self.assertEqual(autoreload.iter_modules_and_files((fake_main,), frozenset()), frozenset())
+ 
++    def test_resolve_with_null_byte(self):
++        """Null bytes in paths are handled gracefully (#11583)."""
++        self.clear_autoreload_caches()
++        with mock.patch.object(Path, 'resolve', side_effect=ValueError('embedded null byte')):
++            self.assertEqual(
++                autoreload.iter_modules_and_files((), frozenset([__file__])),
++                frozenset(),
++            )
++
+ 
+ class TestCommonRoots(SimpleTestCase):
+     def test_common_roots(self):

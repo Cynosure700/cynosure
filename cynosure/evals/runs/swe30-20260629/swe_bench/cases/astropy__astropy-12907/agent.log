@@ -1,0 +1,89 @@
+
+[tool:start] 
+[tool:done]  success
+The bug is in `_cstack`: when `right` is already a computed separability matrix (ndarray, from a nested CompoundModel), it fills with `1` instead of using the actual matrix.
+[tool:start] 
+[tool:done]  success
+Now let me verify the fix:
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The environment needs extension modules built. Let me build them:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+The build environment is broken (Python 3.14, no setuptools). Let me try building the C extensions in place:
+[tool:start] 
+[tool:done]  success
+The build environment is unavailable (Python 3.14, no setuptools). Let me verify the fix logic with a standalone simulation of the relevant functions:
+[tool:start] 
+[tool:done]  success
+The simulation confirms the fix. The nested case now produces the correct diagonal block for the `Linear1D` models, matching the expected flat output from the problem statement.
+
+Let me check the existing test file to ensure consistency:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The fix is complete and verified.
+
+## Summary
+
+**Bug:** In `astropy/modeling/separable.py`, the `_cstack` function (which handles the `&` operator) had a bug when the `right` operand was an already-computed separability matrix (an ndarray, which happens for nested `CompoundModel`s). Instead of placing the actual computed matrix into the result, it filled that block with `1`:
+
+```python
+cright[-right.shape[0]:, -right.shape[1]:] = 1   # wrong: ignores the matrix
+```
+
+This caused all inputs/outputs of a nested compound model on the right side of `&` to appear fully correlated.
+
+**Fix** (`astropy/modeling/separable.py:245`): use the actual matrix:
+
+```python
+cright[-right.shape[0]:, -right.shape[1]:] = right
+```
+
+This mirrors how the `left` ndarray branch already correctly copies `left` into `cleft`. Now `separability_matrix(m.Pix2Sky_TAN() & cm)` correctly produces a block-diagonal matrix matching the un-nested equivalent.
+
+Note: I couldn't run the astropy test suite directly because the build environment here (Python 3.14 without setuptools) cannot compile the C extension modules; I verified the fix with a standalone simulation of the affected logic instead.
+
+The git diff is ready.The fix is complete and verified.
+
+## Summary
+
+**Bug:** In `astropy/modeling/separable.py`, the `_cstack` function (which handles the `&` operator) had a bug when the `right` operand was an already-computed separability matrix (an ndarray, which happens for nested `CompoundModel`s). Instead of placing the actual computed matrix into the result, it filled that block with `1`:
+
+```python
+cright[-right.shape[0]:, -right.shape[1]:] = 1   # wrong: ignores the matrix
+```
+
+This caused all inputs/outputs of a nested compound model on the right side of `&` to appear fully correlated.
+
+**Fix** (`astropy/modeling/separable.py:245`): use the actual matrix:
+
+```python
+cright[-right.shape[0]:, -right.shape[1]:] = right
+```
+
+This mirrors how the `left` ndarray branch already correctly copies `left` into `cleft`. Now `separability_matrix(m.Pix2Sky_TAN() & cm)` correctly produces a block-diagonal matrix matching the un-nested equivalent.
+
+Note: I couldn't run the astropy test suite directly because the build environment here (Python 3.14 without setuptools) cannot compile the C extension modules; I verified the fix with a standalone simulation of the affected logic instead.
+
+The git diff is ready.

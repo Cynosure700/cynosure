@@ -1,0 +1,35 @@
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 9344979c56..fc4a38c4fe 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -463,6 +463,11 @@ class IsNull(BuiltinLookup):
+     prepare_rhs = False
+ 
+     def as_sql(self, compiler, connection):
++        if not isinstance(self.rhs, bool):
++            raise ValueError(
++                'The QuerySet value for an isnull lookup must be True or '
++                'False.'
++            )
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+             return "%s IS NULL" % sql, params
+diff --git a/tests/lookup/tests.py b/tests/lookup/tests.py
+index 1958b995b2..f32055b1fd 100644
+--- a/tests/lookup/tests.py
++++ b/tests/lookup/tests.py
+@@ -902,6 +902,14 @@ class LookupTests(TestCase):
+         with self.assertRaisesMessage(ValueError, msg):
+             list(Article.objects.filter(author=Author.objects.all()[1:]))
+ 
++    def test_isnull_lookup_non_boolean_value(self):
++        msg = (
++            'The QuerySet value for an isnull lookup must be True or False.'
++        )
++        for value in [1, 0, 'true', 'false']:
++            with self.subTest(value=value), self.assertRaisesMessage(ValueError, msg):
++                list(Season.objects.filter(nulled_text_field__isnull=value))
++
+     def test_custom_field_none_rhs(self):
+         """
+         __exact=value is transformed to __isnull=True if Field.get_prep_value()

@@ -1,0 +1,764 @@
+{
+  "model": "glm-5.2",
+  "terminal_bench": {
+    "dataset": "terminal-bench-core==0.1.1",
+    "cases": 30,
+    "resolved": 18,
+    "unresolved": 12,
+    "rows": [
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "grid-pattern-transform",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T09:04:49.493170+00:00",
+        "agent_ended_at": "2026-06-29T09:08:32.732450+00:00",
+        "test_started_at": "2026-06-29T09:08:36.040866+00:00",
+        "test_ended_at": "2026-06-29T09:10:50.992544+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "security-vulhub-minio",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T09:11:55.658443+00:00",
+        "agent_ended_at": "2026-06-29T09:16:31.308527+00:00",
+        "test_started_at": "2026-06-29T09:16:34.621255+00:00",
+        "test_ended_at": "2026-06-29T09:16:57.621517+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "create-bucket",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T09:18:56.920618+00:00",
+        "agent_ended_at": "2026-06-29T09:19:31.476925+00:00",
+        "test_started_at": "2026-06-29T09:19:34.785506+00:00",
+        "test_ended_at": "2026-06-29T09:20:11.827600+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "polyglot-c-py",
+        "resolved": false,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T09:20:57.887313+00:00",
+        "agent_ended_at": "2026-06-29T09:31:57.935192+00:00",
+        "test_started_at": "2026-06-29T09:32:01.295555+00:00",
+        "test_ended_at": "2026-06-29T09:32:16.703424+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "fibonacci-server",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T09:32:24.504691+00:00",
+        "agent_ended_at": "2026-06-29T09:34:04.143489+00:00",
+        "test_started_at": "2026-06-29T09:34:07.448631+00:00",
+        "test_ended_at": "2026-06-29T09:34:38.137391+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "git-workflow-hack",
+        "resolved": true,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T09:35:04.341177+00:00",
+        "agent_ended_at": "2026-06-29T09:46:04.354009+00:00",
+        "test_started_at": "2026-06-29T09:46:07.706644+00:00",
+        "test_ended_at": "2026-06-29T09:46:36.003281+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "crack-7z-hash.easy",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T09:49:56.909129+00:00",
+        "agent_ended_at": "2026-06-29T09:53:41.145941+00:00",
+        "test_started_at": "2026-06-29T09:53:44.439770+00:00",
+        "test_ended_at": "2026-06-29T09:54:01.021680+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "raman-fitting.easy",
+        "resolved": false,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T09:54:08.650760+00:00",
+        "agent_ended_at": "2026-06-29T10:05:08.662657+00:00",
+        "test_started_at": "2026-06-29T10:05:12.024784+00:00",
+        "test_ended_at": "2026-06-29T10:06:29.385927+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "simple-web-scraper",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:07:37.331472+00:00",
+        "agent_ended_at": "2026-06-29T10:08:59.884422+00:00",
+        "test_started_at": "2026-06-29T10:09:03.209349+00:00",
+        "test_ended_at": "2026-06-29T10:09:08.396108+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "hello-world",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:09:16.915407+00:00",
+        "agent_ended_at": "2026-06-29T10:09:33.432105+00:00",
+        "test_started_at": "2026-06-29T10:09:36.690651+00:00",
+        "test_ended_at": "2026-06-29T10:09:58.611548+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "new-encrypt-command",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:11:03.330907+00:00",
+        "agent_ended_at": "2026-06-29T10:12:15.043075+00:00",
+        "test_started_at": "2026-06-29T10:12:18.323517+00:00",
+        "test_ended_at": "2026-06-29T10:14:37.884391+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "csv-to-parquet",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:14:59.171952+00:00",
+        "agent_ended_at": "2026-06-29T10:17:46.435211+00:00",
+        "test_started_at": "2026-06-29T10:17:49.717472+00:00",
+        "test_ended_at": "2026-06-29T10:18:19.400418+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "heterogeneous-dates",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:18:43.319784+00:00",
+        "agent_ended_at": "2026-06-29T10:20:00.699556+00:00",
+        "test_started_at": "2026-06-29T10:20:04.017985+00:00",
+        "test_ended_at": "2026-06-29T10:20:29.774234+00:00"
+      },
+      {
+        "run_id": "tb30-20260629",
+        "task_id": "processing-pipeline",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:20:50.176793+00:00",
+        "agent_ended_at": "2026-06-29T10:22:20.063242+00:00",
+        "test_started_at": "2026-06-29T10:22:23.402480+00:00",
+        "test_ended_at": "2026-06-29T10:22:46.154127+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "openssl-selfsigned-cert",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:38:01.715247+00:00",
+        "agent_ended_at": "2026-06-29T10:40:06.604440+00:00",
+        "test_started_at": "2026-06-29T10:40:09.938390+00:00",
+        "test_ended_at": "2026-06-29T10:40:31.866387+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "fix-pandas-version",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:41:33.003286+00:00",
+        "agent_ended_at": "2026-06-29T10:43:18.251119+00:00",
+        "test_started_at": "2026-06-29T10:43:21.566480+00:00",
+        "test_ended_at": "2026-06-29T10:43:22.119015+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "get-bitcoin-nodes",
+        "resolved": true,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T10:43:50.509892+00:00",
+        "agent_ended_at": "2026-06-29T10:54:50.499924+00:00",
+        "test_started_at": "2026-06-29T10:54:54.019980+00:00",
+        "test_ended_at": "2026-06-29T10:55:52.919716+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "nginx-request-logging",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T10:56:14.248568+00:00",
+        "agent_ended_at": "2026-06-29T10:58:23.344627+00:00",
+        "test_started_at": "2026-06-29T10:58:26.643013+00:00",
+        "test_ended_at": "2026-06-29T10:58:34.338155+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "swe-bench-langcodes",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:01:20.663487+00:00",
+        "agent_ended_at": "2026-06-29T11:02:30.256601+00:00",
+        "test_started_at": "2026-06-29T11:02:33.569983+00:00",
+        "test_ended_at": "2026-06-29T11:03:08.748441+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "modernize-fortran-build",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:03:52.223936+00:00",
+        "agent_ended_at": "2026-06-29T11:05:22.590123+00:00",
+        "test_started_at": "2026-06-29T11:05:25.890629+00:00",
+        "test_ended_at": "2026-06-29T11:05:55.310382+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "reshard-c4-data",
+        "resolved": true,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T11:09:10.653022+00:00",
+        "agent_ended_at": "2026-06-29T11:16:08.824023+00:00",
+        "test_started_at": "2026-06-29T11:16:12.133848+00:00",
+        "test_ended_at": "2026-06-29T11:17:25.448580+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "simple-sheets-put",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:19:19.454826+00:00",
+        "agent_ended_at": "2026-06-29T11:20:49.267789+00:00",
+        "test_started_at": "2026-06-29T11:20:49.314463+00:00",
+        "test_ended_at": "2026-06-29T11:20:57.943583+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "sqlite-db-truncate",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:21:07.221432+00:00",
+        "agent_ended_at": "2026-06-29T11:23:05.922405+00:00",
+        "test_started_at": "2026-06-29T11:23:09.220770+00:00",
+        "test_ended_at": "2026-06-29T11:23:32.415331+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "fix-git",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:30:20.519443+00:00",
+        "agent_ended_at": "2026-06-29T11:32:22.240819+00:00",
+        "test_started_at": "2026-06-29T11:32:25.509730+00:00",
+        "test_ended_at": "2026-06-29T11:32:51.730874+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "password-recovery",
+        "resolved": false,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T11:33:25.324501+00:00",
+        "agent_ended_at": "2026-06-29T11:44:25.398290+00:00",
+        "test_started_at": "2026-06-29T11:44:28.725247+00:00",
+        "test_ended_at": "2026-06-29T11:44:50.600951+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "sanitize-git-repo",
+        "resolved": false,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T11:45:22.636409+00:00",
+        "agent_ended_at": "2026-06-29T11:50:39.013749+00:00",
+        "test_started_at": "2026-06-29T11:50:42.288562+00:00",
+        "test_ended_at": "2026-06-29T11:51:02.252176+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "sqlite-with-gcov",
+        "resolved": false,
+        "failure_mode": "agent_timeout",
+        "agent_started_at": "2026-06-29T11:51:09.946672+00:00",
+        "agent_ended_at": "2026-06-29T12:02:10.090782+00:00",
+        "test_started_at": "2026-06-29T12:02:13.448950+00:00",
+        "test_ended_at": "2026-06-29T12:02:30.138815+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "fix-permissions",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T12:02:38.040461+00:00",
+        "agent_ended_at": "2026-06-29T12:03:16.550076+00:00",
+        "test_started_at": "2026-06-29T12:03:19.876516+00:00",
+        "test_ended_at": "2026-06-29T12:03:50.326136+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "extract-safely",
+        "resolved": true,
+        "failure_mode": "unset",
+        "agent_started_at": "2026-06-29T12:04:45.390484+00:00",
+        "agent_ended_at": "2026-06-29T12:05:06.298757+00:00",
+        "test_started_at": "2026-06-29T12:05:09.618197+00:00",
+        "test_ended_at": "2026-06-29T12:05:16.302892+00:00"
+      },
+      {
+        "run_id": "tb30b-20260629",
+        "task_id": "vim-terminal-task",
+        "resolved": null,
+        "failure_mode": "unknown_agent_error",
+        "agent_started_at": null,
+        "agent_ended_at": null,
+        "test_started_at": null,
+        "test_ended_at": null
+      }
+    ]
+  },
+  "swe_bench_lite": {
+    "dataset": "princeton-nlp/SWE-bench_Lite",
+    "selected_cases": 30,
+    "predictions": 30,
+    "agent_completed": 28,
+    "non_empty_patches": 30,
+    "official_reports_completed": 30,
+    "official_reports_resolved": 26,
+    "prebuilt_harness_summary": {
+      "total_instances": 30,
+      "submitted_instances": 30,
+      "completed_instances": 0,
+      "resolved_instances": 0,
+      "unresolved_instances": 0,
+      "empty_patch_instances": 3,
+      "error_instances": 27,
+      "completed_ids": [],
+      "incomplete_ids": [],
+      "empty_patch_ids": [
+        "django__django-11179",
+        "django__django-11283",
+        "django__django-11910"
+      ],
+      "submitted_ids": [
+        "astropy__astropy-12907",
+        "astropy__astropy-14182",
+        "astropy__astropy-14365",
+        "astropy__astropy-14995",
+        "astropy__astropy-6938",
+        "astropy__astropy-7746",
+        "django__django-10914",
+        "django__django-10924",
+        "django__django-11001",
+        "django__django-11019",
+        "django__django-11039",
+        "django__django-11049",
+        "django__django-11099",
+        "django__django-11133",
+        "django__django-11179",
+        "django__django-11283",
+        "django__django-11422",
+        "django__django-11564",
+        "django__django-11583",
+        "django__django-11620",
+        "django__django-11630",
+        "django__django-11742",
+        "django__django-11797",
+        "django__django-11815",
+        "django__django-11848",
+        "django__django-11905",
+        "django__django-11910",
+        "django__django-11964",
+        "django__django-11999",
+        "django__django-12113"
+      ],
+      "resolved_ids": [],
+      "unresolved_ids": [],
+      "error_ids": [
+        "astropy__astropy-12907",
+        "astropy__astropy-14182",
+        "astropy__astropy-14365",
+        "astropy__astropy-14995",
+        "astropy__astropy-6938",
+        "astropy__astropy-7746",
+        "django__django-10914",
+        "django__django-10924",
+        "django__django-11001",
+        "django__django-11019",
+        "django__django-11039",
+        "django__django-11049",
+        "django__django-11099",
+        "django__django-11133",
+        "django__django-11422",
+        "django__django-11564",
+        "django__django-11583",
+        "django__django-11620",
+        "django__django-11630",
+        "django__django-11742",
+        "django__django-11797",
+        "django__django-11815",
+        "django__django-11848",
+        "django__django-11905",
+        "django__django-11964",
+        "django__django-11999",
+        "django__django-12113"
+      ],
+      "schema_version": 2
+    },
+    "inference_rows": [
+      {
+        "instance_id": "astropy__astropy-12907",
+        "agent_completed": true,
+        "duration_sec": 219.0,
+        "patch_bytes": 504,
+        "error": ""
+      },
+      {
+        "instance_id": "astropy__astropy-14182",
+        "agent_completed": true,
+        "duration_sec": 996.93,
+        "patch_bytes": 1047,
+        "error": ""
+      },
+      {
+        "instance_id": "astropy__astropy-14365",
+        "agent_completed": false,
+        "duration_sec": 971.71,
+        "patch_bytes": 617,
+        "error": "agent timed out after 900s"
+      },
+      {
+        "instance_id": "astropy__astropy-14995",
+        "agent_completed": true,
+        "duration_sec": 711.15,
+        "patch_bytes": 626,
+        "error": ""
+      },
+      {
+        "instance_id": "astropy__astropy-6938",
+        "agent_completed": true,
+        "duration_sec": 350.09,
+        "patch_bytes": 731,
+        "error": ""
+      },
+      {
+        "instance_id": "astropy__astropy-7746",
+        "agent_completed": true,
+        "duration_sec": 135.84,
+        "patch_bytes": 993,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-10914",
+        "agent_completed": true,
+        "duration_sec": 379.84,
+        "patch_bytes": 4090,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-10924",
+        "agent_completed": true,
+        "duration_sec": 169.87,
+        "patch_bytes": 622,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11001",
+        "agent_completed": true,
+        "duration_sec": 187.98,
+        "patch_bytes": 543,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11019",
+        "agent_completed": true,
+        "duration_sec": 375.89,
+        "patch_bytes": 4955,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11039",
+        "agent_completed": true,
+        "duration_sec": 486.03,
+        "patch_bytes": 2058,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11049",
+        "agent_completed": true,
+        "duration_sec": 210.23,
+        "patch_bytes": 1439,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11099",
+        "agent_completed": true,
+        "duration_sec": 233.16,
+        "patch_bytes": 1963,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11133",
+        "agent_completed": true,
+        "duration_sec": 264.93,
+        "patch_bytes": 612,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11422",
+        "agent_completed": true,
+        "duration_sec": 185.17,
+        "patch_bytes": 1082,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11564",
+        "agent_completed": true,
+        "duration_sec": 505.76,
+        "patch_bytes": 5230,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11583",
+        "agent_completed": true,
+        "duration_sec": 185.29,
+        "patch_bytes": 1466,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11620",
+        "agent_completed": true,
+        "duration_sec": 247.24,
+        "patch_bytes": 955,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11630",
+        "agent_completed": true,
+        "duration_sec": 427.05,
+        "patch_bytes": 4101,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11742",
+        "agent_completed": true,
+        "duration_sec": 389.1,
+        "patch_bytes": 5281,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11797",
+        "agent_completed": true,
+        "duration_sec": 389.55,
+        "patch_bytes": 1827,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11815",
+        "agent_completed": true,
+        "duration_sec": 218.68,
+        "patch_bytes": 4347,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11848",
+        "agent_completed": false,
+        "duration_sec": 722.05,
+        "patch_bytes": 3195,
+        "error": "agent timed out after 600s"
+      },
+      {
+        "instance_id": "django__django-11905",
+        "agent_completed": true,
+        "duration_sec": 416.7,
+        "patch_bytes": 1454,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11964",
+        "agent_completed": true,
+        "duration_sec": 539.26,
+        "patch_bytes": 612,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11999",
+        "agent_completed": true,
+        "duration_sec": 437.07,
+        "patch_bytes": 1722,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-12113",
+        "agent_completed": true,
+        "duration_sec": 274.44,
+        "patch_bytes": 672,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11179",
+        "agent_completed": true,
+        "duration_sec": 131.89,
+        "patch_bytes": 614,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11283",
+        "agent_completed": true,
+        "duration_sec": 161.85,
+        "patch_bytes": 2396,
+        "error": ""
+      },
+      {
+        "instance_id": "django__django-11910",
+        "agent_completed": true,
+        "duration_sec": 353.27,
+        "patch_bytes": 972,
+        "error": ""
+      }
+    ],
+    "official_rows": [
+      {
+        "instance_id": "astropy__astropy-12907",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "astropy__astropy-14182",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "astropy__astropy-14365",
+        "patch_applied": true,
+        "resolved": false
+      },
+      {
+        "instance_id": "astropy__astropy-14995",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "astropy__astropy-6938",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "astropy__astropy-7746",
+        "patch_applied": true,
+        "resolved": false
+      },
+      {
+        "instance_id": "django__django-10914",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-10924",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11001",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11019",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11039",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11049",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11099",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11133",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11179",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11283",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11422",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11564",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11583",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11620",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11630",
+        "patch_applied": true,
+        "resolved": false
+      },
+      {
+        "instance_id": "django__django-11742",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11797",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11815",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11848",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11905",
+        "patch_applied": true,
+        "resolved": false
+      },
+      {
+        "instance_id": "django__django-11910",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11964",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-11999",
+        "patch_applied": true,
+        "resolved": true
+      },
+      {
+        "instance_id": "django__django-12113",
+        "patch_applied": true,
+        "resolved": true
+      }
+    ]
+  }
+}

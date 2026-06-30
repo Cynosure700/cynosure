@@ -1,0 +1,21 @@
+{
+    "id": "008cbee2-bd5f-4027-bb92-7e78a630497e",
+    "trial_name": "csv-to-parquet.1-of-1.tb30-20260629",
+    "task_id": "csv-to-parquet",
+    "instruction": "Convert the file '/app/data.csv' into a Parquet file named '/app/data.parquet'. The CSV file contains sample data with headers.",
+    "is_resolved": true,
+    "failure_mode": "unset",
+    "parser_results": {
+        "test_parquet_exists": "passed",
+        "test_data_matches": "passed"
+    },
+    "recording_path": "tb30-20260629/csv-to-parquet/csv-to-parquet.1-of-1.tb30-20260629/sessions/agent.cast",
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "trial_started_at": "2026-06-29T10:14:39.876284+00:00",
+    "trial_ended_at": "2026-06-29T10:18:21.704994+00:00",
+    "agent_started_at": "2026-06-29T10:14:59.171952+00:00",
+    "agent_ended_at": "2026-06-29T10:17:46.435211+00:00",
+    "test_started_at": "2026-06-29T10:17:49.717472+00:00",
+    "test_ended_at": "2026-06-29T10:18:19.400418+00:00"
+}

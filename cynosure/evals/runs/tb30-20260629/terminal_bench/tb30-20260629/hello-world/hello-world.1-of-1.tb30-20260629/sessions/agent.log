@@ -1,0 +1,15 @@
+[?2004hroot@a058dde4f351:/app# asciinema rec --stdin /logs/agent.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@a058dde4f351:/app# clear
+[?2004l[H[J[3J[?2004hroot@a058dde4f351:/app# mkdir -p /tmp/cynosure-home/.cynosure .cynosure && cp /installed-agent/settings.json /tmp/cynosure-home/.cynosure/settings.json && printf '%s
+[?2004l[?2004h> ' '{"permissions":{"defaultMode":"bypassPermissions"}}' > .cynosure/settings.json && HOME=/tmp/cynosure-home /installed-agent/cynosure-eval-agent --cwd "$PWD" --prompt-file /installed-agent/instruction.txt; tmux wait -S done
+[?2004l
+[tool:start] 
+[tool:done]  success
+I created `hello.txt` in the current directory with "Hello, world!" and a trailing newline.I created `hello.txt` in the current directory with "Hello, world!" and a trailing newline.
+[?2004hroot@a058dde4f351:/app# [?2004l
+exit
+[0;32masciinema: recording finished[0m
+[0;32masciinema: asciicast saved to /logs/agent.cast[0m
+[?2004hroot@a058dde4f351:/app# 

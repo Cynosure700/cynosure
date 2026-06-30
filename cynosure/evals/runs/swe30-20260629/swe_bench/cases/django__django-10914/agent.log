@@ -1,0 +1,223 @@
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  failed
+[tool:done]  success
+Let me look at the key files.
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+Let me check the 3.0 release notes and the storage tests.
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now let me make the changes. First, the default setting:
+[tool:start] 
+[tool:done]  success
+Now update the test for default permissions:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+I need to actually change the test to use the new default. Let me update it properly:
+[tool:start] 
+[tool:done]  success
+Now let me update the docs. First the settings.txt:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+The settings.txt is updated. Now the deployment checklist:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now add the backwards incompatible note to the 3.0 release notes:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me find the backwards incompatible section structure:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me add the backwards incompatible note. Let me view the Miscellaneous section of backwards incompatible changes:
+[tool:start] 
+[tool:done]  success
+The release note is already added. Now let me run the relevant tests:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The default Python 3.14 lacks the `cgi` module. Let me find a compatible Python:
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+The environment only has Python 3.14 (which removed `cgi`), so the Django test suite can't run here. Let me verify my changes by reading the modified sections:
+[tool:start] 
+[tool:done]  success
+I see duplicate entries got created in the release notes. Let me clean those up.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me remove the duplicate "File Uploads" section and duplicate Miscellaneous bullets:
+[tool:start] 
+[tool:done]  success
+Let me also fill in the Features "File Uploads" section placeholder:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+The Features section is already filled. Let me verify the final state of the release notes:
+[tool:start] 
+[tool:done]  success
+The diff is now clean. Let me verify the test file change is correct:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The changes are complete. Here's a summary of what I changed to fix django__django-10914:
+
+## Summary
+
+Set the default `FILE_UPLOAD_PERMISSIONS` to `0o644` to eliminate the inconsistency where uploaded files got `0o600` permissions (when using `TemporaryUploadedFile`) versus umask-based permissions (when using `MemoryUploadedFile`).
+
+### Files changed:
+
+1. **`django/conf/global_settings.py`** — Changed `FILE_UPLOAD_PERMISSIONS = None` to `FILE_UPLOAD_PERMISSIONS = 0o644`.
+
+2. **`tests/file_storage/tests.py`** — Added `test_file_upload_default_permissions_0o644` verifying the new default produces mode `0o644`. The existing `test_file_upload_default_permissions` (now explicitly overriding to `None`) still verifies the OS-dependent/umask behavior when set to `None`.
+
+3. **`docs/ref/settings.txt`** — Updated default from `None` to `0o644` and reworded the description so the `None` caveat applies only when explicitly set to `None`.
+
+4. **`docs/howto/deployment/checklist.txt`** — Added a note that `FILE_UPLOAD_PERMISSIONS` now defaults to `0o644`.
+
+5. **`docs/releases/3.0.txt`** — Added a Features entry and a Backwards incompatible changes "File Uploads" section explaining the change and how to restore previous behavior (set to `None`).
+
+### Notes
+- I could not run the test suite because only Python 3.14 is available in this environment, and Django 3.0-dev imports the `cgi` module (removed in Python 3.13). The code changes follow the existing test patterns and the storage layer applies `file_permissions_mode` via `os.chmod`, so the new default of `0o644` will be applied consistently regardless of upload handler.
+
+The git diff is ready.The changes are complete. Here's a summary of what I changed to fix django__django-10914:
+
+## Summary
+
+Set the default `FILE_UPLOAD_PERMISSIONS` to `0o644` to eliminate the inconsistency where uploaded files got `0o600` permissions (when using `TemporaryUploadedFile`) versus umask-based permissions (when using `MemoryUploadedFile`).
+
+### Files changed:
+
+1. **`django/conf/global_settings.py`** — Changed `FILE_UPLOAD_PERMISSIONS = None` to `FILE_UPLOAD_PERMISSIONS = 0o644`.
+
+2. **`tests/file_storage/tests.py`** — Added `test_file_upload_default_permissions_0o644` verifying the new default produces mode `0o644`. The existing `test_file_upload_default_permissions` (now explicitly overriding to `None`) still verifies the OS-dependent/umask behavior when set to `None`.
+
+3. **`docs/ref/settings.txt`** — Updated default from `None` to `0o644` and reworded the description so the `None` caveat applies only when explicitly set to `None`.
+
+4. **`docs/howto/deployment/checklist.txt`** — Added a note that `FILE_UPLOAD_PERMISSIONS` now defaults to `0o644`.
+
+5. **`docs/releases/3.0.txt`** — Added a Features entry and a Backwards incompatible changes "File Uploads" section explaining the change and how to restore previous behavior (set to `None`).
+
+### Notes
+- I could not run the test suite because only Python 3.14 is available in this environment, and Django 3.0-dev imports the `cgi` module (removed in Python 3.13). The code changes follow the existing test patterns and the storage layer applies `file_permissions_mode` via `os.chmod`, so the new default of `0o644` will be applied consistently regardless of upload handler.
+
+The git diff is ready.

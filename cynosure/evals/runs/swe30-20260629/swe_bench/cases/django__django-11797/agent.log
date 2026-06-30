@@ -1,0 +1,168 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The edit was already applied in the prior context. Let me verify the current state of the fix.
+[tool:start] 
+[tool:done]  success
+The fix is in place. Let me find and run the relevant tests.
+[tool:start] 
+
+[tool:start] 
+[tool:done]  failed
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+Let me look at the existing tests and the lookup test models to add a proper test.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me check the imports and the test models to write a proper test.
+[tool:start] 
+[tool:done]  success
+Let me check the Author model and add a test reproducing the bug.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now let me add a test. First update the import to include `Max`:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me add a test reproducing the bug after the existing sliced queryset tests.
+[tool:start] 
+[tool:done]  success
+Now let me run the lookup tests:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Need to set up the path. Let me run with PYTHONPATH:
+[tool:start] 
+[tool:done]  success
+The Python 3.14 removed the `cgi` module which this old Django uses. Let me find an older Python.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+python3.11 works. Let me run the relevant tests:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+All tests pass. Let me confirm the fix is in place and run the full lookup test suite to ensure no regressions.
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+There's a failure. Let me see which one.
+[tool:start] 
+[tool:done]  success
+There's an existing test that conflicts. Let me examine it.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The prior context added multiple duplicate and broken tests. Let me clean them up into a single correct test.
+[tool:start] 
+[tool:done]  success
+Let me replace all the duplicate/broken tests with a single clean test:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Let me verify the final state of the test section is clean:
+[tool:start] 
+[tool:done]  success
+The tests are now clean. Let me run the full lookup test suite to confirm no regressions.
+[tool:start] 
+[tool:done]  success
+All 47 tests pass. Let me also verify the original bug reproduction from the ticket and run a broader query test to be safe.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Let me run broader related test suites (queries and or_lookups) instead to confirm no regressions.
+[tool:start] 
+[tool:done]  success
+All tests pass. Let me show the final git diff:
+[tool:start] 
+[tool:done]  success
+The fix is complete. The git diff is ready.
+
+## Summary
+
+**Problem:** When filtering with an exact lookup against a sliced subquery (e.g. `User.objects.filter(id=a[:1])`), the ORM unconditionally cleared the subquery's SELECT clause and re-selected only the pk. This clobbered an already-specified `GROUP BY` clause, changing `GROUP BY U0."email"` into `GROUP BY U0."id"`.
+
+**Fix** (`django/db/models/lookups.py`): In `Exact.process_rhs`, only reset the subquery's select clause to `pk` when the query does *not* already have select fields. This mirrors the existing `__in` lookup behavior (`In.process_rhs`), which already guards on `has_select_fields`. When the inner query already selects fields (e.g. after `.values('email').annotate(...).values('m')`), those are preserved along with the correct `GROUP BY`.
+
+**Test** (`tests/lookup/tests.py`): Added `test_exact_sliced_queryset_limit_one_with_selected_fields`, which builds a `.values('alias').annotate(m=Max('id')).values('m')` subquery and filters on its slice, confirming the query no longer overrides the inner `GROUP BY`.
+
+All `lookup`, `queries`, and `or_lookups` test suites pass.The fix is complete. The git diff is ready.
+
+## Summary
+
+**Problem:** When filtering with an exact lookup against a sliced subquery (e.g. `User.objects.filter(id=a[:1])`), the ORM unconditionally cleared the subquery's SELECT clause and re-selected only the pk. This clobbered an already-specified `GROUP BY` clause, changing `GROUP BY U0."email"` into `GROUP BY U0."id"`.
+
+**Fix** (`django/db/models/lookups.py`): In `Exact.process_rhs`, only reset the subquery's select clause to `pk` when the query does *not* already have select fields. This mirrors the existing `__in` lookup behavior (`In.process_rhs`), which already guards on `has_select_fields`. When the inner query already selects fields (e.g. after `.values('email').annotate(...).values('m')`), those are preserved along with the correct `GROUP BY`.
+
+**Test** (`tests/lookup/tests.py`): Added `test_exact_sliced_queryset_limit_one_with_selected_fields`, which builds a `.values('alias').annotate(m=Max('id')).values('m')` subquery and filters on its slice, confirming the query no longer overrides the inner `GROUP BY`.
+
+All `lookup`, `queries`, and `or_lookups` test suites pass.

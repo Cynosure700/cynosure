@@ -1,0 +1,76 @@
+[?2004hroot@12f8c5c27470:/app/langcodes# asciinema rec --stdin /logs/agent.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@12f8c5c27470:/app/langcodes# clear
+[?2004l[H[J[3J[?2004hroot@12f8c5c27470:/app/langcodes# mkdir -p /tmp/cynosure-home/.cynosure .cynosure && cp /installed-agent/settings.json /tmp/cynosure-home/.cynosure/settings.json && printf '%s
+[?2004l[?2004h> ' '{"permissions":{"defaultMode":"bypassPermissions"}}' > .cynosure/settings.json && HOME=/tmp/cynosure-home /installed-agent/cynosure-eval-agent --cwd "$PWD" --prompt-file /installed-agent/instruction.txt; tmux wait -S done
+[?2004l
+[tool:start] 
+[tool:done]  success
+I can confirm the issue. The current `__hash__` uses `hash(id(self))`, which violates the `__eq__`/`__hash__` contract since `__eq__` compares `_str_tag` but `__hash__` uses object identity. Let me verify the `_str_tag` attribute and the `__eq__` implementation before fixing.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+`_str_tag` is the field `__eq__` compares against, so hashing it keeps the two consistent. Applying the fix:
+[tool:start] 
+[tool:done]  success
+Let me verify the fix works, including the pickle scenario from the issue:
+[tool:start] 
+[tool:done]  success
+The fix works. Let me run the existing test suite to ensure nothing breaks:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The 14 failures are pre-existing and unrelated to my change — they're `ModuleNotFoundError` (missing optional data packages like `language_data`) and doctests needing data. Let me confirm by reverting and re-running to show the same failures exist on the unmodified code:
+[tool:start] 
+[tool:done]  success
+Same 14 failures with and without my change — they're pre-existing (missing optional `language_data` package) and unrelated to `__hash__`.
+
+## Summary
+
+I fixed the broken `Language.__hash__` in `langcodes/__init__.py:1503-1504`.
+
+**Before:**
+```python
+def __hash__(self) -> int:
+    return hash(id(self))
+```
+
+**After:**
+```python
+def __hash__(self) -> int:
+    return hash(self._str_tag)
+```
+
+The root cause was a violation of the Python data model contract: `__eq__` compares `self._str_tag` (`langcodes/__init__.py:1501`), but `__hash__` used object identity (`hash(id(self))`). Two equal `Language` objects (e.g. one restored via `pickle` and one from `Language.get`) had different hashes, so they couldn't coexist as keys in a `dict`/`set`. Hashing `self._str_tag` — the same field `__eq__` uses — restores consistency.
+
+I verified the pickle scenario from the issue now returns matching hashes, and confirmed the pre-existing test failures are identical with and without the change (they stem from the missing optional `language_data` package, not this fix).Same 14 failures with and without my change — they're pre-existing (missing optional `language_data` package) and unrelated to `__hash__`.
+
+## Summary
+
+I fixed the broken `Language.__hash__` in `langcodes/__init__.py:1503-1504`.
+
+**Before:**
+```python
+def __hash__(self) -> int:
+    return hash(id(self))
+```
+
+**After:**
+```python
+def __hash__(self) -> int:
+    return hash(self._str_tag)
+```
+
+The root cause was a violation of the Python data model contract: `__eq__` compares `self._str_tag` (`langcodes/__init__.py:1501`), but `__hash__` used object identity (`hash(id(self))`). Two equal `Language` objects (e.g. one restored via `pickle` and one from `Language.get`) had different hashes, so they couldn't coexist as keys in a `dict`/`set`. Hashing `self._str_tag` — the same field `__eq__` uses — restores consistency.
+
+I verified the pickle scenario from the issue now returns matching hashes, and confirmed the pre-existing test failures are identical with and without the change (they stem from the missing optional `language_data` package, not this fix).
+[?2004hroot@12f8c5c27470:/app/langcodes# [?2004l
+exit
+[0;32masciinema: recording finished[0m
+[0;32masciinema: asciicast saved to /logs/agent.cast[0m
+[?2004hroot@12f8c5c27470:/app/langcodes# 

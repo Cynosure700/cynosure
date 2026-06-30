@@ -1,0 +1,122 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me read the relevant section of debug.py.
+[tool:start] 
+[tool:done]  success
+Now let me check the imports at the top of the file.
+[tool:start] 
+[tool:done]  success
+Now I'll make the change. `Http404` is the parent of `Resolver404`, so catching `Http404` covers both cases.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me reorder the imports properly since `django.http` is already imported above.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+Let me fix the import order.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me re-read the file to see the current state.
+[tool:start] 
+[tool:done]  success
+The `django.urls` import got removed. Let me add it back.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The file is messed up. Let me read a larger section.
+[tool:start] 
+[tool:done]  success
+The template and urls imports got lost. Let me restore them.
+[tool:start] 
+[tool:done]  success
+Now update the except clause.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+The grep shows it's already `except Http404:`. Let me verify the final state.
+[tool:start] 
+[tool:done]  success
+Let me check if `Resolver404` is still used anywhere in the file.
+[tool:start] 
+[tool:done]  success
+`Resolver404` is now unused. Let me remove it from the import.
+[tool:start] 
+[tool:done]  success
+Now let me verify the final imports and run the relevant tests.
+[tool:start] 
+[tool:done]  success
+Now let me run the relevant tests.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Python 3.14 removed the `cgi` module needed by this old Django. Let me find a compatible Python.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Only Python 3.14 is available, which removed the `cgi` module that this old Django version depends on, so I can't run the test suite here. The change itself is correct and minimal. Let me show the final diff.
+[tool:start] 
+[tool:done]  success
+## Summary
+
+The fix is in `django/views/debug.py`.
+
+**Problem:** When `DEBUG=True` and a path converter's `to_python` raises `Http404`, Django's `technical_404_response` re-resolves the URL path to build the debugging context. Since `Resolver404` (which `Http404` would trigger via the resolver) was the only exception caught, the re-resolution itself raised an uncaught `Http404`, causing the WSGI handler to fail and emit a generic "A server error occurred" message instead of a helpful technical 404 page.
+
+**Change:** In `technical_404_response`, the `except Resolver404` clause now catches `Http404` instead. Since `Resolver404` is a subclass of `Http404`, this catches both the original case and the case where re-resolution raises an `Http404` from a converter. The now-unused `Resolver404` import was removed and `Http404` was imported from `django.http`.
+
+The git diff is ready.## Summary
+
+The fix is in `django/views/debug.py`.
+
+**Problem:** When `DEBUG=True` and a path converter's `to_python` raises `Http404`, Django's `technical_404_response` re-resolves the URL path to build the debugging context. Since `Resolver404` (which `Http404` would trigger via the resolver) was the only exception caught, the re-resolution itself raised an uncaught `Http404`, causing the WSGI handler to fail and emit a generic "A server error occurred" message instead of a helpful technical 404 page.
+
+**Change:** In `technical_404_response`, the `except Resolver404` clause now catches `Http404` instead. Since `Resolver404` is a subclass of `Http404`, this catches both the original case and the case where re-resolution raises an `Http404` from a converter. The now-unused `Resolver404` import was removed and `Http404` was imported from `django.http`.
+
+The git diff is ready.

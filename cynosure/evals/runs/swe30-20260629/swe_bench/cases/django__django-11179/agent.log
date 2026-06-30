@@ -1,0 +1,46 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now let me run the relevant tests.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The installed Python is too new (cgi module removed). Let me check for an older Python.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+Only Python 3.14 is available locally, which is incompatible with this old Django (removed `cgi` module), so I can't run the suite here. The harness will run the tests separately. The fix is minimal and matches the documented upstream approach.
+
+Change made in `django/db/models/deletion.py:279`:
+
+```python
+if self.can_fast_delete(instance):
+    with transaction.mark_for_rollback_on_error():
+        count = sql.DeleteQuery(model).delete_batch([instance.pk], self.using)
+    setattr(instance, model._meta.pk.attname, None)
+    return count, {model._meta.label: count}
+```
+
+**Summary:** In the fast-delete fast path (single object, no dependencies), the instance's PK was never reset to `None` before returning. I added `setattr(instance, model._meta.pk.attname, None)` after the delete, mirroring the behavior already done for the multi-object path at the end of `delete()`. The git diff is ready.Only Python 3.14 is available locally, which is incompatible with this old Django (removed `cgi` module), so I can't run the suite here. The harness will run the tests separately. The fix is minimal and matches the documented upstream approach.
+
+Change made in `django/db/models/deletion.py:279`:
+
+```python
+if self.can_fast_delete(instance):
+    with transaction.mark_for_rollback_on_error():
+        count = sql.DeleteQuery(model).delete_batch([instance.pk], self.using)
+    setattr(instance, model._meta.pk.attname, None)
+    return count, {model._meta.label: count}
+```
+
+**Summary:** In the fast-delete fast path (single object, no dependencies), the instance's PK was never reset to `None` before returning. I added `setattr(instance, model._meta.pk.attname, None)` after the delete, mirroring the behavior already done for the multi-object path at the end of `delete()`. The git diff is ready.

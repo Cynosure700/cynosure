@@ -1,0 +1,7 @@
+{
+  "env": {
+    "open_auth_token": "ad97f02f-125a-41fe-aba1-b56f591a744b",
+    "open_model": "glm-5.2",
+    "open_base_url": "https://ark.cn-beijing.volces.com/api/coding/v3"
+  }
+}

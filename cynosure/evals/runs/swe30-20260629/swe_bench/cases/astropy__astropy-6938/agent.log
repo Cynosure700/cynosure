@@ -1,0 +1,144 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me look at the broader context of this function to understand how `output_field` is used.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me see how `_scale_back_ascii` is called.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me check the chararray `replace` method and how `output_field` is obtained (whether it's a view that writes back).
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+Let me test whether slice-assignment of the replaced array back works correctly given the dtype difference.
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+The numpy here is 3.14 (too new for this old astropy). The bug is clear regardless. Let me fix the write-back properly. The current code rebinds the local `output_field` but never writes the replaced values back into the underlying record array. The correct fix is element-wise/slice assignment back.
+[tool:start] 
+[tool:done]  success
+Let me read the actual function context to make the right fix.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The `replace` method has signature `(self, old, new, count=None)` — it does NOT support an `inplace` argument, so my `inplace=True` would be wrongly passed as `count`. The cleanest, correct fix is to do the E→D replacement per value inside the loop, where assignment to `output_field[jdx]` actually writes back into the record.
+[tool:start] 
+[tool:done]  success
+Let me check how `_scale_back_ascii` is called to verify whether a return value is expected.
+[tool:start] 
+[tool:done]  success
+The caller doesn't use a return value. Let me remove the stray `return` I added.
+[tool:start] 
+[tool:done]  success
+Let me verify the final state of the edited region.
+[tool:start] 
+[tool:done]  success
+Now let me run the relevant test.
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The test environment uses Python 3.14, which is incompatible with this old astropy version (`collections.Mapping` was removed in Python 3.10), so the tests can't run here. The fix itself is correct and minimal.
+
+Let me show the final diff.
+[tool:start] 
+[tool:done]  success
+## Summary
+
+The bug: in `FITS_rec._scale_back_ascii` (`astropy/io/fits/fitsrec.py`), the code tried to replace the `E` exponent separator with `D` for `D`-format floating-point columns via `output_field.replace(encode_ascii('E'), encode_ascii('D'))`. But `chararray.replace` returns a **copy** and is not an in-place operation, so the result was silently discarded — the output never actually had `D` exponents written.
+
+### Fix
+Moved the `E`→`D` replacement into the per-element formatting loop, where each `value` is a plain Python string. After replacing `'E'` with `'D'`, the result is assigned back via `output_field[jdx] = value`, which does write into the underlying record array. This is the only place `output_field` is actually mutated, so the replacement now takes effect.
+
+The change is minimal (the old broken block is removed; equivalent logic runs per value inside the existing loop).
+
+Note: I couldn't run the relevant test (`astropy/io/fits/tests/test_checksum.py::test_ascii_table_data`) here because the environment uses Python 3.14, which is incompatible with this old astropy version (`collections.Mapping` was removed in 3.10). The git diff is ready.## Summary
+
+The bug: in `FITS_rec._scale_back_ascii` (`astropy/io/fits/fitsrec.py`), the code tried to replace the `E` exponent separator with `D` for `D`-format floating-point columns via `output_field.replace(encode_ascii('E'), encode_ascii('D'))`. But `chararray.replace` returns a **copy** and is not an in-place operation, so the result was silently discarded — the output never actually had `D` exponents written.
+
+### Fix
+Moved the `E`→`D` replacement into the per-element formatting loop, where each `value` is a plain Python string. After replacing `'E'` with `'D'`, the result is assigned back via `output_field[jdx] = value`, which does write into the underlying record array. This is the only place `output_field` is actually mutated, so the replacement now takes effect.
+
+The change is minimal (the old broken block is removed; equivalent logic runs per value inside the existing loop).
+
+Note: I couldn't run the relevant test (`astropy/io/fits/tests/test_checksum.py::test_ascii_table_data`) here because the environment uses Python 3.14, which is incompatible with this old astropy version (`collections.Mapping` was removed in 3.10). The git diff is ready.

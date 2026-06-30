@@ -1,0 +1,5 @@
+['asciinema rec --stdin /logs/agent.cast', 'Enter']
+['clear', 'Enter']
+['mkdir -p /tmp/cynosure-home/.cynosure .cynosure && cp /installed-agent/settings.json /tmp/cynosure-home/.cynosure/settings.json && printf \'%s\n\' \'{"permissions":{"defaultMode":"bypassPermissions"}}\' > .cynosure/settings.json && HOME=/tmp/cynosure-home /installed-agent/cynosure-eval-agent --cwd "$PWD" --prompt-file /installed-agent/instruction.txt', 'Enter']
+['bash ', '/tests/run-tests.sh', 'Enter']
+['C-d']

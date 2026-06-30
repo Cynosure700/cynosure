@@ -1,0 +1,110 @@
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+
+[tool:start] 
+
+[tool:start] 
+[tool:done]  success
+[tool:done]  success
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now I understand the bug. Let me examine the SQLite `test_db_signature()` issue more closely.
+
+The problem: when `TEST['NAME']` is set to a persistent file (e.g., `test_default.sqlite3`), the SQLite `test_db_signature()` only includes `settings_dict['NAME']` (the production name). Since both `default` and `other` have no production `NAME` set, they get identical signatures, so the test runner treats them as the same database — leading to the lock.
+
+Let me check for the existing sqlite test directory:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Now let me apply the fix and create the regression tests:
+[tool:start] 
+[tool:done]  success
+Now let me create the regression test file:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+The repo (Django 3.1) needs an older Python (the `cgi` module was removed in 3.13+). Let me find a suitable Python:
+[tool:start] 
+[tool:done]  failed
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Only Python 3.14 is available, which removed the `cgi` module that Django 3.1 imports, so the test suite cannot be executed in this environment. Let me verify the fix logic is correct by reviewing the final state and showing the diff:
+[tool:start] 
+[tool:done]  success
+
+[tool:start] 
+[tool:done]  success
+Let me also run the full diff including the new test file:
+[tool:start] 
+[tool:done]  success
+The fix is complete. Here's a summary:
+
+## What changed
+
+**Root cause:** `DatabaseCreation.test_db_signature()` in `django/db/backends/sqlite3/creation.py` built its signature from only the production `NAME` plus (for in-memory DBs) the alias. When `TEST['NAME']` was set to a persistent file (e.g. `test_default.sqlite3`, `test_other.sqlite3`), the test database name was *not* part of the signature. Since both `default` and `other` had no production `NAME`, both got identical signatures, so the test runner treated them as the same underlying database — creating it once and then locking when the second connection tried to use a different file.
+
+**Fix:** Added `test_database_name` to the signature list so distinct persistent test database files produce distinct signatures:
+
+```python
+sig = [self.connection.settings_dict['NAME'], test_database_name]
+```
+
+For in-memory DBs this is redundant (the name already embeds the alias) but harmless; for persistent files it correctly distinguishes databases.
+
+**Tests:** Added `tests/backends/sqlite/test_creation.py` with regression tests for `test_db_signature()` covering the default (in-memory) name, a custom test name, and a prefixed custom test name — mirroring the existing `tests/backends/base/test_creation.py` structure.
+
+Note: I couldn't run the test suite because only Python 3.14 is available here, and Django 3.1 imports the `cgi` module (removed in Python 3.13+). The fix is minimal and follows the approach suggested in the ticket.
+
+The git diff is ready (not committed).The fix is complete. Here's a summary:
+
+## What changed
+
+**Root cause:** `DatabaseCreation.test_db_signature()` in `django/db/backends/sqlite3/creation.py` built its signature from only the production `NAME` plus (for in-memory DBs) the alias. When `TEST['NAME']` was set to a persistent file (e.g. `test_default.sqlite3`, `test_other.sqlite3`), the test database name was *not* part of the signature. Since both `default` and `other` had no production `NAME`, both got identical signatures, so the test runner treated them as the same underlying database — creating it once and then locking when the second connection tried to use a different file.
+
+**Fix:** Added `test_database_name` to the signature list so distinct persistent test database files produce distinct signatures:
+
+```python
+sig = [self.connection.settings_dict['NAME'], test_database_name]
+```
+
+For in-memory DBs this is redundant (the name already embeds the alias) but harmless; for persistent files it correctly distinguishes databases.
+
+**Tests:** Added `tests/backends/sqlite/test_creation.py` with regression tests for `test_db_signature()` covering the default (in-memory) name, a custom test name, and a prefixed custom test name — mirroring the existing `tests/backends/base/test_creation.py` structure.
+
+Note: I couldn't run the test suite because only Python 3.14 is available here, and Django 3.1 imports the `cgi` module (removed in Python 3.13+). The fix is minimal and follows the approach suggested in the ticket.
+
+The git diff is ready (not committed).

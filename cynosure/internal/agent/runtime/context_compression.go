@@ -49,7 +49,7 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		SystemPrompt:   estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder),
 		Tools:          s.Tools.Definitions(),
 		Store:          store,
-		Estimator:      compression.DefaultTokenEstimator{},
+		Estimator:      compression.DefaultTokenEstimator{ModelID: s.Cfg.LLM.ModelID},
 		Summarizer:     s.summarizeHistoryForContext,
 
 		DisplayHistory:               cloneMessages(state.History),
@@ -85,7 +85,7 @@ func (s *Service) compressSubagentContextBeforeLLM(ctx context.Context, state *L
 		SystemPrompt:   state.SystemPrompt,
 		Tools:          toolDefs,
 		Store:          store,
-		Estimator:      compression.DefaultTokenEstimator{},
+		Estimator:      compression.DefaultTokenEstimator{ModelID: s.Cfg.LLM.ModelID},
 		Summarizer:     s.summarizeHistoryForContext,
 		DisplayHistory: cloneMessages(state.History),
 	}
@@ -115,7 +115,7 @@ func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 		SystemPrompt:   estimatePromptWithReminder(state.SystemPrompt, state.SystemReminder),
 		Tools:          s.Tools.Definitions(),
 		Store:          store,
-		Estimator:      compression.DefaultTokenEstimator{},
+		Estimator:      compression.DefaultTokenEstimator{ModelID: s.Cfg.LLM.ModelID},
 		Summarizer:     s.summarizeHistoryForContext,
 	}
 	if s.Tools != nil {
