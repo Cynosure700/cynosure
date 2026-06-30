@@ -125,6 +125,6 @@ cynosure help
 
 更多运行机制、工具清单、权限模型、记忆系统和上下文压缩细节见 [cynosure/README.md](./cynosure/README.md)。
 
-## 文档索引
+## 测评报告
 
 - [Cynosure Terminal-Bench 与 SWE-bench Lite 测评报告](./cynosure/docs/测评报告.md)：记录 Terminal-Bench Core 与 SWE-bench Lite 的测评方法、环境搭建、评分口径、逐题结果和与主流 coding agent 的对比。
