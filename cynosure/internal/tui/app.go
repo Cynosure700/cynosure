@@ -1966,8 +1966,7 @@ func (m Model) renderInput() string {
 	if text == "" {
 		text = inputPromptStyle().Render(inputCursor) + " " + subtleStyle().Render(m.input.Placeholder)
 	} else {
-		lineInfo := m.input.LineInfo()
-		beforeCursor, afterCursor := splitInputAtCursor(text, lineInfo.StartColumn+lineInfo.ColumnOffset)
+		beforeCursor, afterCursor := splitInputAtCursor(text, m.inputCursorOffset())
 		text = userInputTextStart() +
 			colorizeFileReferencesForInput(beforeCursor) +
 			"\x1b[0m" +
@@ -1977,6 +1976,23 @@ func (m Model) renderInput() string {
 			"\x1b[0m"
 	}
 	return inputLineStyle().Width(max(10, m.width-4)).Render(prompt + " " + text)
+}
+
+// inputCursorOffset 返回光标在整段输入文本中的绝对 rune 偏移。
+// textarea 的 LineInfo().StartColumn+ColumnOffset 是「当前逻辑行内」的列号，
+// 并不包含光标所在行之前各行的长度。对单行输入二者相等，但多行（粘贴）输入
+// 时必须把光标行之前各逻辑行的长度（每行含一个换行符）累加进来，否则可见
+// 光标会被渲染到全文很靠前的位置。
+func (m Model) inputCursorOffset() int {
+	li := m.input.LineInfo()
+	colWithinRow := li.StartColumn + li.ColumnOffset
+	row := m.input.Line()
+	rows := strings.Split(m.input.Value(), "\n")
+	offset := 0
+	for i := 0; i < row && i < len(rows); i++ {
+		offset += len([]rune(rows[i])) + 1 // +1 计入该行末尾的换行符
+	}
+	return offset + colWithinRow
 }
 
 func splitInputAtCursor(text string, cursorOffset int) (string, string) {

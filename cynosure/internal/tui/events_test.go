@@ -2131,6 +2131,24 @@ func TestLeftArrowMovesVisibleInputCursorForMiddleEditing(t *testing.T) {
 	}
 }
 
+func TestPastedMultilineInputRendersCursorAtEnd(t *testing.T) {
+	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model := updated.(Model)
+	// 模拟粘贴多行内容：textarea 会把内部光标移到内容末尾。
+	model.input.SetValue("first line\nsecond line\nthird")
+
+	rendered := plainTerminalText(model.renderInput())
+	// 光标应紧跟在最后一行内容之后。
+	if !strings.Contains(rendered, "third"+inputCursor) {
+		t.Fatalf("input = %q, want cursor rendered at end of pasted multi-line content", rendered)
+	}
+	// 修复前 bug：光标被误画到了全文很靠前的位置（首行行首）。
+	if strings.Contains(rendered, "› "+inputCursor) || strings.Contains(rendered, inputCursor+"first") {
+		t.Fatalf("input = %q, want cursor not rendered near the start after multi-line paste", rendered)
+	}
+}
+
 func TestSubmittingInputPreservesTypedSpaces(t *testing.T) {
 	app := NewModel(nil, SessionInfo{CWD: "/tmp/project"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
