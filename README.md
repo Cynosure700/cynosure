@@ -61,6 +61,12 @@ go install github.com/Cynosure700/cynosure/cynosure@latest
 
 安装后，`cynosure` 会进入 `GOBIN`，默认通常是 `~/go/bin`。请确保该目录已加入 `PATH`。
 
+```bash
+echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+
 ## 配置
 
 Cynosure 启动时从 `~/.cynosure/settings.json` 读取模型配置。最小配置示例：
