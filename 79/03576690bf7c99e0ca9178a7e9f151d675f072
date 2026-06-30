@@ -1,0 +1,16 @@
+README.md
+  h_a9698455ef5056 47-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7903576690bf7c99e0ca9178a7e9f151d675f072",
+  "prompts": {},
+  "humans": {
+    "h_a9698455ef5056": {
+      "author": "Cynosure700 <793105221@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
