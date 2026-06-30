@@ -92,11 +92,11 @@
 # linkMd
 下面展示了用户与代码库说明。请务必遵循这些说明。重要：这些说明将覆盖任何默认行为，你必须严格按其文字要求执行。
 
-/Users/bytedance/.cynosure/CYNOSURE.MD 的内容（用户为所有项目配置的私人全局说明）：
+/<PATH>/.cynosure/CYNOSURE.MD 的内容（用户为所有项目配置的私人全局说明）：
 
 {{user link content}}
 
-/Users/bytedance/project/.cynosure/CYNOSURE.MD 的内容（项目说明，已提交到代码库或工作区）：
+/<PATH>/project/.cynosure/CYNOSURE.MD 的内容（项目说明，已提交到代码库或工作区）：
 
 {{workspace link content}}
 

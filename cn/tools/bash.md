@@ -59,7 +59,7 @@
 - 创建以以下内容结尾的提交消息：
   🤖 Generated with [Claude Code](https://claude.ai/code)
 
-Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: Claude <********>
 
 - 运行git status确保提交成功。
 
@@ -80,7 +80,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
   🤖 Generated with [Claude Code](https://claude.ai/code)
 
-  Co-Authored-By: Claude <noreply@anthropic.com>
+  Co-Authored-By: Claude <********>
   EOF
   )"
   </example>

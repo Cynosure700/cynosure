@@ -4,8 +4,8 @@
     "repo": "astropy/astropy",
     "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
     "completed": true,
-    "patch_path": "/Users/bytedance/golang_pro/cynosure/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-12907/patch.diff",
-    "transcript_path": "/Users/bytedance/golang_pro/cynosure/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-12907/agent.log",
+    "patch_path": "/<PATH>/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-12907/patch.diff",
+    "transcript_path": "/<PATH>/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-12907/agent.log",
     "duration_sec": 219.0,
     "error": ""
   },
@@ -14,8 +14,8 @@
     "repo": "astropy/astropy",
     "base_commit": "a5917978be39d13cd90b517e1de4e7a539ffaa48",
     "completed": true,
-    "patch_path": "/Users/bytedance/golang_pro/cynosure/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-14182/patch.diff",
-    "transcript_path": "/Users/bytedance/golang_pro/cynosure/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-14182/agent.log",
+    "patch_path": "/<PATH>/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-14182/patch.diff",
+    "transcript_path": "/<PATH>/cynosure/evals/runs/swe30-20260629/swe_bench/cases/astropy__astropy-14182/agent.log",
     "duration_sec": 996.93,
     "error": ""
   },

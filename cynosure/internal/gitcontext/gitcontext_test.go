@@ -89,7 +89,7 @@ func TestCollectRealRepository(t *testing.T) {
 	dir := tempRepoDir(t)
 	runGit(t, dir, "init")
 	runGit(t, dir, "config", "user.name", "Test User")
-	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.email", "********")
 	if err := writeFile(dir, "a.txt", "hello"); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -142,9 +142,9 @@ func runGit(t *testing.T, dir string, args ...string) {
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_SYSTEM=/dev/null",
 		"GIT_AUTHOR_NAME=Test User",
-		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_AUTHOR_EMAIL=********",
 		"GIT_COMMITTER_NAME=Test User",
-		"GIT_COMMITTER_EMAIL=test@example.com",
+		"GIT_COMMITTER_EMAIL=********",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)

@@ -4,7 +4,7 @@
     "dataset_path": null,
     "dataset_name": "terminal-bench-core",
     "dataset_version": "0.1.1",
-    "output_path": "/Users/bytedance/golang_pro/cynosure/cynosure/evals/runs/tb30-20260629/terminal_bench",
+    "output_path": "/<PATH>/cynosure/evals/runs/tb30-20260629/terminal_bench",
     "agent_name": "cynosure",
     "no_rebuild": false,
     "cleanup": true,

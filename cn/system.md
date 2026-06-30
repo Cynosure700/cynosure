@@ -154,7 +154,7 @@ assistant: 我将帮助你实现使用指标跟踪和导出功能。让我首先
  
 以下是关于你运行环境的有用信息：
 <env>
-工作目录：/Users/bytedance/github/claude-code-proxy
+工作目录：/<PATH>/github/claude-code-proxy
 目录是git仓库：是
 平台：darwin
 操作系统版本：Darwin 24.6.0
@@ -185,12 +185,11 @@ gitStatus：这是对话开始时的git状态。请注意，此状态是时间�
 主分支（你通常会用于PR）：main
  
 状态：
-A BYTEDANCE_SETUP.md
 M CLAUDE.md
 M src/conversion/request_converter.py
 M src/main.py
 A test_ark.py
-A test_bytedance.py
+A test_*********.py
  
 最近的提交：
 406e3c7 support ark models and opengpt

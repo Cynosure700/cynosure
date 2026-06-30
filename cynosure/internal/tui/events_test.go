@@ -126,7 +126,7 @@ func TestToolMessageRendersLeadingBlueBullet(t *testing.T) {
 	app.width = 120
 	msg := Message{Role: "tool", ToolCall: &ToolCallView{
 		Name:          "Glob",
-		ArgsPreview:   `path="/Users/bytedance/golang_pro/cynosure", pattern="**/README*"`,
+		ArgsPreview:   `path="/<PATH>/cynosure", pattern="**/README*"`,
 		Status:        "success",
 		ResultPreview: "Found 1 file(s).",
 	}}
@@ -899,7 +899,7 @@ func TestSubagentToolStatusAttachesUnderRunningColumn(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_1",
 		"tool_name":          "read_file",
-		"args_preview":       "file_path: /Users/bytedance/golang_pro/cynosure/cynosure/main.go",
+		"args_preview":       "file_path: /<PATH>/cynosure/main.go",
 		"status":             "running",
 		"scope":              "subagent",
 		"ephemeral_group_id": "subagent_1",
@@ -1088,7 +1088,7 @@ func TestStaleSubagentToolDoneDoesNotReappendReplacedToolStatus(t *testing.T) {
 	updated, _ = model.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_2",
 		"tool_name":          "ls",
-		"args_preview":       "path: /Users/bytedance/golang_pro/cynosure/cynosure",
+		"args_preview":       "path: /<PATH>/cynosure",
 		"status":             "running",
 		"scope":              "subagent",
 		"ephemeral_group_id": "subagent_1",
@@ -1110,7 +1110,7 @@ func TestStaleSubagentToolDoneDoesNotReappendReplacedToolStatus(t *testing.T) {
 	if strings.Contains(rendered, "glob") || strings.Contains(rendered, "pattern: go.mod") {
 		t.Fatalf("rendered = %q, stale child tool done should not reappend replaced status", rendered)
 	}
-	if !strings.Contains(rendered, "Ls") || !strings.Contains(rendered, "path: /Users/bytedance/golang_pro/cynosure/cynosure") {
+	if !strings.Contains(rendered, "Ls") || !strings.Contains(rendered, "path: /<PATH>/cynosure") {
 		t.Fatalf("rendered = %q, want latest child tool status to remain visible", rendered)
 	}
 }
@@ -1137,7 +1137,7 @@ func TestToolMessageRendersAllRawArgs(t *testing.T) {
 func TestToolMessageTruncatesLongArgsToTwoLines(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 60
-	longTask := "探索这个 Go 项目（工作区根目录 /Users/bytedance/golang_pro/cynosure/cynosure）的 internal/tools 包。这是 agent 的工具系统。请阅读该目录下所有文件并总结：1. 工具是如何定义和注册的 2. 有哪些内置工具 3. 工具执行的流程 4. 是否支持 MCP 工具 5. 工具结果如何反馈给 LLM。请用中文返回结构化总结。"
+	longTask := "探索这个 Go 项目（工作区根目录 /<PATH>/cynosure）的 internal/tools 包。这是 agent 的工具系统。请阅读该目录下所有文件并总结：1. 工具是如何定义和注册的 2. 有哪些内置工具 3. 工具执行的流程 4. 是否支持 MCP 工具 5. 工具结果如何反馈给 LLM。请用中文返回结构化总结。"
 	msg := Message{Role: "tool", ToolCall: &ToolCallView{
 		Name:        "spawn_subagent",
 		RawArgs:     `{"sub_type":"explore","task":"` + longTask + `"}`,
@@ -1168,7 +1168,7 @@ func TestSubagentToolStatusWrapsContinuationAtStatusColumn(t *testing.T) {
 	app.width = 36
 	app.generation = 1
 	app.running = true
-	longArgs := "task: 探索 /Users/bytedance/golang_pro/cynosure/cynosure 当前项目结构和技术栈"
+	longArgs := "task: 探索 /<PATH>/cynosure 当前项目结构和技术栈"
 
 	updated, _ := app.Update(Event{Generation: 1, Name: "tool_call_start", Data: map[string]any{
 		"tool_call_id":       "subagent_1:tool_1",
@@ -1891,7 +1891,7 @@ func TestHeaderUsesGreenAccentAndCompactCenteredLinkVersionMascot(t *testing.T) 
 }
 
 func TestHeaderBoxClosesWithinTerminalWidth(t *testing.T) {
-	app := NewModel(nil, SessionInfo{CWD: "/Users/bytedance/golang_pro/cynosure/cynosure", ModelID: "deepseek-v4-flash"})
+	app := NewModel(nil, SessionInfo{CWD: "/<PATH>/cynosure", ModelID: "deepseek-v4-flash"})
 	updated, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	model := updated.(Model)
 

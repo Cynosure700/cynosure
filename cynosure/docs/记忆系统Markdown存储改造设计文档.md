@@ -281,7 +281,7 @@ You are a project-scoped memory retrieval engine. Given the current project, cur
 
 其中：
 
-- `project_name` 来自当前工作目录名，例如 `/Users/bytedance/golang_pro/cynosure` 对应 `cynosure`；若目录名为空，则使用清洗后的 workspace root 兜底。
+- `project_name` 来自当前工作目录名，例如 `/<PATH>/cynosure` 对应 `cynosure`；若目录名为空，则使用清洗后的 workspace root 兜底。
 - `session_id` 为上述随机 UUID。
 - key 中的项目名和 session_id 均做安全清洗，仅保留 `[A-Za-z0-9._-]`，其他字符替换为 `-`。
 
