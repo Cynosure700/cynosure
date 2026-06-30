@@ -44,6 +44,13 @@ Cynosure 使用 Go 构建和安装。请先安装 Go 1.26.1 或更高版本：
 go version
 ```
 
+配置代理：
+
+```bash
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+```
+
 ### 安装 Cynosure
 
 执行以下命令安装：
