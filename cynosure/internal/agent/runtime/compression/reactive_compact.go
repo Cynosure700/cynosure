@@ -12,10 +12,10 @@ const reactiveCompactStrategyName = "reactive_compact"
 const (
 	// reactiveSummaryTargetTokens 是被动压缩的摘要预算；
 	// 比 FullHistorySummarization 的 8K 更激进。
-	reactiveSummaryTargetTokens = 2 * 1024
+	reactiveSummaryTargetTokens = 2 * 1000
 	// reactiveTailMinTokens 限制逐字保留的近期历史量；
 	// 比 FullHistorySummarization 的 16K 更激进。
-	reactiveTailMinTokens = 4 * 1024
+	reactiveTailMinTokens = 4 * 1000
 )
 
 // ReactiveCompactStrategy 在 LLM 以 HTTP 413（上下文溢出）拒绝请求时被带外调用。

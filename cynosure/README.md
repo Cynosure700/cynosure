@@ -75,7 +75,7 @@ TUI 模式不包含 MySQL、Redis、Elasticsearch 或 Web 服务依赖。
 }
 ```
 
-`env.open_auth_token`、`env.open_model`、`env.open_base_url` 任一缺失都会导致 TUI 启动失败。密钥不会写入日志或 TUI 展示。
+`env.open_auth_token`、`env.open_model`、`env.open_base_url` 均为可选启动配置；缺失时 TUI 仍会正常启动，但发起模型请求前需要补齐对应配置。密钥不会写入日志或 TUI 展示。
 
 ### 本地存储边界
 

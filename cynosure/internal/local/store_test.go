@@ -867,6 +867,25 @@ func TestBootstrapLoadsCynosureMarkdownIntoRuntime(t *testing.T) {
 	}
 }
 
+func TestBootstrapAllowsMissingCynosureSettings(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	workspace := filepath.Join(tmp, "project")
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle, err := Bootstrap(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("Bootstrap returned error without cynosure settings: %v", err)
+	}
+	t.Cleanup(bundle.Close)
+	if bundle.Runtime.Cfg.LLM.APIKey != "" || bundle.Runtime.Cfg.LLM.ModelID != "" || bundle.Runtime.Cfg.LLM.BaseURL != "" {
+		t.Fatalf("LLM = %#v, want empty optional config", bundle.Runtime.Cfg.LLM)
+	}
+}
+
 func writeFile(t *testing.T, path string, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

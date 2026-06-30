@@ -10,8 +10,8 @@ import (
 const conversationMemoryStrategyName = "conversation_memory"
 
 const (
-	conversationMemoryMinTokens = 10 * 1024
-	conversationMemoryMaxTokens = 40 * 1024
+	conversationMemoryMinTokens = 10 * 1000
+	conversationMemoryMaxTokens = 40 * 1000
 	conversationMemoryMinCount  = 5
 
 	conversationMemorySystemPreamble = "以下是本会话的记忆，由系统随对话持续维护，仅用于本次模型推理，不是用户发送的真实消息。请把它当作已发生对话的可靠浓缩。"

@@ -27,7 +27,7 @@ func (s *Service) conversationMemorySystemPrompt() string {
 
 const (
 	// sessionMemoryInitialTokens 是会话记忆初次提取的上下文 token 门槛（需求1）。
-	sessionMemoryInitialTokens = 10 * 1024
+	sessionMemoryInitialTokens = 10 * 1000
 	// sessionMemoryTokenGrowth 是触发增量更新所需的 token 增长（需求2）。
 	sessionMemoryTokenGrowth = 5000
 	// sessionMemoryToolCallsMin 是 round 中途触发更新所需的工具调用次数（需求2 条件1）。

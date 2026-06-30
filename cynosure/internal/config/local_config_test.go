@@ -80,7 +80,7 @@ func TestLoadLocalConfigUsesLaunchCWDAsWorkspace(t *testing.T) {
 	}
 }
 
-func TestLoadLocalConfigRequiresCynosureSettingsFields(t *testing.T) {
+func TestLoadLocalConfigAllowsMissingCynosureSettingsFields(t *testing.T) {
 	tmp := t.TempDir()
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -97,16 +97,40 @@ func TestLoadLocalConfigRequiresCynosureSettingsFields(t *testing.T) {
 	t.Setenv("HOME", home)
 	writeCynosureSettings(t, home, `{"env":{"open_auth_token":"secret-token","open_model":"","open_base_url":""}}`)
 
-	_, err = LoadLocalConfig(tmp)
-	if err == nil {
-		t.Fatal("LoadLocalConfig returned nil error without required cynosure settings fields")
+	cfg, err := LoadLocalConfig(tmp)
+	if err != nil {
+		t.Fatalf("LoadLocalConfig returned error without optional cynosure settings fields: %v", err)
 	}
-	message := err.Error()
-	if !strings.Contains(message, "open_model") || !strings.Contains(message, "open_base_url") {
-		t.Fatalf("error = %q, want missing open_model and open_base_url", message)
+	if cfg.LLM.APIKey != "secret-token" {
+		t.Fatalf("APIKey = %q, want preserved configured token", cfg.LLM.APIKey)
 	}
-	if strings.Contains(message, "secret-token") {
-		t.Fatalf("error leaked token: %q", message)
+	if cfg.LLM.ModelID != "" || cfg.LLM.BaseURL != "" {
+		t.Fatalf("LLM = %#v, want missing model fields left empty", cfg.LLM)
+	}
+}
+
+func TestLoadLocalConfigAllowsMissingCynosureSettingsFile(t *testing.T) {
+	tmp := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "config.json"), []byte(`{"app_home":"."}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(tmp, "home")
+	t.Setenv("HOME", home)
+
+	cfg, err := LoadLocalConfig(tmp)
+	if err != nil {
+		t.Fatalf("LoadLocalConfig returned error without cynosure settings file: %v", err)
+	}
+	if cfg.LLM.APIKey != "" || cfg.LLM.ModelID != "" || cfg.LLM.BaseURL != "" {
+		t.Fatalf("LLM = %#v, want empty optional config", cfg.LLM)
 	}
 }
 

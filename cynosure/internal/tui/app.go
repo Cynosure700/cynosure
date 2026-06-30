@@ -2209,6 +2209,9 @@ func inputStatusStyle() lipgloss.Style {
 }
 
 func compactNumber(n int) string {
+	if n >= 1000*1000 {
+		return fmt.Sprintf("%dm", n/(1000*1000))
+	}
 	if n >= 1000 {
 		return fmt.Sprintf("%dk", n/1000)
 	}

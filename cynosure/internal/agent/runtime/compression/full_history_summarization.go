@@ -11,7 +11,7 @@ import (
 const fullHistorySummarizationStrategyName = "full_history_summarization"
 
 const (
-	summaryTargetTokens   = 8 * 1024
+	summaryTargetTokens   = 8 * 1000
 	recentTailMessages    = 5
 	summarySystemPreamble = "以下是为满足上下文窗口限制生成的会话摘要，仅用于本次模型推理，不是用户发送的真实消息。请把它当作已发生对话的可靠浓缩。"
 )

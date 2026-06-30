@@ -11,13 +11,13 @@ import (
 
 const (
 	// 默认上下文限制（200K）：未命中大上下文模型时采用。
-	defaultModelContextLimit = 200 * 1024
+	defaultModelContextLimit = 200 * 1000
 	// 大上下文模型（如 deepseek-v4-flash / deepseek-v4-pro / glm-5.2）的上下文限制（1M）。
-	largeModelContextLimit = 1024 * 1024
-	// 8KB 最大响应 token 数
-	defaultMaxResponseTokens = 8 * 1024
-	// 8KB 安全余量
-	defaultSafetyMargin = 8 * 1024
+	largeModelContextLimit = 1000 * 1000
+	// 8K 最大响应 token 数
+	defaultMaxResponseTokens = 8 * 1000
+	// 8K 安全余量
+	defaultSafetyMargin = 8 * 1000
 )
 
 // largeContextModels 列出上下文限制为 1M 的模型 ID（小写归一化后匹配）。

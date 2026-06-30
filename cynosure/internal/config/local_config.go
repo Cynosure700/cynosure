@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -332,7 +331,7 @@ func loadLinkLLMConfig() (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Config{}, fmt.Errorf("missing LLM settings; create %s with env.open_auth_token, env.open_model, env.open_base_url", path)
+			return Config{}, nil
 		}
 		return Config{}, fmt.Errorf("read LLM settings %s: %w", path, err)
 	}
@@ -344,20 +343,6 @@ func loadLinkLLMConfig() (Config, error) {
 		BaseURL: strings.TrimSpace(settings.Env.OpenBaseURL),
 		APIKey:  strings.TrimSpace(settings.Env.OpenAuthToken),
 		ModelID: strings.TrimSpace(settings.Env.OpenModel),
-	}
-	missing := make([]string, 0, 3)
-	if cfg.APIKey == "" {
-		missing = append(missing, "env.open_auth_token")
-	}
-	if cfg.ModelID == "" {
-		missing = append(missing, "env.open_model")
-	}
-	if cfg.BaseURL == "" {
-		missing = append(missing, "env.open_base_url")
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return Config{}, fmt.Errorf("missing LLM settings in %s: %s", path, strings.Join(missing, ", "))
 	}
 	return cfg, nil
 }
