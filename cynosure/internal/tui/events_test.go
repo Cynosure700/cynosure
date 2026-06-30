@@ -633,6 +633,59 @@ func TestAssistantDeltaDoneRefreshesLiveAssistantWithFullContent(t *testing.T) {
 	}
 }
 
+func TestAssistantDeltaWithStreamSequenceRendersInOrder(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "二", Data: map[string]any{
+		"content":   "二",
+		"stream_id": "stream_1",
+		"delta_seq": 2,
+	}})
+	model := updated.(Model)
+	if len(model.messages) != 1 || model.messages[0].Content != "" {
+		t.Fatalf("messages after out-of-order delta = %#v, want empty live assistant until seq 1 arrives", model.messages)
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_delta", Content: "一", Data: map[string]any{
+		"content":   "一",
+		"stream_id": "stream_1",
+		"delta_seq": 1,
+	}})
+	model = updated.(Model)
+
+	if len(model.messages) != 1 || model.messages[0].Content != "一二" {
+		t.Fatalf("messages = %#v, want buffered deltas flushed in stream sequence order", model.messages)
+	}
+}
+
+func TestStreamResetWithStreamIDDiscardsOnlyMatchingLiveAssistant(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+	app.messages = []Message{{Role: "assistant", Content: "旧回答"}}
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "半截", Data: map[string]any{
+		"content":   "半截",
+		"stream_id": "stream_1",
+		"delta_seq": 1,
+	}})
+	model := updated.(Model)
+	if len(model.messages) != 2 || model.messages[0].Content != "旧回答" || model.messages[1].Content != "半截" {
+		t.Fatalf("messages before reset = %#v, want old assistant plus partial stream", model.messages)
+	}
+
+	updated, _ = model.Update(Event{Generation: 1, Name: "assistant_stream_reset", Data: map[string]any{
+		"stream_id": "stream_1",
+	}})
+	model = updated.(Model)
+
+	if len(model.messages) != 1 || model.messages[0].Content != "旧回答" {
+		t.Fatalf("messages after reset = %#v, want only matching stream removed", model.messages)
+	}
+}
+
 func TestUpdateStopsDrainingAtTerminalDoneEvent(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1

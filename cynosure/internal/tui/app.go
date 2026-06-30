@@ -50,6 +50,7 @@ type Message struct {
 	Role             string
 	Content          string
 	ReasoningContent string
+	StreamID         string
 	ToolCall         *ToolCallView
 }
 
@@ -127,6 +128,13 @@ type Model struct {
 	workingStarted    bool
 	fileToolsExpanded bool
 	renderCache       *messageRenderCache
+	streams           map[string]*assistantStreamState
+}
+
+type assistantStreamState struct {
+	MessageIndex int
+	NextSeq      int
+	Pending      map[int]string
 }
 
 // messageRenderCache 缓存每条消息的渲染结果，避免每个流式增量都重算全部历史。
@@ -156,7 +164,7 @@ func NewModel(runtimeService *runtime.Service, session SessionInfo) Model {
 	input.ShowLineNumbers = false
 	vp := viewport.New(100, 20)
 	renderer := newMarkdownRenderer(100)
-	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer, autoFollow: true, renderCache: newMessageRenderCache()}
+	return Model{runtime: runtimeService, session: session, input: input, viewport: vp, width: 100, height: 20, events: make(chan Event, 128), renderer: renderer, autoFollow: true, renderCache: newMessageRenderCache(), streams: make(map[string]*assistantStreamState)}
 }
 
 func Run(ctx context.Context, runtimeService *runtime.Service, session SessionInfo) error {
@@ -319,12 +327,12 @@ func (m *Model) applyEvent(msg Event) {
 		}
 	case "assistant_delta":
 		m.workingStarted = true
-		m.appendAssistantDelta(msg.Content)
+		m.appendAssistantDelta(msg.Content, msg.Data)
 	case "assistant_delta_done":
 		m.workingStarted = true
-		m.refreshLiveAssistant(msg.Content)
+		m.refreshLiveAssistant(msg.Content, msg.Data)
 	case "assistant_stream_reset":
-		m.resetLiveAssistant()
+		m.resetLiveAssistant(msg.Data)
 	case "assistant":
 		m.workingStarted = true
 		m.updateMetaFromData(msg.Data)
@@ -333,7 +341,7 @@ func (m *Model) applyEvent(msg Event) {
 			content = eventContent(msg.Data)
 		}
 		if content != "" {
-			m.replaceLastAssistant(content, eventString(msg.Data, "reasoning_content"))
+			m.replaceLastAssistant(content, eventString(msg.Data, "reasoning_content"), eventString(msg.Data, "stream_id"))
 		}
 	case "meta":
 		m.updateMetaFromData(msg.Data)
@@ -750,7 +758,33 @@ func (m *Model) appendMessage(role, content string) {
 	m.messages = append(m.messages, Message{Role: role, Content: content})
 }
 
-func (m *Model) appendAssistantDelta(delta string) {
+func (m *Model) appendAssistantDelta(delta string, data any) {
+	streamID := eventString(data, "stream_id")
+	seq, hasSeq := eventInt(data, "delta_seq")
+	if streamID == "" || !hasSeq || seq <= 0 {
+		m.appendAssistantDeltaLegacy(delta)
+		return
+	}
+	state := m.assistantStream(streamID)
+	if seq < state.NextSeq {
+		return
+	}
+	if seq > state.NextSeq {
+		state.Pending[seq] = delta
+		return
+	}
+	m.appendAssistantDeltaToStream(state, delta)
+	for {
+		pending, ok := state.Pending[state.NextSeq]
+		if !ok {
+			return
+		}
+		delete(state.Pending, state.NextSeq)
+		m.appendAssistantDeltaToStream(state, pending)
+	}
+}
+
+func (m *Model) appendAssistantDeltaLegacy(delta string) {
 	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
 		m.appendMessage("assistant", delta)
 		return
@@ -758,10 +792,31 @@ func (m *Model) appendAssistantDelta(delta string) {
 	m.messages[len(m.messages)-1].Content += delta
 }
 
-func (m *Model) refreshLiveAssistant(content string) {
+func (m *Model) appendAssistantDeltaToStream(state *assistantStreamState, delta string) {
+	if state == nil || state.MessageIndex < 0 || state.MessageIndex >= len(m.messages) {
+		return
+	}
+	m.messages[state.MessageIndex].Content += delta
+	state.NextSeq++
+}
+
+func (m *Model) refreshLiveAssistant(content string, data any) {
 	if strings.TrimSpace(content) == "" {
 		return
 	}
+	streamID := eventString(data, "stream_id")
+	if streamID == "" {
+		m.refreshLiveAssistantLegacy(content)
+		return
+	}
+	state := m.assistantStream(streamID)
+	if state.MessageIndex >= 0 && state.MessageIndex < len(m.messages) {
+		m.messages[state.MessageIndex].Content = content
+	}
+	delete(m.streams, streamID)
+}
+
+func (m *Model) refreshLiveAssistantLegacy(content string) {
 	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
 		m.appendMessage("assistant", content)
 		return
@@ -772,7 +827,13 @@ func (m *Model) refreshLiveAssistant(content string) {
 // resetLiveAssistant 丢弃本轮正在流式显示的半截 assistant 内容。运行时在输出
 // 被截断升级重试、或上下文溢出压缩重试时会发出 assistant_stream_reset：那段
 // 已流式显示的内容会被废弃并重新生成，这里把它从界面移除，避免与重试结果叠加。
-func (m *Model) resetLiveAssistant() {
+func (m *Model) resetLiveAssistant(data any) {
+	streamID := eventString(data, "stream_id")
+	if streamID != "" {
+		m.removeAssistantStream(streamID)
+		m.workingStarted = false
+		return
+	}
 	if len(m.messages) > 0 && isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
 		m.messages = m.messages[:len(m.messages)-1]
 	}
@@ -780,14 +841,79 @@ func (m *Model) resetLiveAssistant() {
 	m.workingStarted = false
 }
 
-func (m *Model) replaceLastAssistant(content, reasoning string) {
+func (m *Model) replaceLastAssistant(content, reasoning, streamID string) {
+	if streamID != "" {
+		state := m.assistantStream(streamID)
+		if state.MessageIndex >= 0 && state.MessageIndex < len(m.messages) {
+			m.messages[state.MessageIndex].Role = "assistant"
+			m.messages[state.MessageIndex].Content = content
+			m.messages[state.MessageIndex].ReasoningContent = reasoning
+			delete(m.streams, streamID)
+			return
+		}
+	}
 	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
-		m.messages = append(m.messages, Message{Role: "assistant", Content: content, ReasoningContent: reasoning})
+		m.messages = append(m.messages, Message{Role: "assistant", Content: content, ReasoningContent: reasoning, StreamID: streamID})
 		return
 	}
 	m.messages[len(m.messages)-1].Role = "assistant"
 	m.messages[len(m.messages)-1].Content = content
 	m.messages[len(m.messages)-1].ReasoningContent = reasoning
+	if streamID != "" {
+		m.messages[len(m.messages)-1].StreamID = streamID
+		delete(m.streams, streamID)
+	}
+}
+
+func (m *Model) assistantStream(streamID string) *assistantStreamState {
+	if m.streams == nil {
+		m.streams = make(map[string]*assistantStreamState)
+	}
+	if state, ok := m.streams[streamID]; ok {
+		if state.MessageIndex >= 0 && state.MessageIndex < len(m.messages) && m.messages[state.MessageIndex].StreamID == streamID {
+			return state
+		}
+		for i := range m.messages {
+			if isLiveAssistantRole(m.messages[i].Role) && m.messages[i].StreamID == streamID {
+				state.MessageIndex = i
+				return state
+			}
+		}
+	}
+	m.messages = append(m.messages, Message{Role: "assistant", StreamID: streamID})
+	state := &assistantStreamState{MessageIndex: len(m.messages) - 1, NextSeq: 1, Pending: make(map[int]string)}
+	m.streams[streamID] = state
+	return state
+}
+
+func (m *Model) removeAssistantStream(streamID string) {
+	state, ok := m.streams[streamID]
+	if !ok {
+		return
+	}
+	removedIndex := -1
+	if state.MessageIndex >= 0 && state.MessageIndex < len(m.messages) && m.messages[state.MessageIndex].StreamID == streamID {
+		removedIndex = state.MessageIndex
+	} else {
+		for i := range m.messages {
+			if isLiveAssistantRole(m.messages[i].Role) && m.messages[i].StreamID == streamID {
+				removedIndex = i
+				break
+			}
+		}
+	}
+	if removedIndex >= 0 {
+		m.messages = append(m.messages[:removedIndex], m.messages[removedIndex+1:]...)
+	}
+	delete(m.streams, streamID)
+	if removedIndex < 0 {
+		return
+	}
+	for _, other := range m.streams {
+		if other.MessageIndex > removedIndex {
+			other.MessageIndex--
+		}
+	}
 }
 
 func (m *Model) appendToolCallStart(data any) {

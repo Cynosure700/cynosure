@@ -1015,9 +1015,17 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != assistantDeltaDoneEvent || events[3].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
 	}
+	firstDelta, ok := events[0].data.(map[string]any)
+	if !ok || firstDelta["stream_id"] == "" || firstDelta["delta_seq"] != 1 {
+		t.Fatalf("first assistant_delta payload = %#v, want stream_id and delta_seq=1", events[0].data)
+	}
+	secondDelta, ok := events[1].data.(map[string]any)
+	if !ok || secondDelta["stream_id"] != firstDelta["stream_id"] || secondDelta["delta_seq"] != 2 {
+		t.Fatalf("second assistant_delta payload = %#v, want same stream_id and delta_seq=2", events[1].data)
+	}
 	payload, ok := events[2].data.(map[string]any)
-	if !ok || payload["content"] != "你好" {
-		t.Fatalf("assistant_delta_done payload = %#v, want full content", events[2].data)
+	if !ok || payload["content"] != "你好" || payload["stream_id"] != firstDelta["stream_id"] || payload["delta_count"] != 2 {
+		t.Fatalf("assistant_delta_done payload = %#v, want full content, same stream_id, and delta_count=2", events[2].data)
 	}
 }
 

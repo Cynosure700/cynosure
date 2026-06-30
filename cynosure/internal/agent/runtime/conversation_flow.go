@@ -460,13 +460,13 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 	var accumulatedReasoning strings.Builder
 
 	for {
-		msg, finishReason, streamedContent, err := s.runModelRoundStream(ctx, state, cur)
+		msg, finishReason, streamedContent, streamID, err := s.runModelRoundStream(ctx, state, cur)
 		if err != nil {
 			if llm.IsContextOverflow(err) && !compacted {
 				// 上下文溢出会丢弃这一轮（可能已流式输出的）部分内容并从压缩后的
 				// 历史重试，因此先让 UI 清空已显示的半截输出。
 				if streamedContent {
-					emitStreamReset(state)
+					emitStreamReset(state, streamID)
 				}
 				if compactErr := s.reactiveCompact(ctx, state); compactErr != nil {
 					logger.Warn(fmt.Sprintf("reactive compact failed conversation=%s: %v", state.Conversation.ID, compactErr))
@@ -504,7 +504,7 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 			// 丢弃部分输出，升级预算，原样重试。已流式输出的半截内容需要让
 			// UI 先清空，避免与升级后重试得到的完整内容叠加。
 			if streamedContent {
-				emitStreamReset(state)
+				emitStreamReset(state, streamID)
 			}
 			upgraded = true
 			cur.MaxTokens = truncationMaxTokens
@@ -533,17 +533,21 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 // emitStreamReset 通知 UI 丢弃本轮已流式显示的半截 assistant 内容。用于输出被
 // 截断升级重试、或上下文溢出压缩重试这类「已发出的增量会被废弃并重新生成」的
 // 场景，避免被废弃的半截输出残留在界面上与重试结果叠加。
-func emitStreamReset(state *LoopState) {
+func emitStreamReset(state *LoopState, streamID string) {
 	if state == nil || state.Writer == nil {
 		return
 	}
-	_ = state.Writer.Event(assistantStreamResetEvent, map[string]any{})
+	payload := map[string]any{}
+	if streamID != "" {
+		payload["stream_id"] = streamID
+	}
+	_ = state.Writer.Event(assistantStreamResetEvent, payload)
 }
 
-func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, bool, error) {
+func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, bool, string, error) {
 	stream, err := s.LLM.CreateChatCompletionStream(ctx, req)
 	if err != nil {
-		return openai.ChatCompletionMessage{}, "", false, err
+		return openai.ChatCompletionMessage{}, "", false, "", err
 	}
 	defer stream.Close()
 
@@ -554,6 +558,8 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 	streamedContent := false
 	seenChoice := false
 	seenOutput := false
+	streamID := idgen.New("stream")
+	deltaSeq := 0
 
 	for {
 		chunk, err := stream.Recv()
@@ -561,7 +567,7 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 			if err == io.EOF {
 				break
 			}
-			return openai.ChatCompletionMessage{}, "", streamedContent, err
+			return openai.ChatCompletionMessage{}, "", streamedContent, streamID, err
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -574,7 +580,12 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 			// 边收边发：每个内容增量都立刻下发给 UI，让回复随生成逐字呈现，
 			// 而不是在整段流结束后一次性补发，避免长时间空白后瞬间刷屏。
 			if state.Writer != nil {
-				_ = state.Writer.Event(assistantDeltaEvent, map[string]any{"content": choice.Delta.Content})
+				deltaSeq++
+				_ = state.Writer.Event(assistantDeltaEvent, map[string]any{
+					"content":   choice.Delta.Content,
+					"stream_id": streamID,
+					"delta_seq": deltaSeq,
+				})
 				streamedContent = true
 			}
 		}
@@ -592,14 +603,18 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		}
 	}
 	if !seenChoice || (!seenOutput && finishReason == "") {
-		return openai.ChatCompletionMessage{}, "", streamedContent, fmt.Errorf("model stream returned no choices")
+		return openai.ChatCompletionMessage{}, "", streamedContent, streamID, fmt.Errorf("model stream returned no choices")
 	}
 	calls := toolCalls.Calls()
 	if streamedContent && state.Writer != nil {
-		_ = state.Writer.Event(assistantDeltaDoneEvent, map[string]any{"content": content.String()})
+		_ = state.Writer.Event(assistantDeltaDoneEvent, map[string]any{
+			"content":     content.String(),
+			"stream_id":   streamID,
+			"delta_count": deltaSeq,
+		})
 	}
 
-	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, streamedContent, nil
+	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, streamedContent, streamID, nil
 }
 
 type streamedToolCallAccumulator struct {
