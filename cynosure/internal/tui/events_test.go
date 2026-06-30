@@ -616,6 +616,23 @@ func TestUpdateCoalescesPendingStreamingEventsIntoOneFrame(t *testing.T) {
 	}
 }
 
+func TestAssistantDeltaDoneRefreshesLiveAssistantWithFullContent(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.generation = 1
+	app.running = true
+
+	updated, _ := app.Update(Event{Generation: 1, Name: "assistant_delta", Content: "我先检"})
+	updated, _ = updated.(Model).Update(Event{Generation: 1, Name: "assistant_delta_done", Content: "我先检查"})
+	model := updated.(Model)
+
+	if len(model.messages) != 1 {
+		t.Fatalf("messages = %#v, want one assistant message", model.messages)
+	}
+	if model.messages[0].Role != "assistant" || model.messages[0].Content != "我先检查" {
+		t.Fatalf("messages = %#v, want delta_done to refresh live assistant with full content", model.messages)
+	}
+}
+
 func TestUpdateStopsDrainingAtTerminalDoneEvent(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.generation = 1

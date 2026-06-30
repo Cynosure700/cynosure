@@ -320,6 +320,9 @@ func (m *Model) applyEvent(msg Event) {
 	case "assistant_delta":
 		m.workingStarted = true
 		m.appendAssistantDelta(msg.Content)
+	case "assistant_delta_done":
+		m.workingStarted = true
+		m.refreshLiveAssistant(msg.Content)
 	case "assistant_stream_reset":
 		m.resetLiveAssistant()
 	case "assistant":
@@ -753,6 +756,17 @@ func (m *Model) appendAssistantDelta(delta string) {
 		return
 	}
 	m.messages[len(m.messages)-1].Content += delta
+}
+
+func (m *Model) refreshLiveAssistant(content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	if len(m.messages) == 0 || !isLiveAssistantRole(m.messages[len(m.messages)-1].Role) {
+		m.appendMessage("assistant", content)
+		return
+	}
+	m.messages[len(m.messages)-1].Content = content
 }
 
 // resetLiveAssistant 丢弃本轮正在流式显示的半截 assistant 内容。运行时在输出

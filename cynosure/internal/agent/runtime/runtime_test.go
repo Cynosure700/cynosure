@@ -1009,11 +1009,15 @@ func TestRespondToConversation_StreamsAssistantContentDeltas(t *testing.T) {
 		t.Fatalf("expected streamed content to be persisted, got %q", message.Content)
 	}
 	events := writer.nonMetaEvents()
-	if len(events) != 3 {
-		t.Fatalf("expected 2 deltas and final assistant, got %#v", events)
+	if len(events) != 4 {
+		t.Fatalf("expected 2 deltas, delta_done, and final assistant, got %#v", events)
 	}
-	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != "assistant" {
+	if events[0].name != "assistant_delta" || events[1].name != "assistant_delta" || events[2].name != assistantDeltaDoneEvent || events[3].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
+	}
+	payload, ok := events[2].data.(map[string]any)
+	if !ok || payload["content"] != "你好" {
+		t.Fatalf("assistant_delta_done payload = %#v, want full content", events[2].data)
 	}
 }
 
@@ -1164,7 +1168,7 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 		t.Fatalf("expected history reasoning content, got %q", got)
 	}
 	events := writer.nonMetaEvents()
-	if len(events) != 2 || events[0].name != "assistant_delta" || events[1].name != "assistant" {
+	if len(events) != 3 || events[0].name != "assistant_delta" || events[1].name != assistantDeltaDoneEvent || events[2].name != "assistant" {
 		t.Fatalf("expected streamed content delta and final assistant event, got %#v", events)
 	}
 	for _, event := range events {
@@ -1172,9 +1176,13 @@ func TestRespondToConversation_PersistsReasoningContent(t *testing.T) {
 			t.Fatalf("reasoning_content must not be streamed to UI, got %#v", events)
 		}
 	}
-	payload, ok := events[1].data.(map[string]any)
+	donePayload, ok := events[1].data.(map[string]any)
+	if !ok || donePayload["content"] != "最终答案" {
+		t.Fatalf("expected assistant_delta_done to include full content, got %#v", events[1].data)
+	}
+	payload, ok := events[2].data.(map[string]any)
 	if !ok || payload["reasoning_content"] != "内部推理过程" {
-		t.Fatalf("expected assistant event to include reasoning_content, got %#v", events[1].data)
+		t.Fatalf("expected assistant event to include reasoning_content, got %#v", events[2].data)
 	}
 }
 
@@ -1196,10 +1204,10 @@ func TestRespondToConversation_StreamsContentButNotReasoning(t *testing.T) {
 		t.Fatalf("expected streamed reasoning persisted and content, got %#v", message)
 	}
 	events := writer.nonMetaEvents()
-	if len(events) != 2 {
-		t.Fatalf("expected content delta and final assistant, got %#v", events)
+	if len(events) != 3 {
+		t.Fatalf("expected content delta, delta_done, and final assistant, got %#v", events)
 	}
-	if events[0].name != "assistant_delta" || events[1].name != "assistant" {
+	if events[0].name != "assistant_delta" || events[1].name != assistantDeltaDoneEvent || events[2].name != "assistant" {
 		t.Fatalf("unexpected events: %#v", events)
 	}
 	for _, event := range events {
@@ -1207,9 +1215,65 @@ func TestRespondToConversation_StreamsContentButNotReasoning(t *testing.T) {
 			t.Fatalf("reasoning_content must not be streamed to UI, got %#v", events)
 		}
 	}
-	payload, ok := events[1].data.(map[string]any)
+	donePayload, ok := events[1].data.(map[string]any)
+	if !ok || donePayload["content"] != "答案" {
+		t.Fatalf("expected assistant_delta_done to include full content, got %#v", events[1].data)
+	}
+	payload, ok := events[2].data.(map[string]any)
 	if !ok || payload["message_id"] == "" || payload["final"] != true || payload["reasoning_content"] != "先思考" {
-		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", events[1].data)
+		t.Fatalf("expected final assistant metadata and reasoning content, got %#v", events[2].data)
+	}
+}
+
+func TestRespondToConversation_EmitsDeltaDoneWithFullContentBeforeToolStart(t *testing.T) {
+	llm := &fakeLLMClient{streamChunkSets: [][]openai.ChatCompletionStreamResponse{
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "我先"}}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "检查"}, FinishReason: openai.FinishReasonToolCalls}}},
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{ToolCalls: []openai.ToolCall{{Index: intPointer(0), ID: "tool_1", Type: openai.ToolTypeFunction, Function: openai.FunctionCall{Name: "bash", Arguments: `{"command":"pwd"}`}}}}, FinishReason: openai.FinishReasonToolCalls}}},
+		},
+		{
+			{Choices: []openai.ChatCompletionStreamChoice{{Delta: openai.ChatCompletionStreamChoiceDelta{Content: "完成"}, FinishReason: openai.FinishReasonStop}}},
+		},
+	}}
+	store := &fakeStore{}
+	cfg := testAppConfig(t)
+	cfg.AllowedTools = []string{"bash"}
+	service := &Service{LLM: llm, Store: store, Cfg: cfg, Tools: NewToolRegistry(cfg)}
+	writer := &captureEventWriter{}
+
+	_, err := service.RespondToConversation(context.Background(), storage.Conversation{ID: "conv_delta_done_tool", Title: "新对话"}, storage.User{ID: "usr_1", Username: "alice"}, "执行 pwd", writer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	events := writer.nonMetaEvents()
+	deltaDoneIdx := -1
+	toolStartIdx := -1
+	for i, event := range events {
+		switch event.name {
+		case assistantDeltaDoneEvent:
+			if deltaDoneIdx < 0 {
+				deltaDoneIdx = i
+				payload, ok := event.data.(map[string]any)
+				if !ok || payload["content"] != "我先检查" {
+					t.Fatalf("assistant_delta_done payload = %#v, want full tool-round content", event.data)
+				}
+			}
+		case toolCallStartEvent:
+			if toolStartIdx < 0 {
+				toolStartIdx = i
+			}
+		}
+	}
+	if deltaDoneIdx < 0 {
+		t.Fatalf("events = %#v, want assistant_delta_done", events)
+	}
+	if toolStartIdx < 0 {
+		t.Fatalf("events = %#v, want tool_call_start", events)
+	}
+	if deltaDoneIdx > toolStartIdx {
+		t.Fatalf("event order = %#v, want assistant_delta_done before tool_call_start", events)
 	}
 }
 

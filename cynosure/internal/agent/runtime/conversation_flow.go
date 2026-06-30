@@ -22,6 +22,7 @@ import (
 
 const (
 	assistantDeltaEvent       = "assistant_delta"
+	assistantDeltaDoneEvent   = "assistant_delta_done"
 	assistantStreamResetEvent = "assistant_stream_reset"
 	toolCallStartEvent        = "tool_call_start"
 	toolCallDoneEvent         = "tool_call_done"
@@ -594,6 +595,9 @@ func (s *Service) runModelRoundStream(ctx context.Context, state *LoopState, req
 		return openai.ChatCompletionMessage{}, "", streamedContent, fmt.Errorf("model stream returned no choices")
 	}
 	calls := toolCalls.Calls()
+	if streamedContent && state.Writer != nil {
+		_ = state.Writer.Event(assistantDeltaDoneEvent, map[string]any{"content": content.String()})
+	}
 
 	return openai.ChatCompletionMessage{Role: "assistant", Content: content.String(), ReasoningContent: reasoningContent.String(), ToolCalls: calls}, finishReason, streamedContent, nil
 }
