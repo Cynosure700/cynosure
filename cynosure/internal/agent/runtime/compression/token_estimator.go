@@ -3,6 +3,7 @@ package compression
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	openai "github.com/sashabaranov/go-openai"
 
@@ -42,7 +43,7 @@ type TokenEstimator interface {
 	ContextTokenBudget() int
 }
 
-// DefaultTokenEstimator 使用保守的 ceil(utf8Bytes/3) 近似估算。
+// DefaultTokenEstimator 使用 ceil(字符数/4) 近似估算。
 // ModelID 决定上下文限制；为空时回退到默认（200K）限制。
 type DefaultTokenEstimator struct {
 	ModelID string
@@ -53,25 +54,25 @@ func (e DefaultTokenEstimator) ContextTokenBudget() int {
 }
 
 func (e DefaultTokenEstimator) EstimateRequestTokens(systemPrompt string, history []storage.Message, tools []openai.Tool) int {
-	bytes := len([]byte(systemPrompt))
+	chars := utf8.RuneCountInString(systemPrompt)
 	for _, msg := range history {
 		if data, err := json.Marshal(msg); err == nil {
-			bytes += len(data)
+			chars += utf8.RuneCount(data)
 		} else {
-			bytes += len(msg.Content) + len(msg.ReasoningContent)
+			chars += utf8.RuneCountInString(msg.Content) + utf8.RuneCountInString(msg.ReasoningContent)
 		}
 	}
 	if len(tools) > 0 {
 		if data, err := json.Marshal(tools); err == nil {
-			bytes += len(data)
+			chars += utf8.RuneCount(data)
 		}
 	}
-	return estimateTokensFromBytes(bytes)
+	return estimateTokensFromChars(chars)
 }
 
-func estimateTokensFromBytes(bytes int) int {
-	if bytes <= 0 {
+func estimateTokensFromChars(chars int) int {
+	if chars <= 0 {
 		return 0
 	}
-	return (bytes + 2) / 3
+	return (chars + 3) / 4
 }

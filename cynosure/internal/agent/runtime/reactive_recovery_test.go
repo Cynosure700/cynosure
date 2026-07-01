@@ -169,7 +169,7 @@ func (c *sizeSensitiveSummaryLLM) CreateChatCompletionStream(ctx context.Context
 // 后者只摘要最旧 20% 的对话轮（输入更小、不再 413），从而成功兜底并继续对话。
 func TestCompressContextBeforeLLM_FullHistoryOverflowFallsBackToReactive(t *testing.T) {
 	// 构造超预算的大历史，强制走到 FullHistory 兜底层。
-	big := strings.Repeat("z", 700*1024)
+	big := strings.Repeat("z", 900*1024)
 	history := []storage.Message{
 		{ID: "u1", Role: "user", Content: "first " + big},
 		{ID: "a1", Role: "assistant", Content: "resp one"},

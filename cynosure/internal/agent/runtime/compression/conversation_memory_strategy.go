@@ -3,6 +3,7 @@ package compression
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
 )
@@ -45,7 +46,7 @@ func (s *ConversationMemoryStrategy) Apply(ctx context.Context, req *Request) er
 		return nil
 	}
 	memoryText := renderConversationMemory(items)
-	memTokens := estimateTokensFromBytes(len([]byte(memoryText)))
+	memTokens := estimateTokensFromChars(utf8.RuneCountInString(memoryText))
 	if memTokens < conversationMemoryMinTokens || memTokens > conversationMemoryMaxTokens {
 		return nil
 	}

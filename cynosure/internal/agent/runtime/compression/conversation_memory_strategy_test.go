@@ -45,7 +45,7 @@ func TestConversationMemory_NoopUnderBudget(t *testing.T) {
 
 func TestConversationMemory_ReplacesWithUnfoldedTail(t *testing.T) {
 	store := &fakeStore{conversationMemories: conversationMemoryItems("c", 5, 8*1024)}
-	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 600*1024)}
+	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 900*1024)}
 	// Breakpoint at m_bp; only m_bp and after are "uncompressed" tail.
 	bp := storage.Message{ID: "m_bp", Role: "assistant", Content: "folded boundary"}
 	t1 := storage.Message{ID: "m_t1", Role: "user", Content: "after breakpoint 1"}
@@ -83,7 +83,7 @@ func TestConversationMemory_ReplacesWithUnfoldedTail(t *testing.T) {
 
 func TestConversationMemory_NoopWhenBreakpointUnknown(t *testing.T) {
 	store := &fakeStore{conversationMemories: conversationMemoryItems("c", 5, 8*1024)}
-	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 600*1024)}
+	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 900*1024)}
 	last := storage.Message{ID: "m_last", Role: "user", Content: "latest"}
 	req := &Request{
 		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
@@ -103,7 +103,7 @@ func TestConversationMemory_NoopWhenBreakpointUnknown(t *testing.T) {
 
 func TestConversationMemory_NoopWhenBreakpointNotFound(t *testing.T) {
 	store := &fakeStore{conversationMemories: conversationMemoryItems("c", 5, 8*1024)}
-	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 600*1024)}
+	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 900*1024)}
 	last := storage.Message{ID: "m_last", Role: "user", Content: "latest"}
 	req := &Request{
 		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
@@ -123,7 +123,7 @@ func TestConversationMemory_NoopWhenBreakpointNotFound(t *testing.T) {
 
 func TestConversationMemory_NoopWhenUnfoldedTailOverBudget(t *testing.T) {
 	store := &fakeStore{conversationMemories: conversationMemoryItems("c", 5, 8*1024)}
-	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 600*1024)}
+	huge := storage.Message{ID: "m_huge", Role: "user", Content: strings.Repeat("z", 900*1024)}
 	// Breakpoint is the huge message itself → unfolded tail still over budget.
 	last := storage.Message{ID: "m_last", Role: "user", Content: "latest"}
 	req := &Request{
@@ -165,7 +165,7 @@ func TestFullHistorySummarization_KeepsTailFromDisplayHistory(t *testing.T) {
 	}
 	// RequestHistory (model line) is over budget and uses placeholder-ish content;
 	// DisplayHistory holds the verbatim recent messages that must be preserved.
-	huge := storage.Message{ID: "r_huge", Role: "user", Content: strings.Repeat("z", 600*1024)}
+	huge := storage.Message{ID: "r_huge", Role: "user", Content: strings.Repeat("z", 900*1024)}
 	reqLast := storage.Message{ID: "r_last", Role: "assistant", Content: "model-line last"}
 	d1 := storage.Message{ID: "d1", Role: "user", Content: "display one"}
 	d2 := storage.Message{ID: "d2", Role: "assistant", Content: "display two"}
