@@ -449,8 +449,10 @@ func truncatePreview(text string, maxLen int) string {
 //     已产生的部分输出）。若仍然截断，则最多发起 maxResumeAttempts 次续写
 //     请求，每次都追加被截断的文本以及一条续写提示；各分段以流式方式输出
 //     并拼接为一条 assistant 消息。
-//   - 上下文溢出（HTTP 413）：执行一次 reactiveCompact，从压缩后的历史重建
-//     请求并重试。若再次溢出，则返回给调用方（由既有的兜底边界处理）。
+//   - 上下文溢出（HTTP 413）：执行一次 reactiveCompact——它是「单次压缩」，内部按对话
+//     轮渐进剥离（最多 3 次，满足 token 阈值即提前成功停止；3 次后仍超限则返回错误），
+//     成功后从压缩后的历史重建请求并重试一次。若 reactiveCompact 返回错误、或压缩后重试
+//     仍溢出，则返回给调用方（由既有的兜底边界处理），不再重复触发。
 func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopState, req openai.ChatCompletionRequest) (openai.ChatCompletionMessage, openai.FinishReason, error) {
 	cur := req
 	upgraded := false
@@ -468,6 +470,8 @@ func (s *Service) runModelRoundWithRecovery(ctx context.Context, state *LoopStat
 				if streamedContent {
 					emitStreamReset(state, streamID)
 				}
+				// 单次压缩：ReactiveCompact 内部完成最多 3 次剥离。压缩后重试一次；
+				// 仍溢出则由上层兜底，不再重复触发。
 				if compactErr := s.reactiveCompact(ctx, state); compactErr != nil {
 					logger.Warn(fmt.Sprintf("reactive compact failed conversation=%s: %v", state.Conversation.ID, compactErr))
 					return openai.ChatCompletionMessage{}, "", err

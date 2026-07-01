@@ -24,6 +24,9 @@ type SummaryRequest struct {
 	User         storage.User
 	History      []storage.Message
 	TargetTokens int
+	// Aggressive 为 true 时，摘要器应使用更激进的 ReactiveCompact 摘要 prompt
+	//（更紧凑、只保留续写必需的最小事实）。由 ReactiveCompactStrategy 传入。
+	Aggressive bool
 }
 
 type SummaryResult struct {

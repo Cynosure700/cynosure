@@ -8,6 +8,7 @@ import (
 
 	"github.com/Cynosure700/cynosure/cynosure/internal/agent/runtime/compression"
 	"github.com/Cynosure700/cynosure/cynosure/internal/agent/storage"
+	"github.com/Cynosure700/cynosure/cynosure/internal/llm"
 	"github.com/Cynosure700/cynosure/cynosure/internal/logger"
 	agenttools "github.com/Cynosure700/cynosure/cynosure/internal/tools"
 )
@@ -31,6 +32,10 @@ func (s *Service) loadModelHistory(ctx context.Context, conversationID string, d
 // 历史始终反映最新的压缩输出（内存态 == 发送态 == 落库态）。逐字的展示历史
 // state.History 不会被改动（它只会被克隆进 req.DisplayHistory，以便摘要/会话
 // 记忆策略从原始消息中保留各自的尾部）。
+//
+// 若压缩链中兜底层 FullHistorySummarizationStrategy 的摘要 LLM 调用自身 413
+// （上下文溢出），则转而执行按对话轮渐进剥离的 ReactiveCompact 兜底，用其结果
+// 作为本轮压缩产物；ReactiveCompact 仍失败时向上返回错误。
 func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState) ([]storage.Message, error) {
 	requestHistory := cloneMessages(state.ModelHistory)
 	store, ok := s.Store.(compression.Store)
@@ -59,6 +64,14 @@ func (s *Service) compressContextBeforeLLM(ctx context.Context, state *LoopState
 		req.ToolMaxResultSizeChars = s.Tools.MaxResultSizeChars
 	}
 	if err := compressor.Compress(ctx, req); err != nil {
+		if llm.IsContextOverflow(err) {
+			// 兜底摘要调用自身上下文溢出：转 ReactiveCompact 按对话轮渐进剥离兜底。
+			logger.Warn(fmt.Sprintf("compress: full-history summary overflow, falling back to reactive compact conversation=%s: %v", state.Conversation.ID, err))
+			if reactiveErr := s.reactiveCompact(ctx, state); reactiveErr != nil {
+				return nil, reactiveErr
+			}
+			return state.ModelHistory, nil
+		}
 		return nil, err
 	}
 	return req.RequestHistory, nil
@@ -93,15 +106,25 @@ func (s *Service) compressSubagentContextBeforeLLM(ctx context.Context, state *L
 		req.ToolMaxResultSizeChars = tools.MaxResultSizeChars
 	}
 	if err := compression.NewSubagentCompressor().Compress(ctx, req); err != nil {
+		if llm.IsContextOverflow(err) {
+			// 子 Agent 兜底摘要自身溢出：同样转 ReactiveCompact 兜底（共用 state.ReactiveState）。
+			logger.Warn(fmt.Sprintf("subagent compress: full-history summary overflow, falling back to reactive compact conversation=%s: %v", state.Conversation.ID, err))
+			if reactiveErr := s.reactiveCompact(ctx, state); reactiveErr != nil {
+				return nil, reactiveErr
+			}
+			return state.ModelHistory, nil
+		}
 		return nil, err
 	}
 	return req.RequestHistory, nil
 }
 
-// reactiveCompact 在 LLM 因 HTTP 413（上下文溢出）拒绝请求时，带外执行激进的
-// ReactiveCompactStrategy。成功时会同时更新 state.Messages（本轮生效）与
-// state.ModelHistory（后续各轮复用的新基线），但绝不更新 state.History（逐字
-// 展示历史）。失败时保持 state 不变。
+// reactiveCompact 在 LLM 因 HTTP 413（上下文溢出）拒绝请求、或主动压缩链中
+// FullHistorySummarizationStrategy 的摘要调用 413 时，带外执行一次「单次压缩」的
+// ReactiveCompactStrategy：其内部按对话轮渐进剥离，最多剥离 3 次，满足 token 阈值
+// 即提前停止；即使 3 次后仍超限也直接返回组合结果（不报错）。成功时会同时更新
+// state.Messages（本轮生效）与 state.ModelHistory（后续各轮复用的新基线），但绝不
+// 更新 state.History（逐字展示历史）。失败（摘要调用自身报错）时保持 state 不变。
 func (s *Service) reactiveCompact(ctx context.Context, state *LoopState) error {
 	store, ok := s.Store.(compression.Store)
 	if !ok {

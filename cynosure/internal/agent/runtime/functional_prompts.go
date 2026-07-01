@@ -13,6 +13,7 @@ type FunctionalPrompts struct {
 	MemoryConsolidation      string
 	ConversationMemoryUpdate string
 	ContextSummary           string
+	ReactiveCompactSummary   string
 	GeneralSubagent          string
 	ExploreSubagent          string
 }
@@ -36,6 +37,7 @@ func LoadFunctionalPrompts() (FunctionalPrompts, error) {
 		{name: "memory_consolidation", target: &prompts.MemoryConsolidation},
 		{name: "conversation_memory_update", target: &prompts.ConversationMemoryUpdate},
 		{name: "context_summary", target: &prompts.ContextSummary},
+		{name: "reactive_compact_summary", target: &prompts.ReactiveCompactSummary},
 		{name: "general_subagent", target: &prompts.GeneralSubagent},
 		{name: "explore_subagent", target: &prompts.ExploreSubagent},
 	} {
@@ -62,6 +64,9 @@ func (p FunctionalPrompts) withDefaults() FunctionalPrompts {
 	}
 	if strings.TrimSpace(p.ContextSummary) == "" {
 		p.ContextSummary = defaults.ContextSummary
+	}
+	if strings.TrimSpace(p.ReactiveCompactSummary) == "" {
+		p.ReactiveCompactSummary = defaults.ReactiveCompactSummary
 	}
 	if strings.TrimSpace(p.GeneralSubagent) == "" {
 		p.GeneralSubagent = defaults.GeneralSubagent

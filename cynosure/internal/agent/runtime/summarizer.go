@@ -12,13 +12,19 @@ import (
 )
 
 // summarizeHistoryForContext 执行一次非工具的 LLM 调用，对请求态历史进行摘要。
-// 它绝不会改动 state.History。
+// 它绝不会改动 state.History。req.Aggressive 为 true 时改用更激进的 ReactiveCompact
+// 摘要 prompt（更紧凑），否则使用通用的 ContextSummary prompt。
 func (s *Service) summarizeHistoryForContext(ctx context.Context, req compression.SummaryRequest) (compression.SummaryResult, error) {
 	if s.LLM == nil {
 		return compression.SummaryResult{}, fmt.Errorf("llm client is not configured")
 	}
+	prompts := s.Prompts.withDefaults()
+	systemPrompt := prompts.ContextSummary
+	if req.Aggressive {
+		systemPrompt = prompts.ReactiveCompactSummary
+	}
 	messages := []openai.ChatCompletionMessage{
-		{Role: "system", Content: s.Prompts.withDefaults().ContextSummary},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: renderHistoryForSummary(req.History)},
 	}
 	resp, err := s.LLM.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
