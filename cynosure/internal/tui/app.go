@@ -1425,8 +1425,9 @@ func (m Model) renderWriteFileToolMessage(tool *ToolCallView, status string) (st
 	if m.isFileToolExpanded() {
 		previewLineCount = len(lines)
 	}
+	lineNumberWidth := decimalWidth(previewLineCount)
 	for i := 0; i < previewLineCount; i++ {
-		bodyLines = append(bodyLines, formatWritePreviewLine(i+1, highlightedLines[i]))
+		bodyLines = append(bodyLines, formatWritePreviewLine(i+1, lineNumberWidth, highlightedLines[i]))
 	}
 	if omitted := len(lines) - previewLineCount; omitted > 0 {
 		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
@@ -1445,8 +1446,8 @@ func parseWriteFileArgs(rawArgs string) (writeFileDisplayArgs, bool) {
 	return args, strings.TrimSpace(args.FilePath) != ""
 }
 
-func formatWritePreviewLine(lineNumber int, content string) string {
-	return fmt.Sprintf("%3d│ %s", lineNumber, content)
+func formatWritePreviewLine(lineNumber, numberWidth int, content string) string {
+	return fmt.Sprintf("+%*d│ %s", numberWidth, lineNumber, content)
 }
 
 func highlightCodeLines(filePath string, lines []string) []string {
@@ -1617,8 +1618,9 @@ func buildEditPreviewBodyLines(icon, filePath string, changes []editDisplayChang
 	if !expanded && len(diffLines) > fileToolPreviewMaxLines {
 		previewLines = diffLines[:fileToolPreviewMaxLines]
 	}
+	lineNumberWidth := editDiffLineNumberWidth(previewLines)
 	for _, line := range previewLines {
-		bodyLines = append(bodyLines, renderEditDiffLine(line, status))
+		bodyLines = append(bodyLines, renderEditDiffLine(line, lineNumberWidth, status))
 	}
 	if omitted := len(diffLines) - len(previewLines); omitted > 0 {
 		bodyLines = append(bodyLines, fmt.Sprintf("... +%d lines  [Ctrl+O to expand]", omitted))
@@ -1703,11 +1705,36 @@ func countEditDiffLines(lines []editDiffLine) (int, int) {
 	return added, removed
 }
 
-func renderEditDiffLine(line editDiffLine, status string) string {
+func editDiffLineNumberWidth(lines []editDiffLine) int {
+	maxNumber := 1
+	for _, line := range lines {
+		if line.Number > maxNumber {
+			maxNumber = line.Number
+		}
+	}
+	return decimalWidth(maxNumber)
+}
+
+func decimalWidth(n int) int {
+	if n < 0 {
+		n = -n
+	}
+	width := 1
+	for n >= 10 {
+		width++
+		n /= 10
+	}
+	if width < 2 {
+		return 2
+	}
+	return width
+}
+
+func renderEditDiffLine(line editDiffLine, numberWidth int, status string) string {
 	if line.Kind == '…' {
 		return "..."
 	}
-	text := fmt.Sprintf("%c%2d│ %s", line.Kind, line.Number, line.Text)
+	text := fmt.Sprintf("%c%*d│ %s", line.Kind, numberWidth, line.Number, line.Text)
 	restore := ansiForeground(toolTextColorForStatus(status))
 	switch line.Kind {
 	case '+':

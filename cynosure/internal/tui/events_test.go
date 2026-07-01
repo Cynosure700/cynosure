@@ -1392,10 +1392,10 @@ func TestWriteFileToolMessageRendersFileContentPreview(t *testing.T) {
 
 	for _, want := range []string{
 		"● ✓ Wrote 15 lines to src/foo.ts",
-		"  1│ import React from 'react'",
-		"  2│ import { useState } from 'react'",
-		"  3│",
-		" 10│ const g = 7",
+		"+ 1│ import React from 'react'",
+		"+ 2│ import { useState } from 'react'",
+		"+ 3│",
+		"+10│ const g = 7",
 		"... +5 lines  [Ctrl+O to expand]",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -1452,9 +1452,9 @@ func TestCtrlOExpandsAllWriteAndEditFileToolMessages(t *testing.T) {
 	model = updated.(Model)
 	expanded := plainTerminalText(model.renderMessages())
 	for _, want := range []string{
-		" 11│ const h = 8",
-		" 15│ const l = 12",
-		" 11│ line 11",
+		"+11│ const h = 8",
+		"+15│ const l = 12",
+		"+11│ line 11",
 		`-11│ old 11`,
 		`+11│ new 11`,
 		"[Ctrl+O to collapse]",
@@ -1550,6 +1550,61 @@ func TestEditFileToolMessageRendersDiffPreview(t *testing.T) {
 	}
 	if !strings.Contains(renderedWithANSI, string(tuiPalette.coral)) || !strings.Contains(renderedWithANSI, string(tuiPalette.mint)) {
 		t.Fatalf("rendered = %q, want removed and added lines colored", renderedWithANSI)
+	}
+}
+
+func TestFileToolPreviewLineSeparatorsAlignForThreeDigitLineNumbers(t *testing.T) {
+	app := NewModel(nil, SessionInfo{})
+	app.width = 160
+	app.fileToolsExpanded = true
+
+	writeLines := make([]string, 100)
+	for i := range writeLines {
+		writeLines[i] = "line"
+	}
+	writeLines[98] = "ninety-nine"
+	writeLines[99] = "one hundred"
+	writeArgs := `{"file_path":"src/long.txt","content":"` + strings.Join(writeLines, `\n`) + `"}`
+	writeMsg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:    "write_file",
+		RawArgs: writeArgs,
+		Status:  "success",
+	}}
+	assertPipeColumnsEqual(t, plainTerminalText(app.renderMessage(writeMsg)), "+ 99", "+100")
+
+	editArgs := `{"file_path":"src/long.txt","old_text":"old 98\nold 99\nold 100","new_text":"new 98\nnew 99\nnew 100"}`
+	editMsg := Message{Role: "tool", ToolCall: &ToolCallView{
+		Name:           "edit_file",
+		RawArgs:        editArgs,
+		Status:         "success",
+		EditLineStarts: [][]int{{98}},
+	}}
+	assertPipeColumnsEqual(t, plainTerminalText(app.renderMessage(editMsg)), "- 99", "-100", "+ 99", "+100")
+}
+
+func assertPipeColumnsEqual(t *testing.T, rendered string, prefixes ...string) {
+	t.Helper()
+	lines := strings.Split(rendered, "\n")
+	var wantColumn int
+	for _, prefix := range prefixes {
+		column := -1
+		for _, line := range lines {
+			trimmed := strings.TrimLeft(line, " ")
+			if strings.HasPrefix(trimmed, prefix) {
+				column = strings.Index(trimmed, "│")
+				break
+			}
+		}
+		if column < 0 {
+			t.Fatalf("rendered = %q, want line prefix %q", rendered, prefix)
+		}
+		if wantColumn == 0 {
+			wantColumn = column
+			continue
+		}
+		if column != wantColumn {
+			t.Fatalf("rendered = %q, prefix %q separator column = %d, want %d", rendered, prefix, column, wantColumn)
+		}
 	}
 }
 
@@ -2519,7 +2574,7 @@ func TestWriteFileToolMessageUsesWholeFileLineNumbers(t *testing.T) {
 	}}
 
 	rendered := plainTerminalText(app.renderMessage(msg))
-	for _, want := range []string{"  1│ line one", "  2│ line two", "  3│ line three"} {
+	for _, want := range []string{"+ 1│ line one", "+ 2│ line two", "+ 3│ line three"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered = %q, want whole-file write line number %q", rendered, want)
 		}
