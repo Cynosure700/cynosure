@@ -13,7 +13,7 @@ const reactiveCompactStrategyName = "reactive_compact"
 const (
 	// reactiveSummaryTargetTokens 是被动压缩的摘要预算；
 	// 比 FullHistorySummarization 的 8K 更激进。
-	reactiveSummaryTargetTokens = 2 * 1000
+	reactiveSummaryTargetTokens = 2 * tokenUnitK
 	// reactiveMaxStrips 是单次被动压缩内部最多剥离的次数。
 	reactiveMaxStrips = 3
 )

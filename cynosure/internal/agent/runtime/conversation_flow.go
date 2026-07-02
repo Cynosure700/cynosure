@@ -37,9 +37,9 @@ const (
 
 	// defaultMaxTokens 是单次请求的输出预算；在首次发生截断时会被升级为
 	// truncationMaxTokens。
-	defaultMaxTokens = 8000
+	defaultMaxTokens = 8 * 1024
 	// truncationMaxTokens 是首次截断后升级的输出预算（为默认值的 8 倍）。
-	truncationMaxTokens = 64 * 1000
+	truncationMaxTokens = 64 * 1024
 	// maxResumeAttempts 表示在升级预算后仍发生截断时，最多发起的续写请求次数。
 	maxResumeAttempts = 3
 

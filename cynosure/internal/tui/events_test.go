@@ -820,18 +820,18 @@ func TestModelMetaEventUpdatesContextStatusWithoutDisplayingToolCount(t *testing
 	}
 }
 
-func TestRenderLiveStatusUsesDecimalTokenUnits(t *testing.T) {
+func TestRenderLiveStatusUsesBinaryTokenUnits(t *testing.T) {
 	app := NewModel(nil, SessionInfo{})
 	app.width = 100
-	app.contextTokens = 123_000
-	app.contextBudget = 1_000_000
+	app.contextTokens = 123 * 1024
+	app.contextBudget = 1024 * 1024
 
 	view := plainTerminalText(app.renderLiveStatus())
 	if !strings.Contains(view, "上下文 12% · 123k/1m") {
-		t.Fatalf("status = %q, want decimal k/m token units", view)
+		t.Fatalf("status = %q, want binary k/m token units", view)
 	}
-	if strings.Contains(view, "1000k") || strings.Contains(view, "1024") {
-		t.Fatalf("status = %q, should not use binary-style token units", view)
+	if strings.Contains(view, "125k") || strings.Contains(view, "1048k") {
+		t.Fatalf("status = %q, should not use decimal-style token units", view)
 	}
 }
 

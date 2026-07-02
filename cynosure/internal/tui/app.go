@@ -2376,11 +2376,15 @@ func inputStatusStyle() lipgloss.Style {
 }
 
 func compactNumber(n int) string {
-	if n >= 1000*1000 {
-		return fmt.Sprintf("%dm", n/(1000*1000))
+	const (
+		tokenUnitK = 1024
+		tokenUnitM = tokenUnitK * tokenUnitK
+	)
+	if n >= tokenUnitM {
+		return fmt.Sprintf("%dm", n/tokenUnitM)
 	}
-	if n >= 1000 {
-		return fmt.Sprintf("%dk", n/1000)
+	if n >= tokenUnitK {
+		return fmt.Sprintf("%dk", n/tokenUnitK)
 	}
 	return strconv.Itoa(n)
 }
