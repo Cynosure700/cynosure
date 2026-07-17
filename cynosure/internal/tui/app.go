@@ -2377,7 +2377,7 @@ func inputStatusStyle() lipgloss.Style {
 
 func compactNumber(n int) string {
 	const (
-		tokenUnitK = 1024
+		tokenUnitK = 1000
 		tokenUnitM = tokenUnitK * tokenUnitK
 	)
 	if n >= tokenUnitM {

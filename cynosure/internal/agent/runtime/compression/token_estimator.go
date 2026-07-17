@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	tokenUnitK = 1024
+	tokenUnitK = 1000
 	tokenUnitM = tokenUnitK * tokenUnitK
 
-	// 默认上下文限制（200K）：未命中大上下文模型时采用。
-	defaultModelContextLimit = 200 * tokenUnitK
+	// 默认上下文限制（256K）：未命中大上下文模型时采用。
+	defaultModelContextLimit = 256 * tokenUnitK
 	// 大上下文模型（如 deepseek-v4-flash / deepseek-v4-pro / glm-5.2）的上下文限制（1M）。
 	largeModelContextLimit = tokenUnitM
 	// 8K 最大响应 token 数
@@ -32,7 +32,7 @@ var largeContextModels = map[string]struct{}{
 }
 
 // ModelContextLimit 返回指定模型的最大上下文 token 限制。
-// deepseek-v4-flash、deepseek-v4-pro、glm-5.2 为 1M，其余为 200K。
+// deepseek-v4-flash、deepseek-v4-pro、glm-5.2 为 1M，其余为 256K。
 func ModelContextLimit(modelID string) int {
 	if _, ok := largeContextModels[strings.ToLower(strings.TrimSpace(modelID))]; ok {
 		return largeModelContextLimit
@@ -47,7 +47,7 @@ type TokenEstimator interface {
 }
 
 // DefaultTokenEstimator 使用 ceil(字符数/4) 近似估算。
-// ModelID 决定上下文限制；为空时回退到默认（200K）限制。
+// ModelID 决定上下文限制；为空时回退到默认（256K）限制。
 type DefaultTokenEstimator struct {
 	ModelID string
 }

@@ -608,7 +608,7 @@ func TestFullHistorySummarization_SummarizesOverBudget(t *testing.T) {
 		lastInput = r.History
 		return SummaryResult{Summary: "STRUCTURED SUMMARY"}, nil
 	}
-	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 900*1024)}
+	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 1200*1024)}
 	last := storage.Message{Role: "user", Content: "the latest message"}
 	mkReq := func() *Request {
 		return &Request{
@@ -652,7 +652,7 @@ func TestFullHistorySummarization_SummarizesOverBudget(t *testing.T) {
 func TestFullHistorySummarization_NoopWithSingleMessage(t *testing.T) {
 	store := &fakeStore{}
 	called := false
-	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 900*1024)}
+	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 1200*1024)}
 	req := &Request{
 		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
 		RequestHistory: []storage.Message{huge},
@@ -681,9 +681,9 @@ func TestFullHistorySummarization_PreservesLastToolMessageWithPairedCall(t *test
 	}
 	// Earlier huge history forces summarization; the latest turn is an
 	// assistant tool_call followed by a large tool result as the last message.
-	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 900*1024)}
+	huge := storage.Message{Role: "user", Content: strings.Repeat("z", 1200*1024)}
 	callMsg := assistantToolCallMsg("call_latest")
-	lastTool := toolMsg("call_latest", "success", strings.Repeat("r", 900*1024))
+	lastTool := toolMsg("call_latest", "success", strings.Repeat("r", 1200*1024))
 	req := &Request{
 		User: storage.User{ID: "u"}, Conversation: storage.Conversation{ID: "c"},
 		RequestHistory: []storage.Message{huge, callMsg, lastTool},
