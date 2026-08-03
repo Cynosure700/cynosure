@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allowedRules": [
+      "mkdir *",
+      "write_file *",
+      "find *",
+      "edit_file *"
+    ]
+  }
+}
