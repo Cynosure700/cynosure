@@ -241,6 +241,7 @@ func TestDefaultBaseSystemPromptUsesDomainSections(t *testing.T) {
 
 func TestDefaultBaseSystemPromptCarriesMemoryUsageRules(t *testing.T) {
 	for _, want := range []string{
+		"维护记忆时必须且只能使用 update_memory（更新或修正已有记忆）与 delete_memory（删除记忆）",
 		"<system-reminder> 内记忆相关分为两段：<memory_index>（来自 memory.md 的过往记忆文件索引）与 <memory>（按当前会话筛选出的真实有效记忆正文）",
 		"<memory_index> 仅提供过往记忆文件的路径、名称与描述，仅用于 update_memory/delete_memory 定位、更新或删除记忆文件",
 		"索引条目本身不是有效记忆内容，不得当作用户偏好、项目事实或参考资料使用",
@@ -252,6 +253,9 @@ func TestDefaultBaseSystemPromptCarriesMemoryUsageRules(t *testing.T) {
 		if !strings.Contains(DefaultBaseSystemPrompt, want) {
 			t.Fatalf("expected memory usage rules to live in default base prompt, missing %q", want)
 		}
+	}
+	if strings.Contains(DefaultBaseSystemPrompt, "update_memory（新增或修正记忆）") {
+		t.Fatal("expected default base prompt not to describe update_memory as creating memories")
 	}
 }
 

@@ -276,7 +276,7 @@ const (
 	DeleteMemoryToolName = "delete_memory"
 )
 
-var updateMemoryToolSpec = toolSpec(UpdateMemoryToolName, "Update a long-term project memory that is wrong or outdated. Identify the memory by its file path as shown in the MEMORY.md index (for example foo.md). Provide at least one of name, description, or body; the file and the MEMORY.md index are updated together.", map[string]any{
+var updateMemoryToolSpec = toolSpec(UpdateMemoryToolName, "Update a long-term project memory that is wrong or outdated. Identify the memory by its file path as shown in the MEMORY.md index (for example foo.md). Provide at least one of name, description, or body; the file and the MEMORY.md index are updated together. Do not use update_memory to create new memories. New memories are created automatically by the system; no tool call is needed.", map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"path":        strParam("The memory file path relative to the memory directory, as shown in the MEMORY.md index, e.g. foo.md."),

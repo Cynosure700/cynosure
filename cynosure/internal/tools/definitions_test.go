@@ -69,6 +69,24 @@ func TestLoadSkillToolDescriptionRequiresExactNameBeforeUse(t *testing.T) {
 	t.Fatalf("expected AllToolDefs to include load_skill")
 }
 
+func TestUpdateMemoryToolDescriptionForbidsCreatingMemories(t *testing.T) {
+	for _, tool := range AllToolDefs {
+		if tool.Function == nil || tool.Function.Name != UpdateMemoryToolName {
+			continue
+		}
+		for _, want := range []string{
+			"Do not use update_memory to create new memories.",
+			"New memories are created automatically by the system; no tool call is needed.",
+		} {
+			if !strings.Contains(tool.Function.Description, want) {
+				t.Fatalf("expected update_memory description to contain %q, got %q", want, tool.Function.Description)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected AllToolDefs to include %s", UpdateMemoryToolName)
+}
+
 func TestFileToolDescriptionsGuideReadBeforeWriteAndExactEdits(t *testing.T) {
 	toolsByName := map[string]string{}
 	schemasByName := map[string]string{}

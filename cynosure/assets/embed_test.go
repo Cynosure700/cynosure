@@ -24,6 +24,17 @@ func TestFunctionalPromptLoadsEmbeddedMarkdown(t *testing.T) {
 	}
 }
 
+func TestSystemPromptDescribesUpdateMemoryAsExistingMemoryOnly(t *testing.T) {
+	prompt := SystemPrompt()
+	want := "update_memory`（更新或修正已有记忆）"
+	if !strings.Contains(prompt, want) {
+		t.Fatalf("expected system prompt to contain %q", want)
+	}
+	if strings.Contains(prompt, "update_memory`（新增或修正记忆）") {
+		t.Fatal("expected system prompt not to describe update_memory as creating memories")
+	}
+}
+
 func TestFunctionalPromptLoadsSubagentTemplates(t *testing.T) {
 	for name, want := range map[string]string{
 		"general_subagent": "general 子智能体",

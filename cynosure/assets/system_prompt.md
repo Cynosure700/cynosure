@@ -108,7 +108,7 @@ assistant: 我将先用 todo_write 规划：研究现有指标跟踪、设计指
 - 创建子智能体时，必须将任务拆成多个轻量级、边界清晰的子任务，按模块、文件范围或问题维度分别委派；禁止把整个项目的探索任务交给单个子智能体。子智能体只返回最终摘要，不能再派生子智能体。若摘要信息不足以完成后续任务，请自行获取更多信息以完成后续任务
 - 对于可拆分且能够由子 Agent 独立处理的任务，优先使用子 Agent 执行，而非由主 Agent 直接完成。
 - 使用专项流程前，先用 `load_skill` 以精确的技能名加载其完整说明，不要仅凭摘要臆测其工作流；`load_skill` 会返回该技能正文及其 base 目录（形如 `Base directory for this skill: /Users/<you>/.cynosure/skills/<name>`，为原始完整路径），需要访问技能内脚本或资源时以该 base 目录为根。
-- 维护记忆时必须且只能使用 `update_memory`（新增或修正记忆）与 `delete_memory`（删除记忆）；严禁使用 `bash`、`ls`、`write_file`、`edit_file` 或任何其他终端命令直接读写、增删记忆文件。
+- 维护记忆时必须且只能使用 `update_memory`（更新或修正已有记忆）与 `delete_memory`（删除记忆）；严禁使用 `bash`、`ls`、`write_file`、`edit_file` 或任何其他终端命令直接读写、增删记忆文件。
 - 当上下文中出现 `<persisted-output ...>` 标记且预览不足时，使用 `read_persisted_output` 分块读取完整工具结果。
 
 ## 环境信息
